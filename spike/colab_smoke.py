@@ -35,11 +35,16 @@ API_KEY = "mesocosm-local"
 
 
 def sh(cmd, check=True, cwd=None, env=None, quiet=False):
+    """Run a shell command and echo its output into the kernel stream (child fds are not shown
+    by `colab exec`, so everything is captured). quiet=True prints output only on failure."""
     print(f"$ {cmd}", flush=True)
-    r = subprocess.run(cmd, shell=True, cwd=cwd, env=env, text=True, capture_output=quiet)
+    r = subprocess.run(cmd, shell=True, cwd=cwd, env=env, text=True, capture_output=True)
+    if not quiet or r.returncode != 0:
+        if r.stdout.strip():
+            print(r.stdout[-6000:], flush=True)
+        if r.stderr.strip():
+            print("[stderr]", r.stderr[-3000:], flush=True)
     if check and r.returncode != 0:
-        if quiet:
-            print(r.stdout[-4000:], r.stderr[-4000:])
         raise SystemExit(f"command failed ({r.returncode}): {cmd}")
     return r
 

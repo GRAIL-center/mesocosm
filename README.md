@@ -46,7 +46,7 @@ docs/         milestones, operation contract, capability matrix, ADRs
 
 ## Development setup
 
-Python 3.11 or 3.12 (vLLM and NNsight constraints), [uv](https://docs.astral.sh/uv/), Docker, an NVIDIA GPU for anything that runs a model. Smoke tests target a single RTX 3090 (24 GB) with a 3B model.
+Python 3.11–3.13, [uv](https://docs.astral.sh/uv/), Docker, an NVIDIA GPU for anything that runs a model. Smoke tests target a single RTX 3090 (24 GB) with a 3B model.
 
 ```bash
 uv sync --extra dev

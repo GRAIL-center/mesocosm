@@ -3,7 +3,7 @@ name = "mesocosm"
 version = "0.0.1"
 description = "Research infrastructure for eliciting and discovering misaligned behavior in multi-agent systems"
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
 authors = [{ name = "Seunghyun Yoo" }]
 dependencies = [

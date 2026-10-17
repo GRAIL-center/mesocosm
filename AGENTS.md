@@ -146,7 +146,7 @@ Under 300 lines is a good ceiling. Over 500 and you are fighting your own config
 Mesocosm: research infrastructure for eliciting and discovering misaligned behavior in multi-agent systems. Read `README.md`, then `ARCHITECTURE.md`, then `docs/adr/README.md` before any non-trivial change. Current phase: M0 spike (`spike/SPIKE.md`, `docs/milestones.md`).
 
 ### Stack
-- Language and version: Python 3.11 or 3.12 only (vLLM and NNsight constraints), `from __future__ import annotations` in every module.
+- Language and version: Python 3.11–3.13 (vLLM and NNsight install on 3.13 as of the Colab spike), `from __future__ import annotations` in every module.
 - Framework(s): FastAPI + httpx (model gateway), Typer (CLI), pydantic v2, Docker Compose (sandbox topology), vLLM + NNsight (inference and activations), OpenCode (harness, used unmodified), Harbor (tasks and verifiers).
 - Package manager: uv. `uv.lock` is committed; change it only through `uv add` / `uv lock`.
 - Runtime / deployment target: single workstation with an RTX 3090 for smoke tests; shared RCAC GPUs for pilot and main runs. No cloud services; agents run air-gapped.
