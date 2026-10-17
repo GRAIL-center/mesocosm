@@ -1,0 +1,25 @@
+# One agent, one Harbor task, host-only addresses (spike/SPIKE.md day 1).
+# For the Docker topology, set gateway.url to http://127.0.0.1:8080 only if the control plane
+# runs on the host; inside the control container use http://gateway:8080 and agent urls http://agent-1:4096.
+name: spike-world
+mode: comparison
+model:
+  id: mesocosm-3b
+  hf_repo: Qwen/Qwen2.5-Coder-3B-Instruct
+gateway:
+  url: http://127.0.0.1:8080
+  agent_url: http://127.0.0.1:8080
+  api_key: mesocosm-local
+agents:
+  - id: agent-1
+    harness: opencode
+    url: http://127.0.0.1:4096
+    budget:
+      completion_tokens: 40000
+      requests: 200
+tasks:
+  - source: harbor
+    path: tasks/hello-world
+memory: reset
+observe:
+  activations: false
