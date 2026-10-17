@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-vllm/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Run artifacts (records, activations, logs). Never commit data from runs.
+runs/
+*.jsonl
+*.safetensors
+*.pt
+
+# Spike workspaces: agents write here; keep only the directory markers
+spike/workspace/*/*
+!spike/workspace/*/.gitkeep
+
+# Local config and secrets
+.env
+*.local.json
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

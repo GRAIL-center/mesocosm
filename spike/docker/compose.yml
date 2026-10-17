@@ -1,0 +1,72 @@
+# Spike day 2: the isolation topology from ARCHITECTURE.md, minimal version.
+#
+#   sandbox (internal: true)  : agent-1 + gateway          -> no route to the internet
+#   edge                      : gateway + control           -> can reach the host (vLLM on :8000)
+#
+# vLLM keeps running on the host (01_vllm_serve.sh). The gateway reaches it through
+# host.docker.internal; agents reach only the gateway.
+#
+#   docker compose -f spike/docker/compose.yml up -d --build
+#   docker compose -f spike/docker/compose.yml exec agent-1 egress-check
+#   docker compose -f spike/docker/compose.yml exec control \
+#       python 04_drive_opencode.py --url http://agent-1:4096 --out /runs/spike --run spike-docker
+#   docker compose -f spike/docker/compose.yml down
+
+name: mesocosm-spike
+
+services:
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gateway
+    networks: [sandbox, edge]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      MESOCOSM_UPSTREAM: http://host.docker.internal:${MESOCOSM_VLLM_PORT:-8000}
+      MESOCOSM_LOG_DIR: /runs/spike
+      MESOCOSM_BUDGET_JSON: ${MESOCOSM_BUDGET_JSON:-{}}
+      MESOCOSM_RETURN_TOKEN_IDS: ${MESOCOSM_RETURN_TOKEN_IDS:-0}
+      MESOCOSM_GATEWAY_HOST: 0.0.0.0
+    volumes:
+      - ../../runs:/runs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/mesocosm/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  agent-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+    networks: [sandbox]
+    environment:
+      MESOCOSM_AGENT: agent-1
+      MESOCOSM_RUN: ${MESOCOSM_RUN:-spike-docker}
+      MESOCOSM_GATEWAY_URL: http://gateway:8080
+      MESOCOSM_GATEWAY_KEY: ${VLLM_API_KEY:-mesocosm-local}
+      MESOCOSM_MODEL_ID: ${MESOCOSM_MODEL_ID:-mesocosm-3b}
+      MESOCOSM_CONTEXT_LIMIT: ${MESOCOSM_CONTEXT_LIMIT:-32768}
+      MESOCOSM_UPSTREAM_PROBE: http://host.docker.internal:${MESOCOSM_VLLM_PORT:-8000}/v1/models
+    volumes:
+      - ../workspace/agent-1:/work
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  control:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.control
+    networks: [sandbox, edge]
+    volumes:
+      - ..:/spike
+      - ../../runs:/runs
+    working_dir: /spike
+    command: ["sleep", "infinity"]
+
+networks:
+  sandbox:
+    internal: true
+  edge: {}

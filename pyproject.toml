@@ -1,0 +1,61 @@
+[project]
+name = "mesocosm"
+version = "0.0.1"
+description = "Research infrastructure for eliciting and discovering misaligned behavior in multi-agent systems"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "Seunghyun Yoo" }]
+dependencies = [
+  "pydantic>=2.7",
+  "pyyaml>=6.0",
+  "httpx>=0.27",
+  "typer>=0.12",
+  "rich>=13.7",
+]
+
+[project.optional-dependencies]
+gateway = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+]
+observe = [
+  # torch/transformers/nnsight versions are pinned once spike 05 settles them.
+  "torch>=2.4",
+  "transformers>=4.45",
+  "nnsight>=0.4",
+  "safetensors>=0.4",
+  "numpy>=1.26",
+]
+dev = [
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.6",
+  "mypy>=1.11",
+]
+
+[project.scripts]
+mesocosm = "mesocosm.cli.main:app"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mesocosm"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Spike scripts and tests carry long literal payloads (SSE fixtures, JSON configs).
+"spike/*" = ["E501"]
+"tests/*" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

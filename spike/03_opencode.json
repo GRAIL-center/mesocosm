@@ -1,0 +1,26 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "mesocosm/mesocosm-3b",
+  "small_model": "mesocosm/mesocosm-3b",
+  "permission": "allow",
+  "provider": {
+    "mesocosm": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Mesocosm gateway (vLLM)",
+      "options": {
+        "baseURL": "http://127.0.0.1:8080/v1",
+        "apiKey": "{env:MESOCOSM_GATEWAY_KEY}",
+        "headers": {
+          "X-Mesocosm-Agent": "agent-1",
+          "X-Mesocosm-Run": "spike-host"
+        }
+      },
+      "models": {
+        "mesocosm-3b": {
+          "name": "Qwen2.5-Coder-3B-Instruct via gateway",
+          "limit": { "context": 32768, "output": 8192 }
+        }
+      }
+    }
+  }
+}
