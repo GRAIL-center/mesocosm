@@ -191,7 +191,9 @@ def phase_probe():
     time.sleep(10)
     sh("nvidia-smi --query-gpu=memory.used --format=csv")
     env = dict(os.environ, VLLM_USE_V2_MODEL_RUNNER="0")
-    for phase, extra in (("hf", f"--dtype {dtype}"), ("vllm", "--gpu-mem 0.6"), ("compare", "")):
+    # Probe the serve-phase curl record (170 prompt tokens, temperature 0), not an OpenCode request.
+    run = os.environ.get("MESOCOSM_PROBE_RUN", "spike-colab")
+    for phase, extra in (("hf", f"--dtype {dtype} --run {run}"), ("vllm", f"--dtype {dtype} --gpu-mem 0.6"), ("compare", "")):
         sh(f"{sys.executable} spike/05_nnsight_probe.py {phase} --model {MODEL} {extra}", cwd=ROOT, env=env, check=False)
 
 

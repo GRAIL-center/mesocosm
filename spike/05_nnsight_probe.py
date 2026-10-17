@@ -31,12 +31,17 @@ import sys
 import time
 
 
-def _last_chat_record(path: pathlib.Path) -> dict:
+def _last_chat_record(path: pathlib.Path, run: str | None, max_prompt_tokens: int) -> dict:
+    """Last successful chat record of `run` (any run if None) whose prompt fits the probe budget.
+    OpenCode's requests are ~11k tokens; the serve-phase curl request (170 tokens, temperature 0)
+    is the right input for a recompute comparison."""
     recs = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    chats = [r for r in recs if r.get("event") == "chat_completion" and r.get("request")]
-    if not chats:
-        sys.exit(f"no chat_completion records in {path}; run steps 1-4 first")
-    return chats[-1]
+    chats = [r for r in recs if r.get("event") == "chat_completion" and r.get("request")
+             and r.get("status", 200) == 200 and (run is None or r.get("run") == run)]
+    fitting = [r for r in chats if (r.get("response") or {}).get("usage", {}).get("prompt_tokens", 10**9) <= max_prompt_tokens]
+    if not fitting:
+        sys.exit(f"no chat_completion record in {path} (run={run!r}) with <= {max_prompt_tokens} prompt tokens")
+    return fitting[-1]
 
 
 def _prompt_from_record(rec: dict, tokenizer) -> tuple[list[int], str, list[int] | None, str]:
@@ -80,7 +85,7 @@ def phase_hf(args) -> None:
     except ImportError:  # older nnsight
         from nnsight import LanguageModel as NNModel
 
-    rec = _last_chat_record(pathlib.Path(args.gateway_log))
+    rec = _last_chat_record(pathlib.Path(args.gateway_log), args.run, args.max_prompt_tokens)
     tok = AutoTokenizer.from_pretrained(args.model)
     prompt_ids, prompt_text, completion_ids, provenance = _prompt_from_record(rec, tok)
     print(f"[hf] request_id={rec['request_id']} prompt_tokens={len(prompt_ids)} "
@@ -97,35 +102,40 @@ def phase_hf(args) -> None:
 
     seq = list(prompt_ids) + (list(completion_ids) if completion_ids else [])
     input_ids = torch.tensor([seq], device="cuda")
+    P = len(prompt_ids)
     t0 = time.time()
-    with model.trace({"input_ids": input_ids, "attention_mask": torch.ones_like(input_ids)}):
+    # Save the layer's residual stream, the greedy prediction per position and the logits at the
+    # last prompt position only: full [T, vocab] logits for a long prompt do not fit next to the model.
+    with torch.no_grad(), model.trace({"input_ids": input_ids, "attention_mask": torch.ones_like(input_ids)}):
         layer_out = layers[L].output
         hidden = (layer_out[0] if isinstance(layer_out, (tuple, list)) else layer_out).save()
-        logits = model.output.logits.save()
+        logits = model.output.logits
+        pred = logits.argmax(-1).save()
+        last_logits = logits[0, P - 1].save()
     trace_s = time.time() - t0
     hidden = hidden.detach().float().cpu()[0]          # [T, d]
-    logits = logits.detach().float().cpu()[0]          # [T, V]
-    P = len(prompt_ids)
-    print(f"[hf] trace {trace_s:.2f}s hidden={tuple(hidden.shape)} logits={tuple(logits.shape)}")
+    pred = pred.detach().cpu()[0]                      # [T]
+    last_logits = last_logits.detach().float().cpu()   # [V]
+    print(f"[hf] trace {trace_s:.2f}s hidden={tuple(hidden.shape)} pred={tuple(pred.shape)}")
 
     result = {"phase": "hf", "model": args.model, "layer": L, "request_id": rec["request_id"],
               "prompt_tokens": P, "provenance": provenance, "trace_seconds": trace_s,
               "vram_peak_gb": torch.cuda.max_memory_allocated() / 2**30}
     if completion_ids:
-        pred = logits[P - 1: P - 1 + len(completion_ids)].argmax(-1).tolist()
-        agree = sum(int(a == b) for a, b in zip(pred, completion_ids, strict=False)) / len(completion_ids)
+        guesses = pred[P - 1: P - 1 + len(completion_ids)].tolist()
+        agree = sum(int(a == b) for a, b in zip(guesses, completion_ids, strict=False)) / len(completion_ids)
         result["greedy_agreement_vs_recorded"] = agree
         result["recorded_temperature"] = (rec["request"] or {}).get("temperature")
         print(f"[hf] greedy agreement with recorded completion: {agree:.3f} "
               f"(meaningful only if vLLM sampled at temperature 0)")
     else:
-        result["first_greedy_token"] = int(logits[P - 1].argmax())
+        result["first_greedy_token"] = int(pred[P - 1])
         print(f"[hf] first greedy token after prompt: {result['first_greedy_token']!r} "
               f"{tok.decode([result['first_greedy_token']])!r}")
 
     out = pathlib.Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    save_file({"hidden_prompt": hidden[:P].contiguous(), "logits_last_prompt": logits[P - 1].contiguous()},
+    save_file({"hidden_prompt": hidden[:P].contiguous(), "logits_last_prompt": last_logits.contiguous()},
               str(out / "hf.safetensors"))
     (out / "hf.json").write_text(json.dumps(result, indent=1))
     (out / "prompt.json").write_text(json.dumps({"prompt_ids": prompt_ids, "prompt_text": prompt_text,
@@ -234,6 +244,9 @@ def main() -> None:
     ap.add_argument("--model", default="Qwen/Qwen3-4B-Instruct-2507")
     ap.add_argument("--layer", type=int, default=None, help="decoder layer index (default: middle)")
     ap.add_argument("--gateway-log", default="runs/spike/gateway.jsonl")
+    ap.add_argument("--run", default=None, help="X-Mesocosm-Run label to pick the record from (default: any)")
+    ap.add_argument("--max-prompt-tokens", type=int, default=4096,
+                    help="skip records with longer prompts; OpenCode requests are ~11k tokens")
     ap.add_argument("--out", default="runs/spike/activations")
     ap.add_argument("--max-tokens", type=int, default=16)
     ap.add_argument("--gpu-mem", type=float, default=0.6, help="vLLM gpu_memory_utilization")
