@@ -176,9 +176,11 @@ def phase_vllm(args) -> None:
         samples = model.samples.save()
     trace_s = time.time() - t0
 
+    import torch
+
     hidden = _residual_from_layer_output(layer_out).detach().float().cpu()   # prefill: [P, d]
     logits = logits.detach().float().cpu()
-    samples_l = samples.detach().cpu().tolist() if hasattr(samples, "detach") else list(samples)
+    samples_l = [int(x) for x in torch.as_tensor(samples).flatten().tolist()]  # served as [steps, n]
     print(f"[vllm] trace {trace_s:.2f}s hidden={tuple(hidden.shape)} logits={tuple(logits.shape)} "
           f"samples={samples_l[:8]} -> {tok.decode([int(s) for s in samples_l[:8]])!r}")
     print(f"[vllm] layer output type: {type(layer_out).__name__} "
