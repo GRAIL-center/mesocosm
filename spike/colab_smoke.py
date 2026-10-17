@@ -126,7 +126,9 @@ def phase_serve():
     if not http_ok("http://127.0.0.1:8000/v1/models", auth):
         start("vllm", ["vllm", "serve", MODEL, "--host", "127.0.0.1", "--port", "8000",
                        "--served-model-name", "mesocosm-3b", "--api-key", API_KEY, "--dtype", dtype,
-                       "--max-model-len", "16384", "--gpu-memory-utilization", "0.85",
+                       # OpenCode's system prompt plus 11 tool schemas is ~10.8k tokens and it asks for
+                       # 8192 output tokens; 16k was rejected by vLLM with a 400 on every request.
+                       "--max-model-len", "32768", "--gpu-memory-utilization", "0.85",
                        "--enable-auto-tool-choice", "--tool-call-parser", "hermes"])
         wait_for("http://127.0.0.1:8000/v1/models", 900, auth, "vLLM")
     sh("nvidia-smi --query-gpu=memory.used --format=csv")
@@ -148,7 +150,7 @@ def phase_serve():
 
         WORKSPACE.mkdir(parents=True, exist_ok=True)
         cfg = render_opencode_config(agent_id="agent-1", run_id="spike-host", gateway_url=GATEWAY,
-                                     model_id="mesocosm-3b", api_key=API_KEY, context_limit=16384)
+                                     model_id="mesocosm-3b", api_key=API_KEY, context_limit=32768)
         (WORKSPACE / "opencode.json").write_text(json.dumps(cfg, indent=2))
         start("opencode", ["opencode", "serve", "--port", "4096"], cwd=WORKSPACE)
         wait_for("http://127.0.0.1:4096/global/health", 120, label="OpenCode")
@@ -193,6 +195,15 @@ def phase_probe():
         sh(f"{sys.executable} spike/05_nnsight_probe.py {phase} --model {MODEL} {extra}", cwd=ROOT, env=env, check=False)
 
 
+def phase_stop():
+    """Stop the services named in MESOCOSM_STOP (comma separated; default all). `serve` then
+    restarts whatever is missing, so stop+serve is the restart path."""
+    for name in os.environ.get("MESOCOSM_STOP", "vllm,gateway,opencode").split(","):
+        stop(name.strip())
+    time.sleep(5)
+    sh("nvidia-smi --query-gpu=memory.used --format=csv")
+
+
 def phase_collect():
     for name in ("vllm", "gateway", "opencode"):
         sh(f"tail -5 {LOGS}/{name}.log 2>/dev/null || true", check=False)
@@ -201,7 +212,8 @@ def phase_collect():
     sh(f"find {RUNS} -maxdepth 2 -type f | head -30")
 
 
-PHASES = {"setup": phase_setup, "serve": phase_serve, "drive": phase_drive, "probe": phase_probe, "collect": phase_collect}
+PHASES = {"setup": phase_setup, "serve": phase_serve, "drive": phase_drive, "probe": phase_probe,
+          "stop": phase_stop, "collect": phase_collect}
 phase = os.environ.get("MESOCOSM_PHASE", "")
 if phase not in PHASES:
     raise SystemExit(f"set MESOCOSM_PHASE to one of {sorted(PHASES)} (got {phase!r})")
