@@ -21,8 +21,8 @@ uv sync --extra dev --extra gateway
 # vLLM env (also used for the NNsight probe, which needs nnsight[vllm])
 uv venv .venv-vllm --python 3.12
 source .venv-vllm/bin/activate
-uv pip install vllm                       # record the version that resolves
-uv pip install "nnsight[vllm]" safetensors  # nnsight docs were tested on vLLM 0.27.1
+uv pip install "vllm==0.31.0"             # the version the Colab run validated
+uv pip install "nnsight>=0.8.0" "vllm==0.31.0" safetensors   # the vLLM wrapper worked on 0.31.0
 deactivate
 
 # OpenCode (host)
@@ -138,35 +138,36 @@ Record: job directory layout (where `reward.txt`, agent logs and `trajectory.jso
 
 Copy these into `docs/capability-matrix.md` with the evidence column pointing at files under `runs/spike/` (summaries only; do not commit run data).
 
-### Versions
+### Versions (Colab L4, 2026-10-17)
 
 | Component | Version | Notes |
 |---|---|---|
-| vLLM | | |
-| nnsight | | |
-| torch / CUDA | | |
-| OpenCode | | |
-| Harbor | | |
-| Docker | | |
+| vLLM | 0.31.0 | Python 3.13.15; pulled torch 2.13.0+cu130 |
+| nnsight | 0.8.0 | `nnsight[vllm]`; wrapper works on vLLM 0.31 |
+| torch / CUDA | 2.13.0+cu130 / 13.0 | driver 580.82.07 |
+| transformers | 5.17.0 | |
+| OpenCode | 1.19.3 | Node 20.19.0 |
+| Harbor | — | not run (no Docker on Colab) |
+| Docker | — | not run (no Docker on Colab) |
 
 ### Checks
 
 | # | Check | Result | Evidence |
 |---|---|---|---|
-| 1 | vLLM serves the 3B model with the hermes tool parser | | |
-| 2 | Gateway proxies streaming and non-streaming requests | | |
-| 2 | `return_token_ids` accepted; prompt/completion ids in records | | |
-| 3 | OpenCode accepts the custom provider and headers | | |
-| 4 | Task completes with tool calls; every call tagged agent-1 | | |
-| 4 | Budget exhaustion returns 429 and is recorded | | |
-| 5 | `nnsight.modeling.vllm` imports and traces the 3B model | | |
-| 5 | Transformers vs vLLM activations: rel-L2 / cosine | | |
-| 5 | Capture overhead ratio | | |
-| 6 | Agent container: no HTTPS / raw-IP / ICMP egress | | |
-| 6 | External DNS resolution from the sandbox | | |
-| 6 | Agent reaches gateway only; not the inference server | | |
-| 7 | Harbor task runs; job layout understood | | |
-| 7 | Harbor `opencode` agent reaches the gateway | | |
+| 1 | vLLM serves the small model with the hermes tool parser | pass for `Qwen3-4B-Instruct-2507` and `Qwen2.5-3B-Instruct`; **fail** for `Qwen2.5-Coder-3B-Instruct` (fenced JSON, no tags); `--max-model-len` must be ≥ 32768 | #1 |
+| 2 | Gateway proxies streaming and non-streaming requests | pass; error bodies of streaming requests were lost before 573835c | #2 |
+| 2 | `return_token_ids` accepted; prompt/completion ids in records | pass (streaming and non-streaming) | #2 |
+| 3 | OpenCode accepts the custom provider and headers | pass; 15 event types observed | #3 |
+| 4 | Task completes with tool calls; every call tagged agent-1 | pass with the 4B model (2 calls, 9.9 s, hello.py + NOTES.md); 3B models did not complete | #4 |
+| 4 | Budget exhaustion returns 429 and is recorded | pass; receipt returned; OpenCode surfaces `session.error`; a request budget also stopped a 200-request compaction loop | #4, #2 |
+| 5 | `nnsight.modeling.vllm` imports and traces the model | pass (48 s engine build, 0.87 s trace) | #5 |
+| 5 | Transformers vs vLLM activations: rel-L2 / cosine | rel-L2 mean 0.020, max 0.029; cosine min 0.9996 (after cloning served values) | #5 |
+| 5 | Capture overhead ratio | 1.48× at batch 1, eager | #5 |
+| 6 | Agent container: no HTTPS / raw-IP / ICMP egress | not run (workstation) | |
+| 6 | External DNS resolution from the sandbox | not run (workstation) | |
+| 6 | Agent reaches gateway only; not the inference server | not run (workstation) | |
+| 7 | Harbor task runs; job layout understood | not run (workstation) | |
+| 7 | Harbor `opencode` agent reaches the gateway | not run (workstation) | |
 
 ### Decisions this spike feeds
 

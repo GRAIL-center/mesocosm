@@ -201,3 +201,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Serve OpenCode agents with `--max-model-len` ≥ 32768: OpenCode's system prompt + 11 tool schemas is ~10.8k tokens and it requests 8192 output tokens; at 16k vLLM 400s every request and OpenCode loops on compaction (issue #2).
 - Use `Qwen/Qwen3-4B-Instruct-2507` for smoke tests; `Qwen2.5-Coder-3B-Instruct` writes fenced JSON instead of `<tool_call>` tags and never triggers a tool (ADR-0007).
 - Colab: the first `colab exec` after a `colab upload` hangs; retry once. The runtime proxy owns port 8080 inside the VM. `/content/mesocosm` shadows the installed package unless `src` is put first on `sys.path`.
+- NNsight vLLM traces: `.clone().save()` every served value (they are views that later layers overwrite in place), and put no Python control flow inside the `with model.trace(...)` body; save tuple halves by index.

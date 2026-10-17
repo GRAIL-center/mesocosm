@@ -20,10 +20,10 @@ gateway = [
   "uvicorn[standard]>=0.30",
 ]
 observe = [
-  # torch/transformers/nnsight versions are pinned once spike 05 settles them.
-  "torch>=2.4",
-  "transformers>=4.45",
-  "nnsight>=0.4",
+  # Lower bounds are the versions the Colab spike validated (issue #5); vLLM is installed separately.
+  "torch>=2.13",
+  "transformers>=5.17",
+  "nnsight>=0.8.0",
   "safetensors>=0.4",
   "numpy>=1.26",
 ]

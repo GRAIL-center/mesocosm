@@ -36,10 +36,10 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 | OpenAI-compatible serving with automatic tool calls (`hermes` parser) | supported for `Qwen3-4B-Instruct-2507` and `Qwen2.5-3B-Instruct`; **unsupported** for `Qwen2.5-Coder-3B-Instruct` (emits fenced JSON, no tags) | Colab L4 2026-10-17, #1 |
 | Context length for OpenCode agents | `--max-model-len 32768` required (prompt is 10.8k tokens + 8192 output) | Colab L4 2026-10-17, #1, #2 |
 | Return prompt/completion token ids in responses (`return_token_ids`) | supported, streaming and non-streaming | Colab L4 2026-10-17, #2 |
-| Capture activations through NNsight's vLLM wrapper | unverified | spike 05 (#5) |
-| Capture activations through transformers for the same tokens | unverified | spike 05 (#5) |
-| Recompute activations from recorded tokens; difference within tolerance | unverified | spike 05 (#5) |
-| Capture overhead (latency, VRAM) | unverified | spike 05 (#5) |
+| Capture activations through NNsight's vLLM wrapper | supported on vLLM 0.31 / NNsight 0.8 (own in-process engine, not a hook into `vllm serve`); values must be cloned inside the trace | Colab L4 2026-10-17, #5 |
+| Capture activations through transformers for the same tokens | supported; teacher-forced greedy reproduces the recorded completion exactly (agreement 1.0 at temperature 0) | Colab L4 2026-10-17, #5 |
+| Recompute activations from recorded tokens; difference within tolerance | supported across engines at bf16 level: rel-L2 mean 0.020 / max 0.029, cosine ≥ 0.9996, last-logit argmax equal. Same-engine (wrapper vs wrapper) recompute not yet measured | Colab L4 2026-10-17, #5 |
+| Capture overhead (latency, VRAM) | measured: trace 0.87 s vs plain generate 0.59 s (1.48×) at batch 1, eager; transformers path 7.6 GB VRAM for the 4B model | Colab L4 2026-10-17, #5 |
 
 ## Conditions
 
