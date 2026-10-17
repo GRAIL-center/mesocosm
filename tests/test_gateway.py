@@ -55,6 +55,9 @@ def fake_upstream() -> FastAPI:
     async def chat(request: Request):
         body = await request.json()
         up.state.requests.append({"headers": dict(request.headers), "body": body})
+        if body.get("max_tokens", 0) > 1000:
+            return JSONResponse(status_code=400, content={"error": {"message": "This model's maximum context length "
+                                                                    "is 16384 tokens.", "type": "BadRequestError"}})
         if body.get("stream"):
             async def gen():
                 yield b'data: {"id":"s1","choices":[{"index":0,"delta":{"content":"ok"},"token_ids":[7]}],"prompt_token_ids":[1,2]}\n\n'
@@ -112,6 +115,15 @@ async def test_streaming_passes_bytes_through_and_collapses_the_log(gw):
     assert rec["response"]["content"] == "ok" and rec["response"]["token_ids"] == [7]
     assert rec["response"]["prompt_token_ids"] == [1, 2]
     assert rec["usage_total"]["completion_tokens"] == 1
+
+
+async def test_upstream_error_body_is_kept_for_streaming_requests(gw):
+    app, up, client, tmp_path = gw
+    r = await client.post("/v1/chat/completions", headers={"X-Mesocosm-Agent": "agent-3"},
+                          json={"model": "m", "stream": True, "max_tokens": 8192, "messages": []})
+    assert r.status_code == 400
+    rec = _records(tmp_path)[-1]
+    assert rec["status"] == 400 and "maximum context length" in rec["response"]["raw"]
 
 
 async def test_budget_exhaustion_is_explicit_and_recorded(gw):

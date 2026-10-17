@@ -289,7 +289,9 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                         yield chunk
                 finally:
                     await upstream.aclose()
-                    parsed = parse_sse(b"".join(chunks).decode("utf-8", "replace"))
+                    raw = b"".join(chunks).decode("utf-8", "replace")
+                    # An error status carries a JSON body, not an event stream: keep it verbatim.
+                    parsed = parse_sse(raw) if upstream.status_code < 400 else {"raw": raw[:4000]}
                     gw.add_usage(agent, parsed.get("usage"))
                     gw.log({**base, "event": "chat_completion", "stream": True, "status": upstream.status_code,
                             "latency_ms": round((time.time() - t0) * 1000), "request": body,
