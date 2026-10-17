@@ -64,4 +64,4 @@ uv sync --extra observe            # torch, transformers, nnsight
 
 ## Contributing
 
-Decisions are recorded as ADRs in `docs/adr/`. Each adapter and each controllable condition has a row in `docs/capability-matrix.md` stating whether it is supported, unsupported or unverified, with the evidence. Work is tracked as GitHub milestones M0–M8.
+Read [`AGENTS.md`](AGENTS.md) first; it is the operating contract for coding agents and people alike (`CLAUDE.md` is a symlink to it). Decisions are recorded as ADRs in `docs/adr/`. Each adapter and each controllable condition has a row in `docs/capability-matrix.md` stating whether it is supported, unsupported or unverified, with the evidence. Work is tracked as GitHub milestones M0–M8.
