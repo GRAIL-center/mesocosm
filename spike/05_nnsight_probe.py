@@ -88,7 +88,8 @@ def phase_hf(args) -> None:
     print(f"[hf] prompt provenance: {provenance}")
 
     t0 = time.time()
-    model = NNModel(args.model, dispatch=True, torch_dtype=torch.bfloat16, device_map="cuda")
+    dtype = torch.float16 if args.dtype == "half" else torch.bfloat16
+    model = NNModel(args.model, dispatch=True, torch_dtype=dtype, device_map="cuda")
     print(f"[hf] model loaded in {time.time() - t0:.1f}s")
     layers = model.model.layers
     L = args.layer if args.layer is not None else len(layers) // 2
@@ -154,7 +155,7 @@ def phase_vllm(args) -> None:
 
     t0 = time.time()
     model = VLLM(args.model, dispatch=True, gpu_memory_utilization=args.gpu_mem,
-                 max_model_len=args.max_model_len, dtype="bfloat16")
+                 max_model_len=args.max_model_len, dtype=args.dtype)
     print(f"[vllm] engine built in {time.time() - t0:.1f}s")
     L = args.layer if args.layer is not None else len(model.model.layers) // 2
 
@@ -236,6 +237,8 @@ def main() -> None:
     ap.add_argument("--out", default="runs/spike/activations")
     ap.add_argument("--max-tokens", type=int, default=16)
     ap.add_argument("--gpu-mem", type=float, default=0.6, help="vLLM gpu_memory_utilization")
+    ap.add_argument("--dtype", choices=["bfloat16", "half"], default="bfloat16",
+                    help="half on pre-Ampere GPUs such as the T4")
     ap.add_argument("--max-model-len", type=int, default=16384)
     args = ap.parse_args()
     {"hf": phase_hf, "vllm": phase_vllm, "compare": phase_compare}[args.phase](args)
