@@ -198,3 +198,6 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - NNsight's `VLLM` wrapper builds its own in-process engine; it does not hook a running `vllm serve`. Do not design capture around hooking the server.
 - vLLM's Qwen/Llama decoder layers output a `(hidden, residual)` pair whose sum is the residual stream; HF layers output a tuple whose `[0]` already is the residual stream. Normalize before comparing (`spike/05_nnsight_probe.py`).
+- Serve OpenCode agents with `--max-model-len` ≥ 32768: OpenCode's system prompt + 11 tool schemas is ~10.8k tokens and it requests 8192 output tokens; at 16k vLLM 400s every request and OpenCode loops on compaction (issue #2).
+- Use `Qwen/Qwen3-4B-Instruct-2507` for smoke tests; `Qwen2.5-Coder-3B-Instruct` writes fenced JSON instead of `<tool_call>` tags and never triggers a tool (ADR-0007).
+- Colab: the first `colab exec` after a `colab upload` hangs; retry once. The runtime proxy owns port 8080 inside the VM. `/content/mesocosm` shadows the installed package unless `src` is put first on `sys.path`.

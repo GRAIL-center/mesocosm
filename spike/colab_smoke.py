@@ -28,7 +28,7 @@ RUNS = ROOT / "runs" / "spike"
 WORKSPACE = ROOT / "spike" / "workspace" / "agent-1"
 PIDS = pathlib.Path("/content/mesocosm-pids.json")
 LOGS = pathlib.Path("/content/mesocosm-logs")
-MODEL = os.environ.get("MESOCOSM_MODEL", "Qwen/Qwen2.5-Coder-3B-Instruct")
+MODEL = os.environ.get("MESOCOSM_MODEL", "Qwen/Qwen3-4B-Instruct-2507")  # ADR-0007
 REPO = os.environ.get("MESOCOSM_REPO", "https://github.com/GRAIL-center/mesocosm")
 API_KEY = "mesocosm-local"
 # Colab's own runtime proxy listens on 8080 inside the VM, so the gateway moves to 8081 here.

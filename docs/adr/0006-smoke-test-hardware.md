@@ -1,6 +1,6 @@
 # ADR-0006: Smoke tests run on a local RTX 3090 with a 3B model
 
-Status: accepted · Date: 2026-10-17
+Status: accepted · Date: 2026-10-17 · Model choice superseded by ADR-0007 (the spike showed the 3B Coder model cannot drive OpenCode's tools)
 
 ## Context
 

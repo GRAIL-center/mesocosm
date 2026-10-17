@@ -5,7 +5,7 @@ name: spike-world
 mode: comparison
 model:
   id: mesocosm-3b
-  hf_repo: Qwen/Qwen2.5-Coder-3B-Instruct
+  hf_repo: Qwen/Qwen3-4B-Instruct-2507
 gateway:
   url: http://127.0.0.1:8080
   agent_url: http://127.0.0.1:8080

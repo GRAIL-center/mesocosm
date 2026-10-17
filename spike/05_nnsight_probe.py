@@ -15,8 +15,8 @@ the exact token sequence is used; otherwise the messages are re-rendered with th
 chat template and the script says so, because a re-rendered prompt may differ from what vLLM saw.
 
 Usage (stop `vllm serve` first; both engines want the 3090):
-    python 05_nnsight_probe.py hf      --model Qwen/Qwen2.5-Coder-3B-Instruct --layer 18
-    python 05_nnsight_probe.py vllm    --model Qwen/Qwen2.5-Coder-3B-Instruct --layer 18
+    python 05_nnsight_probe.py hf      --model Qwen/Qwen3-4B-Instruct-2507 --layer 18
+    python 05_nnsight_probe.py vllm    --model Qwen/Qwen3-4B-Instruct-2507 --layer 18
     python 05_nnsight_probe.py compare
 
 Record in SPIKE.md: install pins that worked, shapes, agreement rate, diff stats, timings.
@@ -231,7 +231,7 @@ def phase_compare(args) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("phase", choices=["hf", "vllm", "compare"])
-    ap.add_argument("--model", default="Qwen/Qwen2.5-Coder-3B-Instruct")
+    ap.add_argument("--model", default="Qwen/Qwen3-4B-Instruct-2507")
     ap.add_argument("--layer", type=int, default=None, help="decoder layer index (default: middle)")
     ap.add_argument("--gateway-log", default="runs/spike/gateway.jsonl")
     ap.add_argument("--out", default="runs/spike/activations")

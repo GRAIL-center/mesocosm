@@ -1,6 +1,8 @@
 # M0 spike runbook
 
-Goal: before writing the platform, find out which of our riskiest assumptions hold on one workstation. Hardware: one RTX 3090 (24 GB), Docker, Python 3.11/3.12. Model: `Qwen/Qwen2.5-Coder-3B-Instruct` (ADR-0006).
+Goal: before writing the platform, find out which of our riskiest assumptions hold on one workstation. Hardware: one RTX 3090 (24 GB), Docker, Python 3.11–3.13. Model: `Qwen/Qwen3-4B-Instruct-2507` (ADR-0007; the 3B Coder model from ADR-0006 cannot drive OpenCode's tools).
+
+Steps 1–5 were run on a Colab L4 on 2026-10-17 with `spike/colab_smoke.py`; results are in issues #1–#5 and `docs/capability-matrix.md`. Steps 6–7 (Docker isolation, Harbor) still need the workstation.
 
 Order follows risk. Day 1 is host-only (no Docker). Day 2 adds the isolation topology and Harbor. Fill the result tables at the bottom as you go; they become the first evidence rows of `docs/capability-matrix.md`.
 
@@ -97,8 +99,8 @@ Stop `vllm serve` (both engines want the GPU). Then, in the vLLM env:
 
 ```bash
 source .venv-vllm/bin/activate
-python spike/05_nnsight_probe.py hf      --model Qwen/Qwen2.5-Coder-3B-Instruct
-python spike/05_nnsight_probe.py vllm    --model Qwen/Qwen2.5-Coder-3B-Instruct --gpu-mem 0.6
+python spike/05_nnsight_probe.py hf      --model Qwen/Qwen3-4B-Instruct-2507
+python spike/05_nnsight_probe.py vllm    --model Qwen/Qwen3-4B-Instruct-2507 --gpu-mem 0.6
 python spike/05_nnsight_probe.py compare
 ```
 

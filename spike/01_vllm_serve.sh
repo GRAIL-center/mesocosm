@@ -8,7 +8,7 @@
 # points at http://127.0.0.1:8000; OpenCode never talks to this port directly.
 set -euo pipefail
 
-MODEL="${MESOCOSM_MODEL:-Qwen/Qwen2.5-Coder-3B-Instruct}"
+MODEL="${MESOCOSM_MODEL:-Qwen/Qwen3-4B-Instruct-2507}"   # ADR-0007
 SERVED_NAME="${MESOCOSM_SERVED_NAME:-mesocosm-3b}"
 PORT="${MESOCOSM_VLLM_PORT:-8000}"
 API_KEY="${VLLM_API_KEY:-mesocosm-local}"
@@ -16,10 +16,11 @@ MAX_LEN="${MESOCOSM_MAX_MODEL_LEN:-32768}"
 GPU_UTIL="${MESOCOSM_GPU_UTIL:-0.85}"
 
 # Tool-call parser per model family (vLLM docs/features/tool_calling.md):
-#   Qwen2.5-*            -> hermes   (tool template ships in tokenizer_config.json)
+#   Qwen2.5-*, Qwen3-*   -> hermes   (tool template ships in tokenizer_config.json)
 #   Llama-3.2-*-Instruct -> pythonic + examples/tool_chat_template_llama3.2_pythonic.jinja
+# Note: Qwen2.5-Coder-3B emits fenced JSON instead of <tool_call> tags and does not work (ADR-0007).
 case "$MODEL" in
-  Qwen/Qwen2.5-*) PARSER_ARGS=(--tool-call-parser hermes) ;;
+  Qwen/Qwen2.5-*|Qwen/Qwen3-*) PARSER_ARGS=(--tool-call-parser hermes) ;;
   meta-llama/Llama-3.2-*)
     TEMPLATE="${MESOCOSM_CHAT_TEMPLATE:?set MESOCOSM_CHAT_TEMPLATE to vllm/examples/tool_chat_template_llama3.2_pythonic.jinja}"
     PARSER_ARGS=(--tool-call-parser pythonic --chat-template "$TEMPLATE") ;;
