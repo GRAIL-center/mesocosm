@@ -17,8 +17,8 @@ name: mesocosm-spike
 services:
   gateway:
     build:
-      context: ..
-      dockerfile: docker/Dockerfile.gateway
+      context: ../..
+      dockerfile: spike/docker/Dockerfile.gateway
     networks: [sandbox, edge]
     extra_hosts:
       - "host.docker.internal:host-gateway"
