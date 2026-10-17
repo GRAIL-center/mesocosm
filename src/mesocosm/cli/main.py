@@ -1,43 +1,121 @@
-"""`mesocosm` command line. Every command accepts --json and prints exactly one JSON object
-on stdout in that mode (docs/operation-contract.md). This is the M1 skeleton; verbs are
-added as their implementations land."""
+"""`mesocosm` command line. Every command accepts --json and then prints exactly one JSON object
+on stdout; logs go to stderr (docs/operation-contract.md)."""
 
 from __future__ import annotations
 
+import asyncio
 import json
+import pathlib
 import sys
+from importlib.metadata import PackageNotFoundError, version
 
 import typer
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Mesocosm research world")
+world_app = typer.Typer(no_args_is_help=True, help="World manifests")
+env_app = typer.Typer(no_args_is_help=True, help="Sandbox environment")
+app.add_typer(world_app, name="world")
+app.add_typer(env_app, name="env")
 
-VERSION = "0.0.1"
+JSON_OPT = typer.Option(False, "--json", help="Print one JSON object on stdout")
 
 
-def _emit(payload: dict, as_json: bool) -> None:
+def _version() -> str:
+    try:
+        return version("mesocosm")
+    except PackageNotFoundError:
+        return "0.0.0+local"
+
+
+def _emit(payload: dict, as_json: bool, ok: bool = True) -> None:
     if as_json:
         sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
     else:
         for k, v in payload.items():
             typer.echo(f"{k}: {v}")
+    if not ok:
+        raise typer.Exit(code=1)
 
 
 @app.command()
-def version(json_: bool = typer.Option(False, "--json")) -> None:
+def version_cmd(json_: bool = JSON_OPT) -> None:
     """Print the platform version."""
-    _emit({"mesocosm": VERSION}, json_)
+    _emit({"mesocosm": _version()}, json_)
+
+
+app.command(name="version")(version_cmd)
 
 
 @app.command()
-def capabilities(json_: bool = typer.Option(False, "--json")) -> None:
+def capabilities(json_: bool = JSON_OPT) -> None:
     """List adapters and their verification status (see docs/capability-matrix.md)."""
-    payload = {
+    _emit({
         "harness_adapters": {"opencode": "unverified"},
         "task_adapters": {"harbor": "unverified"},
         "observers": {"nnsight_vllm": "unverified", "nnsight_transformers": "unverified"},
+        "conditions": {"budget": "unverified (gateway)"},
         "note": "Statuses change only with evidence recorded in docs/capability-matrix.md",
-    }
-    _emit(payload, json_)
+    }, json_)
+
+
+@world_app.command("validate")
+def world_validate(manifest: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Check a manifest without running it: errors, warnings, resolved versions, digest."""
+    from mesocosm.core.manifest import validate_manifest
+
+    report = validate_manifest(manifest)
+    _emit(report.model_dump(mode="json"), json_, ok=report.ok)
+
+
+@env_app.command("compose")
+def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "--out"),
+                run_label: str = typer.Option("spike-docker", "--run-label"),
+                vllm_port: int = typer.Option(8000, "--vllm-port"), json_: bool = JSON_OPT) -> None:
+    """Render the sandbox Compose topology for a manifest (agents on the internal network only)."""
+    from mesocosm.core.manifest import load_manifest
+    from mesocosm.env.compose import compose_yaml
+
+    text = compose_yaml(load_manifest(manifest), repo_root=pathlib.Path.cwd(), run_label=run_label,
+                        vllm_port=vllm_port)
+    if out:
+        out.write_text(text)
+        _emit({"written": str(out), "run_label": run_label}, json_)
+    elif json_:
+        _emit({"compose": text, "run_label": run_label}, json_)
+    else:
+        sys.stdout.write(text)
+
+
+@app.command()
+def run(manifest: pathlib.Path,
+        runs_root: pathlib.Path = typer.Option(pathlib.Path("runs"), "--runs-root"),
+        compose_file: pathlib.Path = typer.Option(pathlib.Path("spike/docker/compose.yml"), "--compose-file",
+                                                  help="Compose file whose agent services are named after agent ids"),
+        workspace_root: pathlib.Path = typer.Option(pathlib.Path("spike/workspace"), "--workspace-root"),
+        verifier_image: str = typer.Option("debian:bookworm-slim", "--verifier-image"),
+        json_: bool = JSON_OPT) -> None:
+    """Run a world end to end: validate, egress check, budgets, tasks, verifier, run bundle."""
+    from mesocosm.adapters.opencode.client import OpenCodeClient
+    from mesocosm.core.manifest import load_manifest, validate_manifest
+    from mesocosm.core.run import Components, DockerVerifier, run_world
+    from mesocosm.env.egress import DockerEgressVerifier
+    from mesocosm.gateway.client import GatewayAdmin
+
+    report = validate_manifest(manifest)
+    if not report.ok:
+        _emit({"status": "invalid_manifest", "errors": report.errors}, json_, ok=False)
+    spec = load_manifest(manifest)
+    components = Components(
+        harness_for=lambda a: OpenCodeClient(a.harness_url()),
+        gateway=GatewayAdmin(spec.gateway.url),
+        egress=DockerEgressVerifier(compose_file),
+        verifier=DockerVerifier(verifier_image),
+        workspace_for=lambda a: workspace_root / a.id,
+    )
+    result = asyncio.run(run_world(spec, manifest.resolve(), components, runs_root))
+    _emit({"run_id": result.run_id, "status": result.status, "bundle": str(result.bundle_path),
+           "rewards": result.rewards, "warnings": report.warnings, "error": result.error},
+          json_, ok=result.status == "ok")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,13 @@ Project proposal: see the Mesocosm proposal (Google Doc, GRAIL Slack channel). T
 
 ## Status
 
-Pre-alpha. We are at **M0 (spike)**: validating the riskiest technical assumptions on a single workstation before writing the platform. See [`spike/SPIKE.md`](spike/SPIKE.md) and [`docs/milestones.md`](docs/milestones.md).
+Pre-alpha. The M1 vertical slice is implemented and tested against fakes (manifest validation, gateway with budgets and receipts, OpenCode and Harbor adapters, run bundle, run manager, Compose topology). Nothing has run on real hardware yet: **M0 (spike)** validates the riskiest assumptions on a single workstation, and every capability stays `unverified` until it does. See [`spike/SPIKE.md`](spike/SPIKE.md), [`docs/milestones.md`](docs/milestones.md) and [`docs/capability-matrix.md`](docs/capability-matrix.md).
+
+```bash
+uv run mesocosm world validate examples/spike-world.yaml --json   # check a manifest
+uv run mesocosm env compose examples/spike-world.yaml              # render the sandbox topology
+uv run mesocosm run examples/spike-world.yaml --json               # needs vLLM, the gateway and the Compose sandbox up
+```
 
 ## What the platform does (target)
 

@@ -171,7 +171,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 ### Conventions specific to this repo
 - Naming: identifiers are always `run_id`, `agent_id`, `step`, `request_id`; status words are exactly `supported` / `unsupported` / `unverified`.
-- Import style: stdlib, third-party, local groups (ruff `I`); line length 100; ruff rule set `E F I UP B`.
+- Import style: stdlib, third-party, local groups (ruff `I`); line length 120; ruff rule set `E F I UP B`.
 - Error handling pattern: a condition the platform cannot enforce fails explicitly with a typed error (`rejected_unsupported`, `rejected_budget`, ...). There is no `approximated` result. Gateway errors to the harness are OpenAI-style `{"error": {"type": "mesocosm_*"}}`.
 - Testing pattern and framework: pytest; pure functions (SSE collapsing, budget logic) get unit tests; GPU and Docker steps are verified by the runbook with results recorded in `docs/capability-matrix.md`, not by CI.
 - Every CLI command accepts `--json` and then prints exactly one JSON object on stdout; logs go to stderr.

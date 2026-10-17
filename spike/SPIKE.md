@@ -85,6 +85,8 @@ uv run python spike/04_drive_opencode.py --url http://127.0.0.1:4096 --out runs/
 
 Expected: the task completes with tool calls (bash/edit), `opencode_events.jsonl` fills up, and the gateway table lists every model request with message counts, tool names and token usage. The last block prints the system prompt the model actually received.
 
+The same path through the control plane (manifest → egress check → budgets → task → verifier → run bundle) is `uv run mesocosm run examples/spike-world.yaml --json`; it needs the Docker topology of step 6 because it refuses to start without a passing egress check.
+
 Record: number of model calls for the task; tool-call success (did `hello.py` and `NOTES.md` appear in the workspace?); whether all calls carry `X-Mesocosm-Agent: agent-1`; event types seen; any permission stalls (if a request waits on a permission, `POST /session/{id}/permissions/{permissionID}` answers it; `"permission": "allow"` in opencode.json should prevent it).
 
 Then exhaust the budget on purpose: restart the gateway with `{"agent-1": {"completion_tokens": 500}}`, run step 4 again, and confirm the 429 appears in `gateway.jsonl` as `budget_exhausted` and that OpenCode surfaces an error instead of hanging. This is the first enforcement-point receipt.

@@ -45,11 +45,14 @@ build-backend = "hatchling.build"
 packages = ["src/mesocosm"]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
 
 [tool.ruff.lint.per-file-ignores]
 # Spike scripts and tests carry long literal payloads (SSE fixtures, JSON configs).
