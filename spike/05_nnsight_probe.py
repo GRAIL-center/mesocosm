@@ -170,14 +170,21 @@ def phase_vllm(args) -> None:
     L = args.layer if args.layer is not None else len(model.model.layers) // 2
 
     t0 = time.time()
+    # Served values are views into engine memory that later layers overwrite in place (vLLM's
+    # fused add+RMSNorm mutates `residual`); clone inside the trace or the saved tensors are garbage.
     with model.trace(prompt_text, temperature=0.0, top_p=1, max_tokens=args.max_tokens):
-        layer_out = model.model.layers[L].output.save()
+        out = model.model.layers[L].output
+        if isinstance(out, tuple | list):
+            parts = [p.clone().save() for p in out]
+        else:
+            parts = [out.clone().save()]
         logits = model.logits.save()
         samples = model.samples.save()
     trace_s = time.time() - t0
 
     import torch
 
+    layer_out = tuple(parts) if len(parts) > 1 else parts[0]
     hidden = _residual_from_layer_output(layer_out).detach().float().cpu()   # prefill: [P, d]
     logits = logits.detach().float().cpu()
     samples_l = [int(x) for x in torch.as_tensor(samples).flatten().tolist()]  # served as [steps, n]
