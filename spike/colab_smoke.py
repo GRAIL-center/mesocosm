@@ -18,7 +18,6 @@ The script is sent as code (no __file__); everything lives under /content/mesoco
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 import time
@@ -32,6 +31,9 @@ LOGS = pathlib.Path("/content/mesocosm-logs")
 MODEL = os.environ.get("MESOCOSM_MODEL", "Qwen/Qwen2.5-Coder-3B-Instruct")
 REPO = os.environ.get("MESOCOSM_REPO", "https://github.com/GRAIL-center/mesocosm")
 API_KEY = "mesocosm-local"
+# Colab's own runtime proxy listens on 8080 inside the VM, so the gateway moves to 8081 here.
+GATEWAY_PORT = 8081
+GATEWAY = f"http://127.0.0.1:{GATEWAY_PORT}"
 
 
 def sh(cmd, check=True, cwd=None, env=None, quiet=False):
@@ -117,26 +119,34 @@ def phase_setup():
 
 
 def phase_serve():
+    """Idempotent: a service that already answers its health check is left running."""
     dtype = gpu_dtype()
     RUNS.mkdir(parents=True, exist_ok=True)
-    start("vllm", ["vllm", "serve", MODEL, "--host", "127.0.0.1", "--port", "8000",
-                   "--served-model-name", "mesocosm-3b", "--api-key", API_KEY, "--dtype", dtype,
-                   "--max-model-len", "16384", "--gpu-memory-utilization", "0.85",
-                   "--enable-auto-tool-choice", "--tool-call-parser", "hermes"])
-    wait_for("http://127.0.0.1:8000/v1/models", 900, {"Authorization": f"Bearer {API_KEY}"}, "vLLM")
+    auth = {"Authorization": f"Bearer {API_KEY}"}
+    if not http_ok("http://127.0.0.1:8000/v1/models", auth):
+        start("vllm", ["vllm", "serve", MODEL, "--host", "127.0.0.1", "--port", "8000",
+                       "--served-model-name", "mesocosm-3b", "--api-key", API_KEY, "--dtype", dtype,
+                       "--max-model-len", "16384", "--gpu-memory-utilization", "0.85",
+                       "--enable-auto-tool-choice", "--tool-call-parser", "hermes"])
+        wait_for("http://127.0.0.1:8000/v1/models", 900, auth, "vLLM")
     sh("nvidia-smi --query-gpu=memory.used --format=csv")
 
-    env = dict(os.environ, MESOCOSM_UPSTREAM="http://127.0.0.1:8000", MESOCOSM_LOG_DIR=str(RUNS),
-               MESOCOSM_RETURN_TOKEN_IDS="1",
-               MESOCOSM_BUDGET_JSON=json.dumps({"agent-1": {"completion_tokens": 40000, "requests": 200}}))
-    start("gateway", [sys.executable, "-m", "mesocosm.gateway"], cwd=ROOT, env=env)
-    wait_for("http://127.0.0.1:8080/mesocosm/health", 60, label="gateway")
+    if not http_ok(f"{GATEWAY}/mesocosm/health"):
+        env = dict(os.environ, MESOCOSM_UPSTREAM="http://127.0.0.1:8000", MESOCOSM_LOG_DIR=str(RUNS),
+                   MESOCOSM_RETURN_TOKEN_IDS="1", MESOCOSM_GATEWAY_PORT=str(GATEWAY_PORT),
+                   MESOCOSM_BUDGET_JSON=json.dumps({"agent-1": {"completion_tokens": 40000, "requests": 200}}))
+        start("gateway", [sys.executable, "-m", "mesocosm.gateway"], cwd=ROOT, env=env)
+        wait_for(f"{GATEWAY}/mesocosm/health", 60, label="gateway")
 
-    WORKSPACE.mkdir(parents=True, exist_ok=True)
-    shutil.copy(ROOT / "spike" / "03_opencode.json", WORKSPACE / "opencode.json")
-    start("opencode", ["opencode", "serve", "--port", "4096"], cwd=WORKSPACE,
-          env=dict(os.environ, MESOCOSM_GATEWAY_KEY=API_KEY))
-    wait_for("http://127.0.0.1:4096/global/health", 120, label="OpenCode")
+    if not http_ok("http://127.0.0.1:4096/global/health"):
+        from mesocosm.adapters.opencode.client import render_opencode_config
+
+        WORKSPACE.mkdir(parents=True, exist_ok=True)
+        cfg = render_opencode_config(agent_id="agent-1", run_id="spike-host", gateway_url=GATEWAY,
+                                     model_id="mesocosm-3b", api_key=API_KEY, context_limit=16384)
+        (WORKSPACE / "opencode.json").write_text(json.dumps(cfg, indent=2))
+        start("opencode", ["opencode", "serve", "--port", "4096"], cwd=WORKSPACE)
+        wait_for("http://127.0.0.1:4096/global/health", 120, label="OpenCode")
     sh("curl -s http://127.0.0.1:4096/config/providers | python3 -c \"import json,sys;d=json.load(sys.stdin);"
        "print('providers:',[p.get('id') for p in d.get('providers',[])],'default:',d.get('default'))\"")
 
@@ -146,7 +156,7 @@ def phase_serve():
                        "tools": [{"type": "function", "function": {"name": "bash", "description": "run a shell command",
                                   "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}},
                                                  "required": ["cmd"]}}}]})
-    sh(f"curl -s http://127.0.0.1:8080/v1/chat/completions -H 'Authorization: Bearer {API_KEY}' "
+    sh(f"curl -s {GATEWAY}/v1/chat/completions -H 'Authorization: Bearer {API_KEY}' "
        f"-H 'X-Mesocosm-Agent: curl' -H 'X-Mesocosm-Run: spike-colab' -H 'Content-Type: application/json' "
        f"-d '{body}' | head -c 1500; echo")
     sh(f"tail -1 {RUNS}/gateway.jsonl | python3 -c \"import json,sys;r=json.load(sys.stdin)['response'];"
@@ -159,12 +169,12 @@ def phase_drive():
        cwd=ROOT)
     sh("ls -la spike/workspace/agent-1; cat spike/workspace/agent-1/NOTES.md 2>/dev/null | head -5", cwd=ROOT, check=False)
     # Budget exhaustion through the admin endpoint (a receipt), then the driver again -> expect 429 records.
-    sh("curl -s -X POST http://127.0.0.1:8080/mesocosm/budget -H 'Content-Type: application/json' "
+    sh(f"curl -s -X POST {GATEWAY}/mesocosm/budget -H 'Content-Type: application/json' "
        "-d '{\"agent_id\":\"agent-1\",\"budget\":{\"completion_tokens\":200},\"run_id\":\"spike-host\"}'; echo")
     sh(f"{sys.executable} spike/04_drive_opencode.py --url http://127.0.0.1:4096 --out runs/spike --run spike-host",
        cwd=ROOT, check=False)
     sh(f"grep -c '\"event\": \"budget_exhausted\"' {RUNS}/gateway.jsonl || echo 'no budget_exhausted record'")
-    sh("curl -s -X POST http://127.0.0.1:8080/mesocosm/budget -H 'Content-Type: application/json' "
+    sh(f"curl -s -X POST {GATEWAY}/mesocosm/budget -H 'Content-Type: application/json' "
        "-d '{\"agent_id\":\"agent-1\",\"budget\":{\"completion_tokens\":40000}}' >/dev/null")
 
 
