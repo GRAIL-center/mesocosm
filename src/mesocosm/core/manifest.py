@@ -148,8 +148,9 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
                           f"supported: {sorted(SUPPORTED_CONDITIONS)} (M3 adds more)")
     if manifest.channels:
         errors.append("rejected_unsupported: channels are not implemented until M2")
-    if manifest.mode == "persistent" and manifest.memory == "reset":
-        warnings.append("persistent mode with memory=reset: state is carried but agent memory is not")
+    if manifest.mode == "persistent":
+        errors.append("rejected_unsupported: mode 'persistent' needs the task stream and snapshot manager (M6); "
+                      "use mode: comparison")
     if manifest.observe.activations:
         warnings.append("observe.activations=true: capture route is unverified until M5 (ADR-0005)")
     if all(a.budget == Budget() for a in manifest.agents):

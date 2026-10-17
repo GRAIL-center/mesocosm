@@ -62,18 +62,27 @@ def test_duplicate_agents_and_missing_task_dir(tmp_path):
     assert "has no instruction.md" in report.errors[0]
 
 
-def test_warnings_for_persistent_reset_and_activations(tmp_path):
+def test_warnings_for_activations_and_missing_budget(tmp_path):
     data = _valid()
-    data["mode"] = "persistent"
     data["observe"] = {"activations": True}
     del data["agents"][0]["budget"]
     (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
     (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
     report = validate_manifest(_write(tmp_path, data))
     assert report.ok
-    assert any("persistent mode with memory=reset" in w for w in report.warnings)
     assert any("unverified until M5" in w for w in report.warnings)
     assert any("no agent has a budget" in w for w in report.warnings)
+
+
+def test_persistent_mode_is_rejected_until_m6(tmp_path):
+    data = _valid()
+    data["mode"] = "persistent"
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    report = validate_manifest(_write(tmp_path, data))
+    assert not report.ok
+    assert report.errors == ["rejected_unsupported: mode 'persistent' needs the task stream and snapshot manager (M6); "
+                             "use mode: comparison"]
 
 
 def test_not_a_mapping_is_an_error(tmp_path):
