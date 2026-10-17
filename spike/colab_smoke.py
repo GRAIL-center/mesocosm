@@ -96,9 +96,9 @@ def gpu_dtype():
 
 
 def phase_setup():
-    if ROOT.exists():
-        sh("git pull --ff-only", cwd=ROOT)
-    else:
+    # The repo is private: the control machine uploads a `git archive` tarball to /content/mesocosm
+    # before this phase. Clone only when nothing was uploaded.
+    if not ROOT.exists():
         sh(f"git clone --depth 1 {REPO} {ROOT}")
     sh("nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv")
     sh(f"{sys.executable} -m pip install -q vllm", quiet=True)
