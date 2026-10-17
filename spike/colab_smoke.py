@@ -139,6 +139,11 @@ def phase_serve():
         wait_for(f"{GATEWAY}/mesocosm/health", 60, label="gateway")
 
     if not http_ok("http://127.0.0.1:4096/global/health"):
+        # The kernel's cwd is /content, where the repo directory itself shadows the installed
+        # package as a namespace package; import from src explicitly.
+        sys.path.insert(0, str(ROOT / "src"))
+        for mod in [m for m in sys.modules if m == "mesocosm" or m.startswith("mesocosm.")]:
+            del sys.modules[mod]
         from mesocosm.adapters.opencode.client import render_opencode_config
 
         WORKSPACE.mkdir(parents=True, exist_ok=True)
