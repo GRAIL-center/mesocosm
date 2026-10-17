@@ -190,7 +190,9 @@ def phase_probe():
     stop("vllm")
     time.sleep(10)
     sh("nvidia-smi --query-gpu=memory.used --format=csv")
-    env = dict(os.environ, VLLM_USE_V2_MODEL_RUNNER="0")
+    # NNSIGHT_VLLM_CLONE_READS: served values are views into engine memory that later layers
+    # overwrite in place; the probe also clones inside the trace.
+    env = dict(os.environ, VLLM_USE_V2_MODEL_RUNNER="0", NNSIGHT_VLLM_CLONE_READS="1")
     # Probe the serve-phase curl record (170 prompt tokens, temperature 0), not an OpenCode request.
     run = os.environ.get("MESOCOSM_PROBE_RUN", "spike-colab")
     wanted = os.environ.get("MESOCOSM_PROBE_PHASES", "hf,vllm,compare").split(",")
