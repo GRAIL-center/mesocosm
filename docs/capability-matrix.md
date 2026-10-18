@@ -82,6 +82,30 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 
 Verifier results of the `world-channels` runs earlier the same day (before the memory policy) were contaminated by files earlier runs had left in the workspaces; with `reset`, the 4B agents completed `world-exchange` in 1 of 6 agent-runs across the scenario and in 2 of 2 in the chain's run of the same world. The platform results above do not depend on task completion.
 
+## Run lifecycle (ADR-0014)
+
+| Verb | Enforcement point | Status | Evidence |
+|---|---|---|---|
+| `mesocosm pause` / `resume` | gateway holds the run's chat requests (`MESOCOSM_MAX_HOLD_SECONDS`, 600 by default), then releases them | supported: a 20 s pause held one request for 16.5 s, resume released it, receipts `run.pause` / `run.resume` in the gateway log and the bundle; a hold past the limit returns `mesocosm_paused` (tests). Limit: pauses longer than the harness's turn timeout (900 s) end in an error | Colab L4 2026-10-18, persistent world `world-persistent`, snapshot `snap_1792310243976_5f2685`, fork run (M5/M6 issue); `tests/test_gateway.py`, `tests/test_control.py` |
+| `mesocosm stop` | gateway refuses the run's requests (`mesocosm_run_stopped`); the run manager ends between tasks on the stop marker | supported: 11 refused requests after the stop, both agents finished their current task, `run.stopped` recorded, status `stopped`, rewards kept | Colab L4 2026-10-18, persistent world `world-persistent`, snapshot `snap_1792310243976_5f2685`, fork run (M5/M6 issue); `tests/test_run_e2e.py` |
+
+## Persistent operation and snapshots (ADR-0015)
+
+| Capability | Status | Evidence |
+|---|---|---|
+| `mode: persistent`: one shared queue, manifest tasks first, then task directories appearing in `stream.dir`; one agent per task; limits and idle stop | supported: `board-exchange` went to agent-1, `stream-notes` dropped into the stream 25 s later went to agent-2; `task.assigned` and `stream.closed` recorded; both rewards 1.0 | Colab L4 2026-10-18, persistent world `world-persistent`, snapshot `snap_1792310243976_5f2685`, fork run (M5/M6 issue); `tests/test_run_e2e.py` |
+| Snapshot of the declared state (`mesocosm snapshot create`): workspaces, services data, shared directory, queue, manifest, sha256 per file, `coverage.json` with what was not captured | supported: 18 + 29 workspace files, `board.json` and the bare repositories, queue state with 2 finished tasks; not-captured list declared | Colab L4 2026-10-18, persistent world `world-persistent`, snapshot `snap_1792310243976_5f2685`, fork run (M5/M6 issue); `tests/test_snapshot.py` |
+| Restore verified by hash, fork into a new run with lineage (`mesocosm fork --edit`) | supported: restore of 66 files with 0 mismatches into a fresh stack, patched manifest (comparison mode, channels on, a new task), first boundary kept the restored workspaces (`restored_from` in the memory receipts), `lineage.json` written, rewards 1.0 | Colab L4 2026-10-18, persistent world `world-persistent`, snapshot `snap_1792310243976_5f2685`, fork run (M5/M6 issue); `tests/test_snapshot.py`, `tests/test_run_e2e.py` |
+
+## Activations (ADR-0016)
+
+| Capability | Status | Evidence |
+|---|---|---|
+| Recompute from recorded token ids, keyed by request id (`mesocosm activations capture`): per-layer norms for every request, raw tensors per policy | supported: 8 requests of `world-activations` (65,180 tokens) at layers 9/18/27 in 68 s (8.5 s per request, 955 tokens/s), peak VRAM 11.4 GB, greedy agreement with the recorded completions 0.997 mean / 0.976 min (the run sampled at the harness's default temperature) | Colab L4 2026-10-18, run `world-activations` (M5/M6 issue); `tests/test_activations.py` |
+| Recompute verification (`activations verify`) | supported with a stated tolerance: a second bfloat16 pass reproduced the first exactly (rel-L2 0.0); a float16 pass stayed within rel-L2 0.05 on the norms (worst 0.048 at layer 18) and 0.010–0.030 on the raw completion-position tensors, cosine ≥ 0.999, agreements equal; a float32 pass did not fit the L4 next to the 8k-token logits | Colab L4 2026-10-18 (M5/M6 issue) |
+| Capture inside the serving engine (`vllm serve`) | unsupported: NNsight's vLLM wrapper runs its own engine; recompute is the route | issue #5, ADR-0016 |
+| Capture overhead | measured: recompute costs 8.5 s per 8k-token request on an L4 after a 9 s model load; the serving run itself is unaffected (behavior-only by default) | Colab L4 2026-10-18 (M5/M6 issue) |
+
 ## Judge (ADR-0013)
 
 | Detector / verb | Status | Evidence |

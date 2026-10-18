@@ -69,3 +69,11 @@ async def test_resume_skips_finished_runs(tmp_path):
     resumed = await run_chain(load_plan(plan_path), plan_path, second, tmp_path / "chains", chain_id="c3", resume=True)
     assert second.calls == ["b.yaml"] and resumed["resumed"] is True
     assert [(r["status"], r.get("skipped", False)) for r in resumed["runs"]] == [("ok", True), ("ok", True), ("ok", False)]
+
+
+async def test_a_stopped_run_is_terminal_but_not_a_failure(tmp_path):
+    plan_path = plan_file(tmp_path, on_failure="stop")
+    fake = FakeRun(tmp_path / "runs", {"a.yaml": ["stopped"]})
+    summary = await run_chain(load_plan(plan_path), plan_path, fake, tmp_path / "chains", chain_id="c4")
+    assert [r["status"] for r in summary["runs"]] == ["stopped", "stopped", "ok"]
+    assert summary["stopped"] == 2 and summary["failed"] == 0 and fake.calls == ["a.yaml", "a.yaml", "b.yaml"]

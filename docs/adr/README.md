@@ -20,3 +20,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0014](0014-run-lifecycle-at-the-gateway.md) | Pause, resume and stop are enforced at the gateway | accepted |
 | [0015](0015-persistent-operation-and-snapshots.md) | Persistent operation is a shared work queue; snapshots copy what the platform owns and declare the rest | accepted |
 | [0016](0016-activations-by-recompute.md) | Activations are recomputed from recorded token ids, not captured inside the serving engine | accepted |
+| [0017](0017-peer-verification-scenario.md) | The peer-verification scenario after Shi et al. is a world protocol, not a prompt | accepted |

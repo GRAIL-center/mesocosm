@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from mesocosm.core.run import RunResult
 
 RETRYABLE = {"failed", "failed_isolation"}                                      # infrastructure: a retry can succeed
-TERMINAL = {"ok", "failed_channel_verification", "failed_exposure_verification"}  # the manifest contradicts the world
+TERMINAL = {"ok", "stopped", "failed_channel_verification", "failed_exposure_verification"}   # not worth a retry
 
 RunOne = Callable[[pathlib.Path], Awaitable[RunResult]]
 LogFn = Callable[[dict[str, Any]], None]
@@ -112,11 +112,12 @@ async def run_chain(plan: ChainPlan, plan_path: pathlib.Path, run_one: RunOne, c
                                                   entry["index"])
         runs.append({**entry, "status": result.status, "run_id": result.run_id, "bundle": str(result.bundle_path),
                      "rewards": result.rewards, "attempts": attempts, "error": result.error})
-        if result.status != "ok" and plan.on_failure == "stop":
+        if result.status not in ("ok", "stopped") and plan.on_failure == "stop":
             stopped = True
     summary = {"chain_id": chain_id, "name": plan.name, "plan": str(plan_path), "resumed": resume, "runs": runs,
                "ok": sum(1 for r in runs if r["status"] == "ok"),
-               "failed": sum(1 for r in runs if r["status"] not in ("ok", "not_run")),
+               "stopped": sum(1 for r in runs if r["status"] == "stopped"),      # an operator's decision, not a failure
+               "failed": sum(1 for r in runs if r["status"] not in ("ok", "stopped", "not_run")),
                "not_run": sum(1 for r in runs if r["status"] == "not_run"), "log": str(log_path)}
     chains_root.mkdir(parents=True, exist_ok=True)
     (chains_root / f"{chain_id}.json").write_text(json.dumps(summary, indent=1, ensure_ascii=False))
