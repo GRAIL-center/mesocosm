@@ -1,0 +1,9 @@
+# Peer verification after Shi et al. (ADR-0017), episode 8 of 10: each agent gets its own code-analysis
+# instance (agents/<id>/function.py); the verifier grades answer.txt against the instance's ground truth.
+[metadata]
+name = "ep08"
+difficulty = "easy"
+tags = ["peer-review", "code-analysis"]
+
+[verifier]
+timeout_sec = 60
