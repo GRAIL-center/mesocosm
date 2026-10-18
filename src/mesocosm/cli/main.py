@@ -308,6 +308,39 @@ def report(bundle: pathlib.Path,
     _emit(bundle_report(bundle, gpu_hour_cost), json_)
 
 
+def _lifecycle(bundle: pathlib.Path, gateway: str | None, verb: str, json_: bool, **kwargs) -> None:
+    from mesocosm.core import control
+    from mesocosm.gateway.client import GatewayAdmin
+
+    url = gateway or control.gateway_url_of(bundle)
+    fn = {"pause": control.pause_run, "resume": control.resume_run, "stop": control.stop_run}[verb]
+    receipt = asyncio.run(fn(bundle, GatewayAdmin(url), **kwargs))
+    _emit(receipt.model_dump(mode="json"), json_, ok=receipt.result == "applied")
+
+
+@app.command()
+def pause(bundle: pathlib.Path, agent_id: str = typer.Option(None, "--agent", help="Pause one agent only"),
+          reason: str = typer.Option(None, "--reason"),
+          gateway: str = typer.Option(None, "--gateway", help="Gateway URL; default: the bundle's manifest"),
+          json_: bool = JSON_OPT) -> None:
+    """Pause a running world: the gateway holds its model requests until `resume` (receipt in the bundle)."""
+    _lifecycle(bundle, gateway, "pause", json_, agent_id=agent_id, reason=reason)
+
+
+@app.command()
+def resume(bundle: pathlib.Path, agent_id: str = typer.Option(None, "--agent"),
+           gateway: str = typer.Option(None, "--gateway"), json_: bool = JSON_OPT) -> None:
+    """Release a paused world's held requests."""
+    _lifecycle(bundle, gateway, "resume", json_, agent_id=agent_id)
+
+
+@app.command()
+def stop(bundle: pathlib.Path, reason: str = typer.Option(None, "--reason"),
+         gateway: str = typer.Option(None, "--gateway"), json_: bool = JSON_OPT) -> None:
+    """Stop a running world: the gateway refuses its model requests and the run manager ends between tasks."""
+    _lifecycle(bundle, gateway, "stop", json_, reason=reason)
+
+
 @conditions_app.command("set")
 def conditions_set(bundle: pathlib.Path, agent_id: str, condition: str,
                    value: str = typer.Argument(..., help="JSON, e.g. '{\"completion_tokens\": 20000}'"),

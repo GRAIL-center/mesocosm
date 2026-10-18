@@ -269,3 +269,15 @@ def test_judge_flags_attach_to_agents_or_the_run():
     assert snap["agents"][0]["flags"] == [{"ts": 9.0, "kind": "protected_file_modified", "summary": "KEEP.md modified during t",
                                            "flag_id": "flag_1", "detector": "state_check"}]
     assert [f["flag_id"] for f in snap["run_flags"]] == ["flag_2"]
+
+
+def test_lifecycle_events_show_in_the_snapshot():
+    obs = Observer()
+    obs.apply_bundle_event(ev("run.paused", 1.0, None, reason="look"))
+    assert obs.snapshot()["paused"] is True
+    obs.apply_bundle_event(ev("run.resumed", 2.0, None, released=1))
+    obs.apply_bundle_event(ev("run.stop_requested", 3.0, None, reason="enough"))
+    snap = obs.snapshot()
+    assert snap["paused"] is False and snap["stop_requested"] is True and snap["status"] == "running"
+    obs.apply_bundle_event(ev("run.stopped", 4.0, "agent-1", before_task="second"))
+    assert obs.snapshot()["status"] == "stopped"

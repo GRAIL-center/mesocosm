@@ -26,6 +26,7 @@ from typing import Any, Protocol
 
 from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task
 from mesocosm.adapters.opencode.client import normalize_event
+from mesocosm.core.control import stop_requested
 from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, WorldManifest
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.core.records import RunBundle
@@ -171,6 +172,9 @@ async def _run_agent(manifest: WorldManifest, components: Components, bundle: Ru
     session_id: str | None = None
     try:
         for task in tasks:
+            if stop_requested(bundle.root):                 # `mesocosm stop`: finish between tasks, never mid-task
+                bundle.record("run.stopped", agent_id=agent.id, before_task=task.name)
+                break
             session_id = await _apply_memory_policy(manifest, bundle, agent, task, harness, workspace, session_id,
                                                     session_to_agent)
             if collector is None:
@@ -318,11 +322,12 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
         bundle.record("judge.flag", agent_id=flag.agent_id, flag_id=flag.flag_id, flag_kind=flag.kind,
                       summary=flag.summary, detector=flag.detector, detector_version=flag.detector_version)
 
-    bundle.write_summary({"status": "ok", "run_label": run_label, "rewards": rewards,
+    status = "stopped" if stop_requested(bundle.root) else "ok"
+    bundle.write_summary({"status": status, "run_label": run_label, "rewards": rewards,
                           "model_calls": sum(1 for r in exposure if r.get("event") == "chat_completion"),
                           "service_records": service_records, "flags": flag_counts(flags),
                           "agent_seconds": agent_seconds(events), "events": len(events) + len(flags)})
-    return RunResult(bundle.run_id, bundle.root, "ok", rewards)
+    return RunResult(bundle.run_id, bundle.root, status, rewards)
 
 
 def _json(obj: Any) -> str:

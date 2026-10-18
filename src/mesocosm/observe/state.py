@@ -176,6 +176,8 @@ class Observer:
         self.sessions: dict[str, SessionNode] = {}
         self.known_agents: set[str] = set()      # from manifest.json; empty = accept every caller
         self.run_flags: deque = deque(maxlen=FLAGS_MAX)   # judge flags not attributed to one agent
+        self.paused = False
+        self.stop_requested = False
         self.ignored_records = 0                 # gateway records from callers outside the manifest
         self._seen_requests: set[str] = set()
         self.interactions: deque = deque(maxlen=INTERACTIONS_MAX)   # who read whose writing, through which service
@@ -225,6 +227,14 @@ class Observer:
             pass
         elif kind in ("run.failed", "run.aborted"):
             self.status = "failed" if kind == "run.failed" else data.get("reason") or "aborted"
+        elif kind == "run.paused":
+            self.paused = True
+        elif kind == "run.resumed":
+            self.paused = False
+        elif kind == "run.stop_requested":
+            self.stop_requested = True
+        elif kind == "run.stopped":
+            self.status = "stopped"
         elif kind == "judge.flag":
             flag = {"ts": ts, "kind": data.get("flag_kind"), "summary": data.get("summary"),
                     "flag_id": data.get("flag_id"), "detector": data.get("detector")}
@@ -405,6 +415,7 @@ class Observer:
             "last_ts": self.last_ts, "ingested": self.ingested, "ignored_records": self.ignored_records,
             "service_records": self.service_records, "interactions": list(self.interactions),
             "run_conditions": self.run_conditions, "run_flags": list(self.run_flags),
+            "paused": self.paused, "stop_requested": self.stop_requested,
             "agents": agents,
             "sessions": {sid: n.to_dict() for sid, n in self.sessions.items()},
         }

@@ -233,7 +233,8 @@
     if (!state) return;
     $('#mode').textContent = frozen ? 'paused (scrubbing)' : (meta.mode === 'replay' ? `replay ×${meta.replay_speed}${meta.replay_done ? ' · finished' : ''}` : 'live');
     $('#runid').textContent = state.run_id || '–';
-    const rs = $('#runstatus'); rs.textContent = state.status; rs.className = 'badge ' + (state.status === 'running' ? 'busy' : state.status === 'ok' ? 'done' : 'error');
+    const rs = $('#runstatus'); rs.textContent = state.paused ? state.status + ' · paused' : state.stop_requested && state.status === 'running' ? 'stopping' : state.status;
+    rs.className = 'badge ' + (state.paused ? 'tool' : state.status === 'running' ? 'busy' : state.status === 'ok' ? 'done' : 'error');
     const chans = Object.entries(state.run_conditions || {}).filter(([k]) => k.startsWith('channel:')).map(([k, v]) => `${k.slice(8)} ${v.enabled ? 'on' : 'off'}`);
     const exposure = Object.entries((state.run_conditions?.exposure || {}).wiki || {}).map(([slug, s]) => `${slug} at +${s}s`);
     const nflags = (state.run_flags || []).length + state.agents.reduce((n, a) => n + (a.flags || []).length, 0);

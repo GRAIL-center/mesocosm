@@ -23,6 +23,21 @@ class GatewayAdmin:
         r.raise_for_status()
         return Receipt.model_validate(r.json())
 
+    async def _control(self, verb: str, **payload: Any) -> Receipt:
+        r = await self.client.post(f"/mesocosm/{verb}", json=payload)
+        r.raise_for_status()
+        return Receipt.model_validate(r.json())
+
+    async def pause(self, run: str, agent_id: str | None = None, reason: str | None = None,
+                    run_id: str | None = None) -> Receipt:
+        return await self._control("pause", run=run, agent_id=agent_id, reason=reason, run_id=run_id)
+
+    async def resume(self, run: str, agent_id: str | None = None, run_id: str | None = None) -> Receipt:
+        return await self._control("resume", run=run, agent_id=agent_id, run_id=run_id)
+
+    async def stop(self, run: str, run_id: str | None = None) -> Receipt:
+        return await self._control("stop", run=run, run_id=run_id)
+
     async def usage(self) -> dict[str, Any]:
         r = await self.client.get("/mesocosm/usage")
         r.raise_for_status()

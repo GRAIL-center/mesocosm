@@ -40,7 +40,7 @@ def fake_vllm() -> FastAPI:
 
 
 def fake_opencode(gateway: httpx.AsyncClient, agent_id: str, run_label: str,
-                  workspace: pathlib.Path | None = None) -> FastAPI:
+                  workspace: pathlib.Path | None = None, on_message=None) -> FastAPI:
     """An `opencode serve` stand-in whose assistant turn makes two model calls through the gateway and
     writes the file the task asks for into the workspace."""
     app = FastAPI()
@@ -59,6 +59,8 @@ def fake_opencode(gateway: httpx.AsyncClient, agent_id: str, run_label: str,
     @app.post("/session/{sid}/message")
     async def message(sid: str, request: Request):
         body = await request.json()
+        if on_message is not None:
+            on_message(body)
         await asyncio.sleep(0.05)                       # a model turn takes time; lets the other agents interleave
         hdr = {"X-Mesocosm-Agent": agent_id, "X-Mesocosm-Run": run_label}
         for i in range(2):
@@ -119,8 +121,11 @@ def world(tmp_path):
     gw_transport = httpx.ASGITransport(app=gw_app)
     gw_for_harness = httpx.AsyncClient(transport=gw_transport, base_url="http://gateway")
 
+    hooks = {"on_message": None}
+
     def harness_for(agent):
-        oc_app = fake_opencode(gw_for_harness, agent.id, "e2e", workspace=tmp_path / "ws" / agent.id)
+        oc_app = fake_opencode(gw_for_harness, agent.id, "e2e", workspace=tmp_path / "ws" / agent.id,
+                               on_message=hooks["on_message"])
         return OpenCodeClient(agent.harness_url(), transport=httpx.ASGITransport(app=oc_app))
 
     services_log = tmp_path / "services.jsonl"
@@ -134,6 +139,7 @@ def world(tmp_path):
                           egress=FakeEgress(egress_ok), verifier=FakeVerifier(),
                           workspace_for=lambda a: tmp_path / "ws" / a.id, services_log=services_log)
 
+    components.hooks = hooks
     return manifest, components, tmp_path
 
 
@@ -337,3 +343,23 @@ async def test_memory_carry_keeps_the_workspace_and_the_session(world):
     assert len(sessions) == 2 and sessions[0] == sessions[1]
     reward = next(e for e in bundle.events() if e.kind == "verifier.reward")
     assert reward.data["adapted"] is True and "memory_carried" in reward.data["reasons"]
+
+
+async def test_a_stop_request_ends_the_run_between_tasks(world):
+    manifest, components, tmp_path = world
+    manifest_path = two_tasks(tmp_path)
+    manifest.tasks = [TaskSpec(source="harbor", path="tasks/first"), TaskSpec(source="harbor", path="tasks/second")]
+    marker = tmp_path / "runs" / "run_stop" / "control" / "stop"
+
+    def stop_during_first(body):
+        marker.parent.mkdir(parents=True, exist_ok=True)      # `mesocosm stop` arrives while task one runs
+        marker.write_text("{}")
+
+    components.hooks["on_message"] = stop_during_first
+    result = await run_world(manifest, manifest_path, components(), tmp_path / "runs", run_id="run_stop")
+    assert result.status == "stopped" and list(result.rewards) == ["agent-1/first"]
+    bundle = RunBundle.open(result.bundle_path)
+    stopped = next(e for e in bundle.events() if e.kind == "run.stopped")
+    assert stopped.agent_id == "agent-1" and stopped.data["before_task"] == "second"
+    assert json.loads((result.bundle_path / "summary.json").read_text())["status"] == "stopped"
+    assert not (result.bundle_path / "native" / "agent-1" / "second").exists()

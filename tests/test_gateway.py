@@ -162,3 +162,53 @@ async def test_passthrough_for_non_chat_paths(gw):
     r = await client.get("/v1/models")
     assert r.status_code == 200 and r.json()["data"][0]["id"] == "mesocosm-3b"
     assert _records(tmp_path)[-1]["event"] == "passthrough"
+
+
+async def test_pause_holds_requests_until_resume_and_stop_refuses_them(gw):
+    import asyncio
+
+    app, up, client, tmp_path = gw
+    admin = GatewayAdmin("http://gateway", transport=httpx.ASGITransport(app=app))
+    hdr = {"X-Mesocosm-Agent": "agent-2", "X-Mesocosm-Run": "lbl"}
+    body = {"model": "m", "messages": [{"role": "user", "content": "x"}]}
+    paused = await admin.pause("lbl", reason="operator", run_id="run_p")
+    assert paused.op == "run.pause" and paused.result == "applied" and paused.previous == {"paused": False}
+    pending = asyncio.create_task(client.post("/v1/chat/completions", headers=hdr, json=body))
+    await asyncio.sleep(0.15)
+    assert not pending.done(), "the request waits at the gateway while the run is paused"
+    health = await admin.health()
+    assert health["paused"] == [{"run": "lbl", "agent_id": None, "since": health["paused"][0]["since"], "held": 1,
+                                 "reason": "operator"}]
+    other = await client.post("/v1/chat/completions", headers={"X-Mesocosm-Agent": "a", "X-Mesocosm-Run": "other"},
+                              json=body)
+    assert other.status_code == 200, "other runs are not affected"
+    resumed = await admin.resume("lbl", run_id="run_p")
+    assert resumed.op == "run.resume" and resumed.verification.detail["released"] == 1
+    assert (await pending).status_code == 200
+    held = [r for r in _records(tmp_path) if r["event"] == "held"]
+    assert len(held) == 1 and held[0]["held_ms"] >= 100 and held[0]["run"] == "lbl"
+    stopped = await admin.stop("lbl", run_id="run_p")
+    assert stopped.op == "run.stop" and stopped.result == "applied"
+    refused = await client.post("/v1/chat/completions", headers=hdr, json=body)
+    assert refused.status_code == 409 and refused.json()["error"]["type"] == "mesocosm_run_stopped"
+    assert _records(tmp_path)[-1]["event"] == "run_stopped" and (await admin.health())["stopped"] == ["lbl"]
+    assert [r["op"] for r in _records(tmp_path) if r["event"] == "receipt"] == ["run.pause", "run.resume", "run.stop"]
+
+
+async def test_a_hold_that_outlives_the_limit_is_released_with_an_explicit_error(tmp_path):
+    up = fake_upstream()
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path, max_hold_seconds=0.2),
+                     transport=httpx.ASGITransport(app=up))
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway")
+    admin = GatewayAdmin("http://gateway", transport=httpx.ASGITransport(app=app))
+    await admin.pause("lbl", agent_id="agent-1")
+    hdr = {"X-Mesocosm-Agent": "agent-1", "X-Mesocosm-Run": "lbl"}
+    body = {"model": "m", "messages": [{"role": "user", "content": "x"}]}
+    r = await client.post("/v1/chat/completions", headers=hdr, json=body)
+    assert r.status_code == 503 and r.json()["error"]["type"] == "mesocosm_paused"
+    assert _records(tmp_path)[-1]["event"] == "hold_expired"
+    peer = await client.post("/v1/chat/completions", headers={"X-Mesocosm-Agent": "agent-2", "X-Mesocosm-Run": "lbl"},
+                             json=body)
+    assert peer.status_code == 200, "pausing one agent leaves the other running"
+    stop = await admin.stop("lbl")
+    assert stop.verification.detail == {"released_held_requests": 0} and (await admin.health())["paused"] == []

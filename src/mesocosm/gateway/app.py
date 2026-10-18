@@ -2,6 +2,7 @@
 
 * stamps every request with X-Mesocosm-Request-Id; reads X-Mesocosm-Agent / X-Mesocosm-Run;
 * logs full request and response to <log_dir>/gateway.jsonl (actual information exposure);
+* pauses, resumes and stops runs: a paused run's requests wait here, a stopped run's are refused;
 * enforces per-agent budgets and answers an explicit 429 when one is exhausted;
 * `POST /mesocosm/budget` sets a budget and returns a receipt (the enforcement point for
   the `budget` condition);
@@ -12,6 +13,7 @@ Run: `python -m mesocosm.gateway` (settings from MESOCOSM_* env vars) or `spike/
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import pathlib
@@ -37,6 +39,7 @@ class Settings:
     log_dir: pathlib.Path = pathlib.Path("./runs/spike")
     budgets: dict[str, dict[str, int]] = field(default_factory=dict)
     return_token_ids: bool = False
+    max_hold_seconds: float = 600.0   # a paused run's requests wait this long at most, then get 503
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -45,7 +48,21 @@ class Settings:
             log_dir=pathlib.Path(os.environ.get("MESOCOSM_LOG_DIR", str(cls.log_dir))),
             budgets=json.loads(os.environ.get("MESOCOSM_BUDGET_JSON", "{}") or "{}"),
             return_token_ids=os.environ.get("MESOCOSM_RETURN_TOKEN_IDS", "0") == "1",
+            max_hold_seconds=float(os.environ.get("MESOCOSM_MAX_HOLD_SECONDS", "600")),
         )
+
+
+@dataclass
+class Hold:
+    """A paused run (or one agent of it): chat requests wait here until resume or stop."""
+    run: str
+    agent_id: str | None
+    reason: str | None
+    since: float = field(default_factory=time.time)
+    event: asyncio.Event = field(default_factory=asyncio.Event)
+    held: int = 0
+    total_held: int = 0
+    max_wait_ms: float = 0.0
 
 
 def parse_sse(raw: str) -> dict[str, Any]:
@@ -139,6 +156,8 @@ class Gateway:
                                         transport=transport)
         self.budgets: dict[str, dict[str, int]] = {k: dict(v) for k, v in settings.budgets.items()}
         self.usage: dict[str, dict[str, int]] = {}
+        self.holds: dict[tuple[str, str | None], Hold] = {}
+        self.stopped: dict[str, float] = {}
         self._log_file = None
 
     def log(self, record: dict[str, Any]) -> None:
@@ -199,6 +218,74 @@ class Gateway:
         return receipt
 
 
+    # -- pause / resume / stop: the run manager cannot pause a harness turn, the chokepoint can ------
+
+    def hold_for(self, run: str, agent: str) -> Hold | None:
+        return self.holds.get((run, agent)) or self.holds.get((run, None))
+
+    async def wait_while_paused(self, hold: Hold) -> tuple[float, bool]:
+        """Block a request on a hold. Returns (seconds waited, released); not released = the hold expired."""
+        t0 = time.time()
+        hold.held += 1
+        try:
+            await asyncio.wait_for(hold.event.wait(), timeout=self.settings.max_hold_seconds)
+            released = True
+        except TimeoutError:
+            released = False
+        finally:
+            hold.held -= 1
+            hold.total_held += 1
+            hold.max_wait_ms = max(hold.max_wait_ms, (time.time() - t0) * 1000)
+        return time.time() - t0, released
+
+    def pause(self, run: str, agent_id: str | None, reason: str | None, run_id: str | None = None) -> Receipt:
+        key = (run, agent_id)
+        already = key in self.holds
+        hold = self.holds.setdefault(key, Hold(run=run, agent_id=agent_id, reason=reason))
+        receipt = Receipt(op="run.pause", run_id=run_id,
+                          requested={"run": run, "agent_id": agent_id, "reason": reason},
+                          previous={"paused": already}, enforced_at=EnforcedAt(component="gateway"),
+                          result="applied",
+                          verification=Verification(method="gateway_hold", ok=True,
+                                                    detail={"held_requests": hold.held,
+                                                            "max_hold_seconds": self.settings.max_hold_seconds}))
+        self.log({"ts": time.time(), "event": "receipt", **receipt.model_dump(mode="json")})
+        return receipt
+
+    def resume(self, run: str, agent_id: str | None, run_id: str | None = None) -> Receipt:
+        hold = self.holds.pop((run, agent_id), None)
+        detail: dict[str, Any] = {"paused": hold is not None}
+        if hold is not None:
+            hold.event.set()
+            detail.update({"released": hold.held, "total_held": hold.total_held, "max_wait_ms": round(hold.max_wait_ms),
+                           "paused_seconds": round(time.time() - hold.since, 3)})
+        receipt = Receipt(op="run.resume", run_id=run_id, requested={"run": run, "agent_id": agent_id},
+                          previous={"paused": hold is not None}, enforced_at=EnforcedAt(component="gateway"),
+                          result="applied", verification=Verification(method="gateway_hold", ok=True, detail=detail))
+        self.log({"ts": time.time(), "event": "receipt", **receipt.model_dump(mode="json")})
+        return receipt
+
+    def stop(self, run: str, run_id: str | None = None) -> Receipt:
+        already = run in self.stopped
+        self.stopped.setdefault(run, time.time())
+        released = 0
+        for key in [k for k in self.holds if k[0] == run]:      # held requests wake up and are refused
+            hold = self.holds.pop(key)
+            released += hold.held
+            hold.event.set()
+        receipt = Receipt(op="run.stop", run_id=run_id, requested={"run": run}, previous={"stopped": already},
+                          enforced_at=EnforcedAt(component="gateway"), result="applied",
+                          verification=Verification(method="gateway_reject", ok=True,
+                                                    detail={"released_held_requests": released}))
+        self.log({"ts": time.time(), "event": "receipt", **receipt.model_dump(mode="json")})
+        return receipt
+
+    def control_state(self) -> dict[str, Any]:
+        return {"paused": [{"run": h.run, "agent_id": h.agent_id, "since": h.since, "held": h.held, "reason": h.reason}
+                           for h in self.holds.values()],
+                "stopped": sorted(self.stopped)}
+
+
 def budget_filtered(budget: dict[str, Any]) -> dict[str, int]:
     return {k: int(v) for k, v in budget.items() if k in BUDGET_KEYS and v is not None}
 
@@ -206,6 +293,13 @@ def budget_filtered(budget: dict[str, Any]) -> dict[str, int]:
 class BudgetRequest(BaseModel):
     agent_id: str
     budget: dict[str, int]
+    run_id: str | None = None
+
+
+class ControlRequest(BaseModel):
+    run: str                       # the X-Mesocosm-Run label the agents send
+    agent_id: str | None = None    # pause one agent only; stop ignores it
+    reason: str | None = None
     run_id: str | None = None
 
 
@@ -217,7 +311,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
     @app.get("/mesocosm/health")
     async def health() -> dict[str, Any]:
         return {"ok": True, "upstream": gw.settings.upstream, "return_token_ids": gw.settings.return_token_ids,
-                "budget": gw.budgets}
+                "budget": gw.budgets, **gw.control_state()}
 
     @app.get("/mesocosm/usage")
     async def usage() -> dict[str, Any]:
@@ -226,6 +320,18 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
     @app.post("/mesocosm/budget")
     async def set_budget(req: BudgetRequest) -> dict[str, Any]:
         return gw.set_budget(req.agent_id, req.budget, req.run_id).model_dump(mode="json")
+
+    @app.post("/mesocosm/pause")
+    async def pause(req: ControlRequest) -> dict[str, Any]:
+        return gw.pause(req.run, req.agent_id, req.reason, req.run_id).model_dump(mode="json")
+
+    @app.post("/mesocosm/resume")
+    async def resume(req: ControlRequest) -> dict[str, Any]:
+        return gw.resume(req.run, req.agent_id, req.run_id).model_dump(mode="json")
+
+    @app.post("/mesocosm/stop")
+    async def stop(req: ControlRequest) -> dict[str, Any]:
+        return gw.stop(req.run, req.run_id).model_dump(mode="json")
 
     @app.get("/mesocosm/records")
     async def records(run: str) -> list[dict[str, Any]]:
@@ -250,6 +356,20 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 "path": "/" + path, "method": request.method}
 
         if is_chat:
+            hold = gw.hold_for(run, agent)
+            if hold is not None:
+                waited, released = await gw.wait_while_paused(hold)
+                gw.log({**base, "event": "held" if released else "hold_expired", "held_ms": round(waited * 1000),
+                        "reason": hold.reason})
+                if not released:
+                    return JSONResponse(status_code=503, content={"error": {
+                        "message": f"mesocosm: run {run} paused longer than {gw.settings.max_hold_seconds:.0f}s",
+                        "type": "mesocosm_paused", "code": "paused"}})
+            if run in gw.stopped:
+                gw.log({**base, "event": "run_stopped", "request_summary": request_summary(body)})
+                return JSONResponse(status_code=409, content={"error": {
+                    "message": f"mesocosm: run {run} was stopped", "type": "mesocosm_run_stopped",
+                    "code": "run_stopped"}})
             exhausted = gw.budget_exhausted(agent)
             if exhausted:
                 gw.log({**base, "event": "budget_exhausted", "dimension": exhausted,
