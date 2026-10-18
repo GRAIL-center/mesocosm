@@ -8,7 +8,7 @@ Project proposal: see the Mesocosm proposal (Google Doc, GRAIL Slack channel). T
 
 ## Status
 
-Pre-alpha. M0–M2 are done and M3–M4 machinery is in place: isolated sandboxes, the gateway with budgets and receipts, the world services (board, wiki, git, pypi, sites, hidden channels, accounts and traps), concurrent agents, memory policy, chaining, the judge's flags with a review queue, staged scenarios and live observation. Everything hardware-bound was verified in Docker on a Colab L4; see [`spike/SPIKE.md`](spike/SPIKE.md), [`docs/milestones.md`](docs/milestones.md) and [`docs/capability-matrix.md`](docs/capability-matrix.md).
+Pre-alpha. M0–M6 and P1 are done and P2 is built: isolated sandboxes with nothing of the platform inside them; the gateway with per-agent keys, budgets, receipts, pause/stop and a model per agent (local vLLM or a commercial baseline through the same chokepoint); the world services (board, wiki, git, pypi, chat with channels and direct messages, a simulated clock, a ledger, hidden channels, accounts with roles and traps, an MCP server) and the real internet through a policed web gateway; concurrent agents, memory policy, chaining, persistent operation with snapshots and forks; verifiers that read the world's state and award partial credit; side tasks and a monitor model; the judge's flags with a review queue; staged scenarios (peer verification after Shi et al., the OpenAI–Hugging Face incident after Slocum et al.); live observation; activations by recompute with linear probes; export to Inspect. Everything hardware-bound through ADR-0026 was verified in Docker on a Colab L4; ADR-0027 to ADR-0031 are covered by tests and not yet run in Docker. See [`spike/SPIKE.md`](spike/SPIKE.md), [`docs/milestones.md`](docs/milestones.md) and [`docs/capability-matrix.md`](docs/capability-matrix.md).
 
 ```bash
 uv run mesocosm world validate examples/spike-world.yaml --json   # check a manifest
@@ -19,6 +19,9 @@ uv run mesocosm scenario run examples/scenarios/channel-exposure.yaml --json   #
 uv run mesocosm chain examples/chains/smoke.yaml --json                        # several worlds in sequence, with retries
 uv run mesocosm flags list runs/<run_id> --json                                # the judge's candidate incidents
 uv run mesocosm report runs/<run_id> --gpu-hour-cost 0.8 --json                # agent-hours, tokens, cost per agent-hour
+uv run mesocosm judge monitor runs/<run_id> --model qwen3-4b --url http://127.0.0.1:8080/v1 --json   # a model scores every transcript
+uv run mesocosm export inspect runs/<run_id> --json                             # the bundle as an Inspect eval log
+uv run mesocosm activations probe train runs/<run_id> --layer 18 --out probes/leak.safetensors --json   # a linear probe over captured activations
 #   add --summarizer-url http://127.0.0.1:8000/v1 --summarizer-model qwen3-4b --summarizer-key mesocosm-local for model-written status lines
 ```
 
