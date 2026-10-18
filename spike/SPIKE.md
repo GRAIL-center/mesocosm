@@ -2,7 +2,7 @@
 
 Goal: before writing the platform, find out which of our riskiest assumptions hold on one workstation. Hardware: one RTX 3090 (24 GB), Docker, Python 3.11–3.13. Model: `Qwen/Qwen3-4B-Instruct-2507` (ADR-0007; the 3B Coder model from ADR-0006 cannot drive OpenCode's tools).
 
-Steps 1–5 were run on a Colab L4 on 2026-10-17 with `spike/colab_smoke.py`; results are in issues #1–#5 and `docs/capability-matrix.md`. Steps 6–7 (Docker isolation, Harbor) still need the workstation.
+Steps 1–5 were run on a Colab L4 on 2026-10-17 with `spike/colab_smoke.py`; results are in issues #1–#5 and `docs/capability-matrix.md`. Steps 6–7 ran on a Colab L4 on 2026-10-18 with rootless Docker (`spike/colab_docker_setup.sh`; the gateway reaches the host's vLLM at 10.0.2.2, so render the topology with `--vllm-host 10.0.2.2`); results are in issues #6–#7.
 
 Order follows risk. Day 1 is host-only (no Docker). Day 2 adds the isolation topology and Harbor. Fill the result tables at the bottom as you go; they become the first evidence rows of `docs/capability-matrix.md`.
 
@@ -147,8 +147,8 @@ Copy these into `docs/capability-matrix.md` with the evidence column pointing at
 | torch / CUDA | 2.13.0+cu130 / 13.0 | driver 580.82.07 |
 | transformers | 5.17.0 | |
 | OpenCode | 1.19.3 | Node 20.19.0 |
-| Harbor | — | not run (no Docker on Colab) |
-| Docker | — | not run (no Docker on Colab) |
+| Harbor | 0.24.0 | Colab L4 2026-10-18, `uv tool install harbor` |
+| Docker | 29.9.1 rootless | Colab L4 2026-10-18; fuse-overlayfs, slirp4netns, runc wrapper (`spike/colab_runc_wrapper.py`) |
 
 ### Checks
 
@@ -163,9 +163,10 @@ Copy these into `docs/capability-matrix.md` with the evidence column pointing at
 | 5 | `nnsight.modeling.vllm` imports and traces the model | pass (48 s engine build, 0.87 s trace) | #5 |
 | 5 | Transformers vs vLLM activations: rel-L2 / cosine | rel-L2 mean 0.020, max 0.029; cosine min 0.9996 (after cloning served values) | #5 |
 | 5 | Capture overhead ratio | 1.48× at batch 1, eager | #5 |
-| 6 | Agent container: no HTTPS / raw-IP / ICMP egress | not run (workstation) | |
-| 6 | External DNS resolution from the sandbox | not run (workstation) | |
-| 6 | Agent reaches gateway only; not the inference server | not run (workstation) | |
+| 6 | Agent container: no HTTPS / raw-IP / ICMP egress | pass in both agents of `examples/docker-world.yaml` | #6 |
+| 6 | External DNS resolution from the sandbox | does not resolve on the internal network (Docker 29.9.1); no sinkhole needed | #6 |
+| 6 | Agent reaches gateway only; not the inference server | pass; task completed through gateway container → host vLLM (2 calls, write/bash/write) | #6 |
+| 6 | `isolate_agents`: peers unreachable when on, reachable when off | pass (both variants) | #6 |
 | 7 | Harbor task runs; job layout understood | not run (workstation) | |
 | 7 | Harbor `opencode` agent reaches the gateway | not run (workstation) | |
 

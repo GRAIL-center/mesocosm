@@ -4,7 +4,7 @@ What each adapter and each condition actually supports, with evidence. Status va
 
 Update this file in the same PR as the code or spike result that changes a row.
 
-Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smoke.py` on a Colab L4 (vLLM 0.31.0, NNsight 0.8.0, transformers 5.17.0, torch 2.13.0+cu130, OpenCode 1.19.3, Python 3.13.15). Excerpts are in the linked issues; raw records (`runs/spike/`) are not committed.
+Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smoke.py` on a Colab L4 (vLLM 0.31.0, NNsight 0.8.0, transformers 5.17.0, torch 2.13.0+cu130, OpenCode 1.19.3, Python 3.13.15). "Colab L4 2026-10-18" refers to steps 6–7 on the same runtime type with rootless Docker 29.9.1 (`spike/colab_docker_setup.sh`). Excerpts are in the linked issues; raw records (`runs/spike/`) are not committed.
 
 ## Harness adapters
 
@@ -56,7 +56,7 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 
 | Check | Status | Evidence |
 |---|---|---|
-| Agent container has no route to the internet (HTTP, DNS, ICMP) | unverified (no Docker on Colab) | spike 07 on the workstation |
-| Agent container reaches the gateway only | unverified | spike 07 |
-| Gateway reaches the inference server only | unverified | spike 07 |
-| Agents cannot reach each other when `isolate_agents: true` (per-agent networks; `egress-check` peer lines) | unverified | spike 06 |
+| Agent container has no route to the internet (HTTP, DNS, ICMP) | supported: HTTPS, raw-IP and ICMP blocked; external names do not resolve on the internal network (no DNS sinkhole needed with Docker 29.9.1) | Colab L4 2026-10-18, #6 |
+| Agent container reaches the gateway only | supported: gateway reachable, inference server unreachable; task completed through the gateway container | Colab L4 2026-10-18, #6 |
+| Gateway reaches the inference server only | supported for the inference leg (gateway → host vLLM); the gateway's `edge` network is not otherwise restricted yet | Colab L4 2026-10-18, #6 |
+| Agents cannot reach each other when `isolate_agents: true` (per-agent networks; `egress-check` peer lines) | supported: peers unreachable with the option on, reachable on the shared sandbox | Colab L4 2026-10-18, #6 |
