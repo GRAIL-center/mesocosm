@@ -270,3 +270,11 @@ def test_the_web_gateway_is_the_only_route_out_and_agents_carry_only_standard_pr
     assert "web" not in off["services"] and "environment" not in off["services"]["agent-1"]
     assert egress_proxy_env(plain) == {"MESOCOSM_PROXY": ""} and egress_env(plain, plain.agents[0])["MESOCOSM_PROXY"] == ""
     assert "web" not in off["services"]["agent-1"]["depends_on"]
+
+
+def test_switched_off_harness_tools_reach_the_config():
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    assert "tools" not in json.loads(agent_files(manifest, "lbl")["agent-1"]["opencode.json"]), "as shipped by default"
+    manifest.agents[0].tools = {"todowrite": False, "question": False}
+    cfg = json.loads(agent_files(manifest, "lbl")["agent-1"]["opencode.json"])
+    assert cfg["tools"] == {"todowrite": False, "question": False}

@@ -102,7 +102,8 @@ def agent_files(manifest: WorldManifest, run_label: str, gateway_url: str = GATE
         config = render_opencode_config(gateway_url=gateway_url, model_id=manifest.model.id,
                                         api_key=agent_api_key(manifest, run_label, agent.id),
                                         provider_id=manifest.gateway.provider_id,
-                                        provider_name=manifest.gateway.provider_name, context_limit=context_limit)
+                                        provider_name=manifest.gateway.provider_name, context_limit=context_limit,
+                                        tools=agent.tools or None)
         mcp = mcp_config(manifest, agent)
         if mcp:
             config["mcp"] = mcp

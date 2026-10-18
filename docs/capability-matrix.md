@@ -58,6 +58,7 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 | Services log copied into the bundle as `native/services/services.jsonl` and `service.<op>` events | supported: 63 service records, 689 events in the Docker run | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_run_e2e.py` |
 | Load: 20 agents, 3,000-post board, 300-page wiki, 50 MB wheel (`bench_services.py`, in-process ASGI) | measured before → after ADR-0018: 45 → 740 req/s; board list p50 1177 → 30 ms (1.1 MB → 14 KB per answer), post 510 → 16 ms, `pypi` project page 1480 → 13 ms, wiki index 120 → 80 ms, chat send/list ~17 ms; `services.jsonl` 13.2 → 4.1 MB for the same 7k requests (a list read logs its page, not every post) | 2026-10-18, this machine; `tests/test_services.py` (paging, journal replay, caches) |
 | Board paging (`GET /api/posts?limit=&offset=&since=`, newest first, `total`), journals `board.jsonl` / `pastes.jsonl` / `chat.jsonl` replayed at start | supported | `tests/test_services.py`, `tests/test_snapshot.py`; ADR-0018 |
+| Context budget: a board list entry is title, author, 120-character excerpt, size and reply count (no body); `agents[].tools` switches harness tools off; task text uses `curl -s` | measured on Colab: first request 8,660 prompt tokens (27% of 32k), of which our additions ≈750; 16 `curl` progress meters (9.8k chars) in one run before the fix; a 50-post list with bodies would have been 14 KB | `tests/test_services.py`, `tests/test_env.py`; ADR-0023 |
 
 ## Conditions
 

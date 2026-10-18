@@ -22,6 +22,7 @@ agents:
     budget:
       completion_tokens: 80000
       requests: 400
+    tools: {todowrite: false, question: false}   # unattended run; each tool schema costs context on every call (ADR-0023)
     persona:              # how the agent appears to the world (ADR-0019); the bundle keeps the agent id
       username: jkim
       name: Jae Kim
@@ -36,6 +37,7 @@ agents:
     budget:
       completion_tokens: 80000
       requests: 400
+    tools: {todowrite: false, question: false}   # unattended run; each tool schema costs context on every call (ADR-0023)
     persona:
       username: mlee
       name: Min Lee

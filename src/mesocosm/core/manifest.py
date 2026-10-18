@@ -79,6 +79,9 @@ class AgentSpec(BaseModel):
     skills: list[str] = Field(default_factory=list, description="Skill directories (relative to the manifest), "
                                                                 "each with a SKILL.md; mounted into the harness's "
                                                                 "global skills directory")
+    tools: dict[str, bool] = Field(default_factory=dict, description="Harness tools switched off (false) in the "
+                                                                     "agent's config, e.g. {todowrite: false}; "
+                                                                     "every tool schema costs context on every call")
 
     def harness_url(self) -> str:
         return self.url or f"http://{self.id}:4096"

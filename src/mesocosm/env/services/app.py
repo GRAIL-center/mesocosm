@@ -49,6 +49,7 @@ OFFICIAL = ("board", "wiki", "git", "pypi", "sites")
 CHANNELS = ("pastebin", "shared_dir")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,80}$")
 LIST_LIMIT, LIST_MAX = 50, 200     # board page size: default and the most a caller may ask for
+EXCERPT = 120                      # characters of a post's body a list entry carries; the body is one GET away
 
 
 class Settings:
@@ -443,7 +444,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         poll for new posts. `total` says how many match."""
         limit, offset = max(1, min(limit, LIST_MAX)), max(0, offset)
         posts, total = board.list(since, limit, offset)
-        # the list carries every post's body: a reader of the list has read each of them
+        # the list carries titles and excerpts: the reader glanced at these posts, read none of them
         record(request, "board", "read_list", count=len(posts), total=total, offset=offset,
                post_ids=[p["id"] for p in posts])
         return {"posts": posts, "total": total, "limit": limit, "offset": offset}
@@ -734,11 +735,19 @@ class Board(Journal):
 
     def list(self, since: float | None = None, limit: int = LIST_LIMIT,
              offset: int = 0) -> tuple[list[dict[str, Any]], int]:
-        """Newest first. Returns the page and the number of posts matching `since`."""
+        """Newest first. Returns the page and the number of posts matching `since`. An entry carries the
+        title, the author and an excerpt, never the body (ADR-0023): a list is a glance, a read is a read."""
         posts = [p for p in self.posts if not p.get("deleted") and (since is None or p["ts"] > since)]
         total = len(posts)
         page = posts[max(0, total - offset - limit):max(0, total - offset)]
-        return [_without(p, "replies") | {"replies": len(p["replies"])} for p in reversed(page)], total
+        return [self.entry(p) for p in reversed(page)], total
+
+    @staticmethod
+    def entry(p: dict[str, Any]) -> dict[str, Any]:
+        body = p["body"]
+        return {"id": p["id"], "ts": p["ts"], "author": p["author"], "title": p["title"],
+                "excerpt": body[:EXCERPT] + ("…" if len(body) > EXCERPT else ""), "size": len(body),
+                "replies": len(p["replies"])}
 
     def get(self, post_id: int) -> dict[str, Any] | None:
         post = self.posts[post_id - 1] if 1 <= post_id <= len(self.posts) else None
@@ -766,17 +775,17 @@ class Board(Journal):
     def html(self) -> str:
         items = []
         page, _ = self.list()
-        for p in (self.posts[q["id"] - 1] for q in page):
+        for p in page:
             when = dt.datetime.fromtimestamp(p["ts"]).strftime("%H:%M:%S")
-            replies = "".join(f"<blockquote>{html.escape(r['author'])}: {html.escape(r['body'])}</blockquote>"
-                              for r in p["replies"])
-            items.append(f"<li><b>{html.escape(p['title'] or '(no title)')}</b> · {html.escape(p['author'])} · {when}"
-                         f"<pre>{html.escape(p['body'])}</pre>{replies}</li>")
+            title = html.escape(p["title"] or "(no title)")
+            items.append(f"<li><a href=\"/api/posts/{p['id']}\">#{p['id']}</a> <b>{title}</b>"
+                         f" · {html.escape(p['author'])} · {when} · {p['replies']} replies"
+                         f"<br>{html.escape(p['excerpt'])}</li>")
         older = len(self.posts) - LIST_LIMIT
         more = f"<p>{older} older posts: GET /api/posts?offset={LIST_LIMIT}</p>" if older > 0 else ""
         return ("<!doctype html><title>board</title><h1>Team board</h1>"
-                "<p>API: GET /api/posts[?limit=50&offset=0&since=ts] · POST /api/posts {title, body} · "
-                "GET /api/posts/{id} · POST /api/posts/{id}/replies {body}</p>"
+                "<p>API: GET /api/posts[?limit=50&offset=0&since=ts] (titles and excerpts) · GET /api/posts/{id} (full "
+                "post and replies) · POST /api/posts {title, body} · POST /api/posts/{id}/replies {body}</p>"
                 "<ul>" + "".join(items) + "</ul>" + more)
 
 

@@ -116,24 +116,27 @@ def normalize_event(raw: dict[str, Any], *, run_id: str, session_to_agent: dict[
 def render_opencode_config(*, gateway_url: str, model_id: str, api_key: str, provider_id: str = "internal",
                            provider_name: str = "Internal LLM API", agent_id: str | None = None,
                            run_id: str | None = None, context_limit: int = 32768,
-                           output_limit: int = 8192) -> dict[str, Any]:
+                           output_limit: int = 8192, tools: dict[str, bool] | None = None) -> dict[str, Any]:
     """The opencode.json an agent runs with: all model traffic goes to the gateway (ADR-0003). A sandbox agent
     is identified by its own `api_key` (ADR-0019); a harness the control plane drives directly may instead
     name itself with `agent_id` / `run_id`, which become identity headers."""
     options: dict[str, Any] = {"baseURL": gateway_url.rstrip("/") + "/v1", "apiKey": api_key}
     if agent_id or run_id:
         options["headers"] = {"X-Mesocosm-Agent": agent_id or "unknown", "X-Mesocosm-Run": run_id or "unknown"}
-    return {
+    config: dict[str, Any] = {
         "$schema": "https://opencode.ai/config.json",
         "model": f"{provider_id}/{model_id}",
         "small_model": f"{provider_id}/{model_id}",
         "permission": "allow",
-        "provider": {
-            provider_id: {
-                "npm": "@ai-sdk/openai-compatible",
-                "name": provider_name,
-                "options": options,
-                "models": {model_id: {"name": model_id, "limit": {"context": context_limit, "output": output_limit}}},
-            }
-        },
     }
+    if tools:
+        config["tools"] = dict(tools)         # OpenCode's documented `tools` option: built-ins switched off
+    config["provider"] = {
+        provider_id: {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": provider_name,
+            "options": options,
+            "models": {model_id: {"name": model_id, "limit": {"context": context_limit, "output": output_limit}}},
+        }
+    }
+    return config

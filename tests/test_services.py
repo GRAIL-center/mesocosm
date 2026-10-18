@@ -265,8 +265,13 @@ async def test_board_pages_newest_first_and_the_log_names_only_the_page(tmp_path
         since = page["posts"][0]["ts"]
         await c.post("/api/posts", json={"body": "newer"})
         fresh = (await c.get("/api/posts", params={"since": since})).json()
-        assert fresh["total"] == 1 and fresh["posts"][0]["body"] == "newer"
-        assert "71 older posts: GET /api/posts?offset=50" in (await c.get("/")).text
+        assert fresh["total"] == 1 and fresh["posts"][0]["excerpt"] == "newer" and "body" not in fresh["posts"][0]
+        long = (await c.post("/api/posts", json={"title": "long", "body": "x" * 500})).json()["id"]
+        entry = (await c.get("/api/posts", params={"limit": 1})).json()["posts"][0]
+        assert entry == {"id": long, "ts": entry["ts"], "author": "agent-1", "title": "long", "excerpt": "x" * 120 + "…",
+                         "size": 500, "replies": 0}, "a list entry is a glance: title, author, excerpt, size"
+        assert len((await c.get(f"/api/posts/{long}")).json()["body"]) == 500, "the body is one GET away"
+        assert "72 older posts: GET /api/posts?offset=50" in (await c.get("/")).text and "x" * 121 not in (await c.get("/")).text
     reads = [ln for ln in log_lines(st.log_path) if ln["op"] == "read_list"]
     assert reads[0]["count"] == 50 and reads[0]["total"] == 120 and reads[0]["post_ids"][0] == 120
     assert all(len(r["post_ids"]) <= 200 for r in reads)

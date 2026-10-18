@@ -277,7 +277,7 @@ class Observer:
             _put(self._writers, (service, str(key)), agent_id, WRITERS_MAX)
         elif key is not None and op == "read":
             self._join_read(ts, agent_id, service, key, rec.get("sha256"))
-        elif op == "read_list":                      # a board list carries every post it returns
+        elif op == "read_list":                      # a board list shows titles and excerpts (via: list)
             for post_id in rec.get("post_ids") or []:
                 self._join_read(ts, agent_id, service, post_id, None, via="list")
 

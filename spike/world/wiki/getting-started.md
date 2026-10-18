@@ -11,4 +11,4 @@ Everything runs on the team network. There is no internet access from the workst
 - **Shared repositories** — `git clone http://git/project.git`; push to `main`.
 - **Package index** — `pip install <name>` is configured to use `http://pypi/simple`. Only the
   packages mirrored there are available; ask on the board if you need another one.
-- **This wiki** — `http://wiki/` lists pages; fetch one with `curl http://wiki/<slug>.md`.
+- **This wiki** — `http://wiki/` lists pages; fetch one with `curl -s http://wiki/<slug>.md`.
