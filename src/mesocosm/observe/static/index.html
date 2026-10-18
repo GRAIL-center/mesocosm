@@ -33,33 +33,31 @@
            background: var(--panel); color: var(--muted); font-size: 12px; }
   #scrub input[type=range] { flex: 1; }
   main { flex: 1; display: flex; min-height: 0; }
-  #agents { flex: 1; display: flex; flex-wrap: wrap; gap: 18px; padding: 22px 20px; overflow: auto; align-items: flex-start; align-content: flex-start; }
-  #empty { color: var(--muted); padding: 40px 20px; }
-  .agent { flex: 1 1 240px; max-width: 340px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 14px 12px; }
-  .orb { display: block; margin: 0 auto 8px; cursor: pointer; }
-  .orb circle.ring { fill: none; stroke-width: 5; transition: stroke .3s; }
-  .orb circle.core { fill: var(--panel); }
-  .orb text { font: 600 13px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
-  .orb.busy circle.ring, .orb.tool circle.ring { animation: pulse 1.6s ease-in-out infinite; }
+  #stage { flex: 1; position: relative; min-width: 0; overflow: hidden; }
+  #graph { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #graph.dragging { cursor: grabbing; }
+  #empty { color: var(--muted); padding: 40px 20px; position: absolute; top: 0; left: 0; }
+  .n { cursor: pointer; }
+  .n circle.ring { fill: var(--panel); stroke-width: 4; stroke: var(--idle); transition: stroke .3s; }
+  .n.busy circle.ring { stroke: var(--busy); } .n.tool circle.ring { stroke: var(--tool); }
+  .n.blocked circle.ring, .n.error circle.ring { stroke: var(--error); } .n.done circle.ring { stroke: var(--done); }
+  .n.busy circle.ring, .n.tool circle.ring { animation: pulse 1.6s ease-in-out infinite; }
+  .n.selected circle.ring { stroke-width: 7; }
+  .n circle.halo { fill: none; stroke: var(--accent); stroke-opacity: 0; stroke-width: 2; }
+  .n:hover circle.halo { stroke-opacity: .5; }
+  .n .label { font: 600 12px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; }
+  .n .sum { font: 11px system-ui, sans-serif; fill: var(--muted); text-anchor: middle; }
+  .n .inner { font: 600 11px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
+  .edge { fill: none; stroke: var(--line); stroke-width: 1.5; }
+  .edge.live { stroke: var(--busy); stroke-opacity: .6; }
   @keyframes pulse { 0%,100% { stroke-opacity: 1; } 50% { stroke-opacity: .35; } }
-  .st-idle { stroke: var(--idle); } .st-busy { stroke: var(--busy); } .st-tool { stroke: var(--tool); }
-  .st-blocked { stroke: var(--blocked); } .st-error { stroke: var(--error); } .st-done { stroke: var(--done); }
+  #legend { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 12px; font-size: 11px; color: var(--muted);
+            background: color-mix(in srgb, var(--panel) 85%, transparent); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); }
+  #legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+  #fit { position: absolute; right: 14px; bottom: 12px; }
   .badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; color: #fff; background: var(--idle); vertical-align: middle; }
   .badge.busy { background: var(--busy); } .badge.tool { background: var(--tool); } .badge.blocked, .badge.error { background: var(--error); }
   .badge.done { background: var(--done); }
-  .agent .summary { text-align: center; min-height: 2.9em; margin: 6px 0 4px; overflow: hidden; display: -webkit-box;
-                    -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .agent .stats { text-align: center; color: var(--muted); font-size: 12px; }
-  .tree { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--line); padding-top: 10px; }
-  .tree ul { list-style: none; margin: 0; padding-left: 14px; border-left: 1px solid var(--line); }
-  .tree li, .tree ul { margin: 4px 0; min-width: 0; }
-  .node { display: flex; align-items: baseline; gap: 6px; cursor: pointer; padding: 3px 6px; border-radius: 6px; min-width: 0; }
-  .node:hover, .node.selected { background: color-mix(in srgb, var(--accent) 10%, transparent); }
-  .node .sdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; background: var(--idle); position: relative; top: -1px; }
-  .node .sdot.busy { background: var(--busy); } .node .sdot.tool { background: var(--tool); }
-  .node .sdot.error { background: var(--error); } .node .sdot.done { background: var(--done); }
-  .node .title { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; flex: 0 1 auto; }
-  .node .nsum { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   #drawer { width: 0; border-left: 1px solid var(--line); background: var(--panel); overflow: hidden; transition: width .2s; display: flex; flex-direction: column; }
   #drawer.open { width: 520px; }
   #drawer .dhead { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
@@ -101,7 +99,14 @@
   <span id="scrub-time" class="muted"></span>
 </div>
 <main>
-  <section id="agents"><div id="empty">Waiting for the first event…</div></section>
+  <section id="stage">
+    <svg id="graph" xmlns="http://www.w3.org/2000/svg"><g id="view"></g></svg>
+    <div id="empty">Waiting for the first event…</div>
+    <div id="legend"><span><i style="background:var(--idle)"></i>idle</span><span><i style="background:var(--busy)"></i>waiting for model</span>
+      <span><i style="background:var(--tool)"></i>running a tool</span><span><i style="background:var(--error)"></i>blocked / error</span>
+      <span><i style="background:var(--done)"></i>done</span></div>
+    <button id="fit" title="fit to view">fit</button>
+  </section>
   <aside id="drawer">
     <div class="dhead"><h2 id="dtitle"></h2><span id="dbadge" class="badge idle"></span><button id="dclose" title="close">✕</button></div>
     <div class="tabs" id="dtabs"></div>
@@ -130,20 +135,69 @@
     es.onerror = () => { $('#conn').classList.remove('on'); $('#mode').textContent = 'reconnecting'; };
   }
 
-  // ---- rendering: reconcile by id; event delegation, so no listeners pile up ----
-  const orb = (id, status) => `<svg class="orb ${status}" width="96" height="96" viewBox="0 0 96 96" data-agent="${esc(id)}">
-      <circle class="ring st-${status}" cx="48" cy="48" r="40"></circle><circle class="core" cx="48" cy="48" r="36"></circle>
-      <text x="48" y="48">${esc(id.length > 10 ? id.slice(0, 9) + '…' : id)}</text></svg>`;
+  // ---- graph: tree layout per agent, drawn as SVG nodes and edges (rebuilt from state; no listeners per node) ----
+  const R_AGENT = 28, R_SESSION = 17, SLOT = 200, ROW = 160, GAP = 40, TOP = 70;
+  const clip = (t, n) => { t = String(t ?? ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+  const wrap = (t, n, max) => {   // greedy word wrap into at most `max` lines of ~n chars; the last line is clipped
+    const words = String(t ?? '').split(' '), lines = []; let cur = '';
+    for (const w of words) { if (cur && (cur + ' ' + w).length > n) { lines.push(cur); cur = w; if (lines.length === max) break; } else cur = cur ? cur + ' ' + w : w; }
+    if (lines.length < max && cur) lines.push(cur);
+    if (lines.length === max && (cur || words.join(' ').length > lines.join(' ').length)) lines[max - 1] = clip(lines[max - 1] + (cur && lines[max - 1] !== cur ? ' ' + cur : ''), n);
+    return lines.length ? lines : [''];
+  };
+  const view = { k: 1, x: 0, y: 0, fitted: false };
 
-  function treeHtml(sessionIds, sessions, depth = 0) {
-    if (!sessionIds.length || depth > 12) return '';
-    return `<ul>${sessionIds.map(sid => {
-      const s = sessions[sid]; if (!s) return '';
-      const sel = drawer.kind === 'session' && drawer.id === sid ? ' selected' : '';
-      const title = s.parent_id ? (s.title || 'subagent') : (s.title || sid);
-      return `<li><div class="node${sel}" data-session="${esc(sid)}"><span class="sdot ${s.status}"></span>
-        <span class="title">${esc(title)}</span><span class="nsum">${esc(s.summary)}</span></div>${treeHtml(s.children, sessions, depth + 1)}</li>`;
-    }).join('')}</ul>`;
+  function layout() {
+    // Each agent is a root; with a single root session the agent node stands for it and its subagents hang beneath.
+    const S = state.sessions, trees = [];
+    const kidsOf = sid => (S[sid]?.children || []).filter(c => S[c]);
+    const measure = sid => { const ks = kidsOf(sid); const w = ks.reduce((acc, k) => acc + measure(k), 0) + Math.max(0, ks.length - 1) * 10;
+      S[sid]._w = Math.max(SLOT, w); return S[sid]._w; };
+    const place = (sid, x0, depth, parent, out) => {
+      const ks = kidsOf(sid), s = S[sid], total = ks.reduce((a, k) => a + S[k]._w, 0) + Math.max(0, ks.length - 1) * 10;
+      const node = { id: sid, kind: 'session', x: x0 + s._w / 2, y: TOP + depth * ROW, parent, status: s.status,
+                     label: s.title || (s.parent_id ? 'subagent' : sid), summary: s.summary, r: R_SESSION };
+      out.push(node); let cx = x0 + (s._w - total) / 2;
+      ks.forEach(k => { place(k, cx, depth + 1, node, out); cx += S[k]._w + 10; });
+      return node;
+    };
+    let x = 20;
+    state.agents.forEach(a => {
+      const roots = a.root_sessions.filter(r => S[r]);
+      const single = roots.length === 1;
+      const tops = single ? kidsOf(roots[0]) : roots;
+      tops.forEach(measure);
+      const total = tops.reduce((acc, k) => acc + S[k]._w, 0) + Math.max(0, tops.length - 1) * 10;
+      const w = Math.max(SLOT, total);
+      const agent = { id: a.agent_id, kind: 'agent', x: x + w / 2, y: TOP, status: a.status, label: a.agent_id, summary: a.summary, r: R_AGENT,
+                      sub: `${a.requests} calls${a.rewards.length ? ' · reward ' + a.rewards.map(r => r.reward ?? '?').join(',') : ''}` };
+      const nodes = [agent]; let cx = x + (w - total) / 2;
+      tops.forEach(k => { place(k, cx, 1, agent, nodes); cx += S[k]._w + 10; });
+      trees.push(nodes); x += w + GAP;
+    });
+    return { nodes: trees.flat(), width: x, height: TOP + ROW * (1 + Math.max(0, ...trees.flat().map(n => (n.y - TOP) / ROW))) + 40 };
+  }
+
+  function nodeSvg(n) {
+    const sel = drawer.kind === n.kind && drawer.id === n.id ? ' selected' : '';
+    const data = n.kind === 'agent' ? `data-agent="${esc(n.id)}"` : `data-session="${esc(n.id)}"`;
+    const inner = n.kind === 'agent' ? `<text class="inner" y="1">${esc(clip(n.label, 9))}</text>` : '';
+    const label = n.kind === 'agent' ? '' : `<text class="label" y="${n.r + 16}">${esc(clip(n.label, 22))}</text>`;
+    const y0 = n.r + (n.kind === 'agent' ? 18 : 31), lines = wrap(n.summary, 30, 2);
+    const sum = lines.map((l, i) => `<text class="sum" y="${y0 + i * 14}">${esc(l)}</text>`).join('');
+    const sub = n.sub ? `<text class="sum" y="${y0 + lines.length * 14}">${esc(n.sub)}</text>` : '';
+    return `<g class="n ${n.status}${sel}" transform="translate(${n.x},${n.y})" ${data}><title>${esc(n.label)} — ${esc(n.summary)}</title>
+      <circle class="halo" r="${n.r + 6}"></circle><circle class="ring" r="${n.r}"></circle>${inner}${label}${sum}${sub}</g>`;
+  }
+
+  const edgeSvg = n => { const p = n.parent, y0 = p.y + p.r + (p.kind === 'agent' ? 54 : 52), y1 = n.y - n.r - 6, my = (y0 + y1) / 2;
+    return `<path class="edge${n.status === 'busy' || n.status === 'tool' ? ' live' : ''}" d="M${p.x},${y0} C${p.x},${my} ${n.x},${my} ${n.x},${y1}"></path>`; };
+
+  function applyView() { $('#view').setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`); }
+  function fit(g) {
+    const box = $('#graph').getBoundingClientRect();
+    view.k = Math.min(1, (box.width - 40) / g.width, (box.height - 40) / g.height);
+    view.x = Math.max(20, (box.width - g.width * view.k) / 2); view.y = 10; view.fitted = true; applyView();
   }
 
   function render() {
@@ -152,31 +206,31 @@
     $('#runid').textContent = state.run_id || '–';
     const rs = $('#runstatus'); rs.textContent = state.status; rs.className = 'badge ' + (state.status === 'running' ? 'busy' : state.status === 'ok' ? 'done' : 'error');
     $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions`;
-    const host = $('#agents');
-    $('#empty')?.remove();
-    const seen = new Set();
-    state.agents.forEach(a => {
-      seen.add(a.agent_id);
-      let card = host.querySelector(`.agent[data-agent="${CSS.escape(a.agent_id)}"]`);
-      if (!card) { card = document.createElement('div'); card.className = 'agent'; card.dataset.agent = a.agent_id;
-        card.innerHTML = `<div class="orbwrap"></div><div class="summary"></div><div class="stats"></div><ul class="tree"></ul>`; host.appendChild(card); }
-      const ow = $('.orbwrap', card);
-      if (ow.dataset.status !== a.status) { ow.innerHTML = orb(a.agent_id, a.status); ow.dataset.status = a.status; }
-      $('.summary', card).textContent = a.summary;
-      const reward = a.rewards.length ? ` · reward ${a.rewards.map(r => r.reward ?? '?').join(',')}` : '';
-      $('.stats', card).textContent = `${a.requests} model calls · ${a.completion_tokens} out tokens${reward}`;
-      const roots = a.root_sessions.length ? a.root_sessions
-        : Object.values(state.sessions).filter(s => s.agent_id === a.agent_id && !s.parent_id).map(s => s.session_id);
-      $('.tree', card).innerHTML = treeHtml(roots, state.sessions).replace(/^<ul>|<\/ul>$/g, '') || '<li class="muted">no session yet</li>';
-    });
-    host.querySelectorAll('.agent').forEach(c => { if (!seen.has(c.dataset.agent)) c.remove(); });
-    if (!frozen && meta && (meta.mode === 'replay' || state.started_ts)) {
+    $('#empty').hidden = state.agents.length > 0;
+    const g = layout();
+    $('#view').innerHTML = g.nodes.filter(n => n.parent).map(edgeSvg).join('') + g.nodes.map(nodeSvg).join('');
+    if (!view.fitted) fit(g);
+    if (meta && (meta.mode === 'replay' || state.started_ts)) {
       $('#scrub').hidden = false;
       const r = $('#scrub-range'); r.min = Math.floor(state.started_ts || 0); r.max = Math.ceil(state.last_ts || r.min + 1);
       if (!frozen) { r.value = r.max; $('#scrub-time').textContent = fmtTime(state.last_ts); }
     }
     maybeRefreshDrawer();
   }
+
+  // pan and zoom on the canvas: state lives in `view`, the SVG content is rebuilt by render()
+  (() => {
+    const svg = $('#graph'); let drag = null;
+    svg.addEventListener('pointerdown', e => { if (e.target.closest('.n')) return; drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y }; svg.classList.add('dragging'); svg.setPointerCapture(e.pointerId); });
+    svg.addEventListener('pointermove', e => { if (!drag) return; view.x = drag.vx + e.clientX - drag.x; view.y = drag.vy + e.clientY - drag.y; applyView(); });
+    const end = () => { drag = null; svg.classList.remove('dragging'); };
+    svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
+    svg.addEventListener('wheel', e => { e.preventDefault(); const box = svg.getBoundingClientRect(), mx = e.clientX - box.left, my = e.clientY - box.top;
+      const k = Math.min(3, Math.max(0.2, view.k * (e.deltaY < 0 ? 1.1 : 0.9)));
+      view.x = mx - (mx - view.x) * k / view.k; view.y = my - (my - view.y) * k / view.k; view.k = k; view.fitted = true; applyView(); }, { passive: false });
+    $('#fit').addEventListener('click', () => { view.fitted = false; render(); });
+    window.addEventListener('resize', () => { view.fitted = false; render(); });
+  })();
 
   setInterval(() => {   // one clock, started once
     if (!state) return;
@@ -296,13 +350,13 @@
 
   // ---- one delegated click handler for everything ----
   document.addEventListener('click', e => {
-    const t = e.target.closest('[data-tab], [data-session], [data-request], .orb, #dclose');
+    const t = e.target.closest('[data-tab], [data-session], [data-request], [data-agent], #dclose');
     if (!t) return;
     if (t.id === 'dclose') return closeDrawer();
     if (t.dataset.tab) { drawer.tab = t.dataset.tab; return drawDrawer(); }
     if (t.dataset.request) return expandRequest(t.dataset.agent, t.dataset.request);
     if (t.dataset.session) return openDrawer('session', t.dataset.session);
-    if (t.classList.contains('orb')) return openDrawer('agent', t.dataset.agent);
+    if (t.dataset.agent) return openDrawer('agent', t.dataset.agent);
   });
 
   connect();
