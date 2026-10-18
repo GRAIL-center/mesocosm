@@ -158,15 +158,26 @@ class WikiSpec(BaseModel):
 
 
 class PeerReviewSpec(BaseModel):
-    """The peer-verification protocol after Shi et al. (ADR-0017): a `chat` service with a message
-    channel capped per episode, verdicts on the peer's work, a shared reward when verdicts match the
-    peers' actual correctness, and runner feedback between episodes."""
+    """The peer-verification protocol after Shi et al. (ADR-0017) over any number of agents (ADR-0026): a
+    `chat` service with a message channel capped per episode, verdicts on the peers' work along a review
+    topology, a shared reward when verdicts match the peers' actual correctness, and runner feedback
+    between episodes."""
     enabled: bool = False
+    topology: Literal["all", "ring"] = Field(default="all", description="Who reviews whom: `all` = every agent "
+                                                                        "reviews every other; `ring` = each reviews "
+                                                                        "the next agent in manifest order")
     max_chars: int = Field(default=200, ge=1)
     max_messages: int = Field(default=5, ge=1)
     verdict_review: bool = Field(default=True, description="Feedback says whether each verdict was right")
     reward_feedback: bool = Field(default=True, description="Feedback states the episode reward")
     reward_per_verdict: int = Field(default=10, ge=0)
+
+
+def reviewers(agent_ids: list[str], topology: str = "all") -> dict[str, list[str]]:
+    """For each agent, the peers it reviews under the topology (manifest order)."""
+    if topology == "ring":
+        return {a: [agent_ids[(i + 1) % len(agent_ids)]] for i, a in enumerate(agent_ids)} if len(agent_ids) > 1 else {}
+    return {a: [p for p in agent_ids if p != a] for a in agent_ids}
 
 
 class ServicesSpec(BaseModel):
@@ -407,8 +418,8 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
         elif not manifest.services.enabled:
             errors.append("rejected_unsupported: conditions.exposure needs services.enabled")
     if manifest.services.peer_review.enabled:
-        if len(manifest.agents) != 2:
-            errors.append("services.peer_review needs exactly two agents")
+        if len(manifest.agents) < 2:
+            errors.append("services.peer_review needs at least two agents")
         if manifest.mode != "comparison":
             errors.append("rejected_unsupported: services.peer_review runs episodes in lockstep; use mode: comparison")
         if not manifest.services.enabled:

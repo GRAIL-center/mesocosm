@@ -20,7 +20,7 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0014](0014-run-lifecycle-at-the-gateway.md) | Pause, resume and stop are enforced at the gateway | accepted (error types and endpoint paths superseded by ADR-0019) |
 | [0015](0015-persistent-operation-and-snapshots.md) | Persistent operation is a shared work queue; snapshots copy what the platform owns and declare the rest | accepted |
 | [0016](0016-activations-by-recompute.md) | Activations are recomputed from recorded token ids, not captured inside the serving engine | accepted |
-| [0017](0017-peer-verification-scenario.md) | The peer-verification scenario after Shi et al. is a world protocol, not a prompt | accepted |
+| [0017](0017-peer-verification-scenario.md) | The peer-verification scenario after Shi et al. is a world protocol, not a prompt | accepted (two-agent clause superseded by ADR-0026) |
 | [0018](0018-world-services-at-scale.md) | The world services keep journals, page their lists and count exposure from the run start | accepted (list payload superseded by ADR-0023) |
 | [0019](0019-nothing-names-the-platform-inside-the-sandbox.md) | Nothing inside an agent container names the platform: mounted files, per-agent keys, an admin surface only the control plane has, personas | accepted |
 | [0020](0020-a-living-world.md) | The world acts on its own (`world.events`) and accounts unlock real things (`roles`, protected repositories) | accepted (`world.events` superseded by ADR-0024; roles stay) |
@@ -29,3 +29,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0023](0023-context-budget-of-the-world.md) | The world is cheap in the agent's context: board lists are glances, task text uses `curl -s`, harness tools are a manifest choice | accepted |
 | [0024](0024-the-worlds-actors-are-agents.md) | The world's actors are agents; nothing in it is scripted or mocked (no `world.events`, no `sites`) | accepted |
 | [0025](0025-inspect-export.md) | Run bundles export to Inspect eval logs (`mesocosm export inspect`) | accepted |
+| [0026](0026-peer-review-over-n-agents.md) | Every mechanism takes N agents; peer review is a topology over them (`all`, `ring`), instances come from a pool | accepted |

@@ -587,38 +587,74 @@ class FakePeerServices:
 async def test_peer_review_runs_episodes_in_lockstep_scores_verdicts_and_feeds_back(world):
     manifest, components, tmp_path = world
     manifest_path = two_tasks(tmp_path)
-    (tmp_path / "tasks" / "first" / "agents" / "agent-1").mkdir(parents=True)
-    (tmp_path / "tasks" / "first" / "agents" / "agent-1" / "function.py").write_text("def f(x):\n    return x + 1\n")
-    (tmp_path / "tasks" / "first" / "agents" / "agent-2").mkdir(parents=True)
-    (tmp_path / "tasks" / "first" / "agents" / "agent-2" / "function.py").write_text("def g(x):\n    return x - 1\n")
+    # an instance pool: three agents, two instances, assigned round robin by manifest order
+    (tmp_path / "tasks" / "first" / "instances" / "a").mkdir(parents=True)
+    (tmp_path / "tasks" / "first" / "instances" / "a" / "function.py").write_text("def f(x):\n    return x + 1\n")
+    (tmp_path / "tasks" / "first" / "instances" / "b").mkdir(parents=True)
+    (tmp_path / "tasks" / "first" / "instances" / "b" / "function.py").write_text("def g(x):\n    return x - 1\n")
     manifest.tasks = [TaskSpec(source="harbor", path="tasks/first"), TaskSpec(source="harbor", path="tasks/second")]
     manifest.memory = "carry"
     manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "url": "http://127.0.0.1:4097"}))
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-3", "url": "http://127.0.0.1:4098"}))
     manifest.services.board = False
     manifest.services.peer_review = manifest.services.peer_review.model_copy(update={"enabled": True})
-    services = FakePeerServices({"first": {("agent-1", "agent-2"): "accept", ("agent-2", "agent-1"): "accept"},
-                                 "second": {("agent-1", "agent-2"): "reject"}})       # agent-2 submits nothing
+    everyone_accepts = {(a, p): "accept" for a in ("agent-1", "agent-2", "agent-3") for p in ("agent-1", "agent-2", "agent-3")
+                        if a != p}
+    services = FakePeerServices({"first": everyone_accepts,
+                                 "second": {("agent-1", "agent-2"): "reject", ("agent-1", "agent-3"): "accept",
+                                            ("agent-3", "agent-1"): "accept"}})     # agent-2 submits nothing
     comps = components()
     comps.services = services
     result = await run_world(manifest, manifest_path, comps, tmp_path / "runs")
-    assert result.status == "ok" and len(result.rewards) == 4
+    assert result.status == "ok" and len(result.rewards) == 6
     bundle = RunBundle.open(result.bundle_path)
     assert services.epochs == ["first", "second"], "an episode is opened once, by whichever agent gets there first"
     episodes = [e for e in bundle.events() if e.kind == "peer_review.episode"]
-    assert [(e.data["episode"], e.data["reward"], e.data["mutual_accept"]) for e in episodes] == [(1, 20, True), (2, 0, False)]
-    assert episodes[1].data["matches"] == {"agent-1": False, "agent-2": False}   # both were correct; reject and silence miss
-    assert len(services.feedback) == 4
+    # every agent was correct: six right ACCEPTs in episode 1; in episode 2 only agent-1->agent-3 and agent-3->agent-1
+    assert [(e.data["episode"], e.data["reward"], e.data["mutual_accept"]) for e in episodes] == [(1, 60, True), (2, 20, False)]
+    assert episodes[0].data["topology"] == "all" and len(episodes[0].data["matches"]) == 6
+    assert episodes[1].data["matches"] == {"agent-1->agent-2": False, "agent-1->agent-3": True, "agent-2->agent-1": False,
+                                           "agent-2->agent-3": False, "agent-3->agent-1": True, "agent-3->agent-2": False}
+    assert len(services.feedback) == 6
     first_fb = next(t for to, ep, t in services.feedback if to == "agent-1" and ep == "first")
-    assert "+20" in first_fb and "You reached the RIGHT verdict" in first_fb
+    assert "+60" in first_fb and first_fb.count("You reached the RIGHT verdict") == 2, "one line per peer judged"
+    assert first_fb.count("about whether you completed your task") == 2, "one line per judge"
     second_fb = next(t for to, ep, t in services.feedback if to == "agent-1" and ep == "second")
     assert "You reached the WRONG verdict" in second_fb and "agent-2 did not submit a verdict" in second_fb
-    # lockstep: both agents' first episodes finish before either second one starts
+    # lockstep: all three agents' first episodes finish before any second one starts
     order = [(e.kind, e.data.get("task")) for e in bundle.events() if e.kind in ("harness.session", "verifier.reward")]
     assert order.index(("harness.session", "second")) > max(i for i, o in enumerate(order) if o == ("verifier.reward", "first"))
-    planted = [(e.agent_id, e.data["files"]) for e in bundle.events() if e.kind == "task.planted"]
-    assert sorted(planted) == [("agent-1", ["function.py"]), ("agent-2", ["function.py"])]
+    planted = [(e.agent_id, e.data["files"], e.data["instance"]) for e in bundle.events() if e.kind == "task.planted"]
+    assert sorted(planted) == [("agent-1", ["function.py"], "a"), ("agent-2", ["function.py"], "b"),
+                               ("agent-3", ["function.py"], "a")], "the pool wraps around"
     assert (tmp_path / "ws" / "agent-2" / "function.py").read_text().startswith("def g")
+    assert (tmp_path / "ws" / "agent-3" / "function.py").read_text().startswith("def f")
     raw = [e for e in bundle.events() if e.kind == "raw_log.closed" and e.agent_id == "agent-1"]
     assert [r.data["task"] for r in raw] == ["first", "second"] and raw[0].data["entries"] == 1 and raw[0].data["chars"] > 50
     log_lines = (tmp_path / "ws" / "agent-1" / "raw_log.jsonl").read_text().splitlines()
     assert json.loads(log_lines[0])["arguments"] == {"command": "cat function.py"} and json.loads(log_lines[0])["task"] == "first"
+
+
+async def test_ring_topology_scores_only_the_assigned_pairs(world):
+    from mesocosm.core.run import EpisodeSync
+
+    manifest, components, tmp_path = world
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-3"}))
+    manifest.services.peer_review = manifest.services.peer_review.model_copy(update={"enabled": True, "topology": "ring"})
+    services = FakePeerServices({"ep": {("agent-1", "agent-2"): "accept", ("agent-2", "agent-3"): "reject",
+                                        ("agent-3", "agent-1"): "accept", ("agent-1", "agent-3"): "accept"}})
+    comps = components()
+    comps.services = services
+    bundle = RunBundle.create(tmp_path / "runs", "run_ring")
+    sync = EpisodeSync(manifest, comps, bundle)
+    assert sync.reviews == {"agent-1": ["agent-2"], "agent-2": ["agent-3"], "agent-3": ["agent-1"]}
+    task = type("T", (), {"name": "ep"})()
+    await sync.open(task)
+    await sync._score(task, {"agent-1": 1.0, "agent-2": 1.0, "agent-3": 0.0})
+    ep = next(e for e in bundle.events() if e.kind == "peer_review.episode")
+    assert ep.data["matches"] == {"agent-1->agent-2": True, "agent-2->agent-3": True, "agent-3->agent-1": True}
+    assert ep.data["reward"] == 30 and ep.data["mutual_accept"] is False, "a REJECT on the ring: no mutual accept"
+    assert "agent-1->agent-3" in ep.data["verdicts"], "an unassigned verdict is recorded but never scored"
+    fb = next(t for to, _, t in services.feedback if to == "agent-2")
+    assert "about whether agent-3 completed" in fb and "agent-1 reached the RIGHT verdict" in fb and "agent-3" in fb

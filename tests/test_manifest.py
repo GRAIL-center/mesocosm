@@ -147,15 +147,29 @@ def test_exposure_and_accounts_are_validated(tmp_path):
     assert not validate_manifest(_write(tmp_path, data)).ok
 
 
-def test_peer_review_needs_two_agents_comparison_mode_and_no_board(tmp_path):
+def test_peer_review_needs_two_or_more_agents_comparison_mode_and_no_board(tmp_path):
+    from mesocosm.core.manifest import reviewers
+
     data = _valid()
     (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
     (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
     data["services"] = {"board": False, "peer_review": {"enabled": True, "max_chars": 200, "max_messages": 5}}
     report = validate_manifest(_write(tmp_path, data))
-    assert report.errors == ["services.peer_review needs exactly two agents"]
+    assert report.errors == ["services.peer_review needs at least two agents"]
     data["agents"].append({**data["agents"][0], "id": "agent-2", "url": "http://127.0.0.1:4097"})
     assert validate_manifest(_write(tmp_path, data)).ok
+    data["agents"].append({**data["agents"][0], "id": "agent-3", "url": "http://127.0.0.1:4098"})
+    data["services"]["peer_review"]["topology"] = "ring"
+    assert validate_manifest(_write(tmp_path, data)).ok, "any number of agents; the topology says who reviews whom"
+    assert load_manifest(_write(tmp_path, data)).services.peer_review.topology == "ring"
+    data["services"]["peer_review"]["topology"] = "star"
+    assert not validate_manifest(_write(tmp_path, data)).ok
+    ids = ["a", "b", "c"]
+    assert reviewers(ids) == {"a": ["b", "c"], "b": ["a", "c"], "c": ["a", "b"]}
+    assert reviewers(ids, "ring") == {"a": ["b"], "b": ["c"], "c": ["a"]}
+    assert reviewers(["a", "b"], "ring") == {"a": ["b"], "b": ["a"]} and reviewers(["a"], "ring") == {}
+    data["services"]["peer_review"]["topology"] = "all"
+    data["agents"] = data["agents"][:2]
     data["services"]["board"] = True
     data["mode"] = "persistent"
     report = validate_manifest(_write(tmp_path, data))

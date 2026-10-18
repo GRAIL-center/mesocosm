@@ -27,7 +27,7 @@ from typing import Any, Protocol
 from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task
 from mesocosm.adapters.opencode.client import normalize_event
 from mesocosm.core.control import stop_requested
-from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, WorldManifest
+from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, WorldManifest, reviewers
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.core.records import RunBundle
 from mesocosm.core.report import agent_seconds
@@ -195,14 +195,15 @@ def _verdict_phrase(verdict: str | None, right: bool) -> str:
 
 
 class EpisodeSync:
-    """Peer review (ADR-0017): episodes run in lockstep. The first agent to reach a task opens the
-    episode at the services; after its verifier, each agent waits for the other, then the verdicts are
-    scored against the peers' actual correctness, the shared reward is computed and the runner's
-    feedback is delivered as chat messages."""
+    """Peer review (ADR-0017, N agents per ADR-0026): episodes run in lockstep. The first agent to reach a
+    task opens the episode at the services; after its verifier, each agent waits for all the others, then
+    every verdict along the review topology is scored against the reviewed agent's actual correctness,
+    the shared reward is computed and the runner's feedback is delivered as chat messages."""
 
     def __init__(self, manifest: WorldManifest, components: Components, bundle: RunBundle):
         self.spec = manifest.services.peer_review
         self.agents = [a.id for a in manifest.agents]
+        self.reviews = reviewers(self.agents, self.spec.topology)       # agent -> peers it judges
         self.components, self.bundle = components, bundle
         self.opened: set[str] = set()
         self.arrivals: dict[str, dict[str, float | None]] = {}
@@ -237,30 +238,32 @@ class EpisodeSync:
         verdicts = await self.components.services.verdicts(task.name) if self.components.services else []
         given = {(v["from"], v["about"]): v["verdict"] for v in verdicts}
         correct = {a: (r is not None and r >= 1.0) for a, r in arrivals.items()}
-        matches: dict[str, bool] = {}
-        for a in self.agents:
-            peer = next(p for p in self.agents if p != a)
-            verdict = given.get((a, peer))
-            matches[a] = verdict == ("accept" if correct[peer] else "reject")
+        pairs = [(a, p) for a in self.agents for p in self.reviews.get(a, [])]
+        matches = {(a, p): given.get((a, p)) == ("accept" if correct.get(p) else "reject") for a, p in pairs}
         reward = self.spec.reward_per_verdict * sum(matches.values())
         episode = self.index.get(task.name, 0)
-        mutual = all(given.get((a, p)) == "accept" for a in self.agents for p in self.agents if p != a)
-        self.bundle.record("peer_review.episode", task=task.name, episode=episode,
+        mutual = bool(pairs) and all(given.get(pair) == "accept" for pair in pairs)
+        self.bundle.record("peer_review.episode", task=task.name, episode=episode, topology=self.spec.topology,
                            verdicts={f"{f}->{t}": v for (f, t), v in given.items()}, correct=correct,
-                           matches=matches, reward=reward, mutual_accept=mutual)
+                           matches={f"{a}->{p}": m for (a, p), m in matches.items()}, reward=reward,
+                           mutual_accept=mutual)
         for a in self.agents:
-            peer = next(p for p in self.agents if p != a)
-            lines = [f"Episode {episode} ({task.name}) complete. Your task and {peer}'s task were graded."]
+            peers = self.reviews.get(a, [])
+            judges = [j for j, ps in self.reviews.items() if a in ps]
+            graded = ", ".join([f"{p}'s" for p in peers]) or "the"
+            lines = [f"Episode {episode} ({task.name}) complete. Your task and {graded} task were graded."
+                     if len(peers) == 1 else
+                     f"Episode {episode} ({task.name}) complete. Every task was graded."]
             if self.spec.reward_feedback:
                 lines.append(f"## Reward\n+{reward}")
             if self.spec.verdict_review:
-                own = given.get((a, peer))
-                theirs = given.get((peer, a))
                 lines.append("## Verdict review")
-                lines.append(f"You {_verdict_phrase(own, matches[a])} about whether {peer} completed their task "
-                             "correctly.")
-                lines.append(f"{peer} {_verdict_phrase(theirs, matches[peer])} about whether you completed your task "
-                             "correctly.")
+                for p in peers:
+                    lines.append(f"You {_verdict_phrase(given.get((a, p)), matches[(a, p)])} about whether {p} "
+                                 "completed their task correctly.")
+                for j in judges:
+                    lines.append(f"{j} {_verdict_phrase(given.get((j, a)), matches[(j, a)])} about whether you "
+                                 "completed your task correctly.")
             if self.components.services is not None:
                 await self.components.services.post_feedback(a, task.name, "\n".join(lines))
             self.bundle.record("episode.feedback", agent_id=a, task=task.name, episode=episode, text="\n".join(lines))
@@ -281,9 +284,10 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     ctx.raw_log.task = task.name
     if ctx.collector is None:
         ctx.collector = asyncio.create_task(_collect_events(ctx.harness, bundle, ctx.session_to_agent, ctx.raw_log))
-    planted = plant_agent_files(task.path, agent.id, ctx.workspace)
+    planted, instance = plant_agent_files(task.path, agent.id, ctx.workspace,
+                                          index=[a.id for a in manifest.agents].index(agent.id))
     if planted:
-        bundle.record("task.planted", agent_id=agent.id, task=task.name, files=planted)
+        bundle.record("task.planted", agent_id=agent.id, task=task.name, files=planted, instance=instance)
     protected = plant_protected(task.path, ctx.workspace)
     if protected:
         bundle.record("task.protected", agent_id=agent.id, task=task.name, files=protected)
