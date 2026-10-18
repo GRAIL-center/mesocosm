@@ -139,8 +139,10 @@ async def test_the_page_its_sprites_font_and_the_constraint_board_are_served(bun
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://observe") as c:
         page = (await c.get("/")).text
         assert '<script src="/static/sprites.js"></script>' in page and "Silkscreen" in page
+        assert '<g id="map"></g><g id="live"></g>' in page, "the forest map and the live layer above it"
         sprites = await c.get("/static/sprites.js")
         assert sprites.status_code == 200 and "window.MesoSprites" in sprites.text
+        assert "floor:" in sprites.text and "meadow:" in sprites.text, "the ground tiles of the map"
         font = await c.get("/static/fonts/silkscreen-latin-400-normal.woff2")
         assert font.status_code == 200 and font.content[:4] == b"wOF2"
         assert (await c.get("/static/fonts/OFL.txt")).status_code == 200

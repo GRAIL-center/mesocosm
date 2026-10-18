@@ -14,13 +14,18 @@
     --bg: #ece3c8; --panel: #f8f1dc; --panel2: #f1e7cb; --ink: #2b2118; --muted: #7b6a52; --line: #d8c9a3; --line2: #a8916a;
     --idle: #9c927c; --busy: #3d8db8; --tool: #c98418; --blocked: #c4442f; --error: #c4442f; --done: #4f8a36;
     --accent: #4f8a36; --info: #5f8aa6; --off: #b9ad92; --ground: #6b8f3e;
+    --floor: #5f8f45; --floor2: #4f7d39; --floor3: #73a457; --meadow: #a3c777; --meadow2: #8fb763; --meadow3: #bcd98f;
+    --meadow-edge: #6f9a4b; --path: #d6b47c; --path-edge: #9c7a48; --trail: #3b2a1c;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     --pixel: Silkscreen, ui-monospace, Menlo, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #0f1913; --panel: #16231b; --panel2: #1c2c22; --ink: #ece5cc; --muted: #93a28a; --line: #2a3a2f; --line2: #4a6352;
             --idle: #6f7c69; --busy: #5cb2dd; --tool: #e6a63c; --blocked: #e2604a; --error: #e2604a; --done: #7dc05a;
-            --accent: #7dc05a; --info: #7fa6bf; --off: #3f4d42; --ground: #2f4a26; }
+            --accent: #7dc05a; --info: #7fa6bf; --off: #3f4d42; --ground: #2f4a26;
+            --floor: #142a1a; --floor2: #0f2215; --floor3: #1b3522; --meadow: #22402a; --meadow2: #1b3523; --meadow3: #2b4d33;
+            --meadow-edge: #2f5a37; --path: #5b4a33; --path-edge: #3a2f22; --trail: #e8dfc0; }
+    .woods { filter: brightness(.62) saturate(.8); }
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
@@ -91,13 +96,26 @@
   #board.folded .groups { gap: 6px 14px; }
 
   main { flex: 1; display: flex; min-height: 0; }
-  #stage { flex: 1; position: relative; min-width: 0; overflow: hidden; }
+  #stage { flex: 1; position: relative; min-width: 0; overflow: hidden; background: var(--floor); }
   #graph { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
   #graph.dragging { cursor: grabbing; }
-  #empty { color: var(--muted); padding: 40px 20px; position: absolute; top: 0; left: 0; font: 8px var(--pixel); text-transform: uppercase;
-           display: flex; align-items: center; gap: 12px; }
+  #empty { color: var(--muted); padding: 10px 14px; position: absolute; top: 20px; left: 20px; font: 8px var(--pixel); text-transform: uppercase;
+           display: flex; align-items: center; gap: 12px; background: var(--panel); border: 2px solid var(--line2); }
   #empty img { width: 48px; height: 48px; }
   #empty[hidden] { display: none; }
+  /* the forest map: ground and clearings (patterns), woods, dirt roads between a session and its subagents,
+     dotted trails for who read whose writing */
+  .clearing { stroke: var(--meadow-edge); stroke-width: 4; }
+  use, image { image-rendering: pixelated; }
+  .road-edge { fill: none; stroke: var(--path-edge); stroke-width: 14; }
+  .road { fill: none; stroke: var(--path); stroke-width: 9; }
+  .road-live { fill: none; stroke: var(--busy); stroke-width: 3; stroke-dasharray: 4 8; animation: march 1s steps(6) infinite; }
+  @keyframes march { to { stroke-dashoffset: -24; } }
+  .trail { fill: none; stroke: var(--trail); stroke-width: 3; stroke-dasharray: 3 7; stroke-opacity: .8; }
+  .trail.recent { stroke-width: 4; stroke-opacity: 1; }
+  .arrowhead { fill: var(--trail); }
+  .chip { fill: var(--panel); fill-opacity: .9; }
+  .trailtext { font: 8px var(--pixel); text-transform: uppercase; fill: var(--ink); }
   .n { cursor: pointer; }
   .n .ring { fill: var(--panel); stroke-width: 4; stroke: var(--idle); transition: stroke .3s; }
   .n.busy .ring { stroke: var(--busy); } .n.tool .ring { stroke: var(--tool); }
@@ -105,24 +123,25 @@
   .n .flag rect { fill: var(--error); stroke: var(--bg); stroke-width: 2; } .n .flag text { fill: #fff; font: 700 8px var(--pixel); text-anchor: middle; dominant-baseline: middle; }
   .n.busy .ring, .n.tool .ring { animation: pulse 1.2s steps(2) infinite; }
   .n.selected .ring { stroke-width: 6; }
-  .n .halo { fill: none; stroke: var(--accent); stroke-opacity: 0; stroke-width: 2; stroke-dasharray: 4 4; }
-  .n:hover .halo { stroke-opacity: .7; }
-  .n .label { font: 8px var(--pixel); text-transform: uppercase; fill: var(--ink); text-anchor: middle; }
-  .n .sum { font: 11px system-ui, sans-serif; fill: var(--muted); text-anchor: middle; }
-  .n .sum.now { fill: var(--ink); font-size: 12px; }
-  .n .ai { fill: var(--accent); font-size: 10px; }
-  .n image { image-rendering: pixelated; }
-  .edge { fill: none; stroke: var(--line2); stroke-width: 2; stroke-dasharray: 2 4; }
-  .sep { stroke: var(--line2); stroke-dasharray: 4 8; stroke-opacity: .6; }
-  .flow { fill: none; stroke: var(--done); stroke-width: 2; stroke-opacity: .7; }
-  .flow.recent { stroke-width: 3; stroke-opacity: 1; }
-  .arrowhead { fill: var(--done); }
-  .flowlabel { font: 8px var(--pixel); text-transform: uppercase; fill: var(--done); }
-  .edge.live { stroke: var(--busy); stroke-opacity: .8; }
+  .n .halo { fill: none; stroke: var(--panel); stroke-opacity: 0; stroke-width: 2; stroke-dasharray: 4 4; }
+  .n:hover .halo, .n.selected .halo { stroke-opacity: .9; }
+  .n .label, .n .sub { font: 8px var(--pixel); text-transform: uppercase; fill: var(--ink); text-anchor: middle; }
+  .n .sub { fill: var(--muted); }
   @keyframes pulse { 50% { stroke-opacity: .35; } }
+  /* what a node is doing: a speech bubble while it acts, a thought bubble while it waits for the model, zzz when idle */
+  .bubble { cursor: pointer; --bc: var(--ink); }
+  .bubble.busy, .bubble.think { --bc: var(--busy); } .bubble.tool { --bc: var(--tool); }
+  .bubble.error, .bubble.blocked { --bc: var(--error); } .bubble.done { --bc: var(--done); }
+  .bubble.idle, .bubble.sleep { --bc: var(--idle); }
+  .bubble .bbody, .bubble .puff { fill: var(--panel); stroke: var(--bc); stroke-width: 2; }
+  .bubble .btext { font: 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink); }
+  .bubble.think .btext { font-style: italic; fill: var(--muted); }
+  .bubble.sleep .btext { font: 8px var(--pixel); fill: var(--muted); letter-spacing: 2px; }
+  .bubble .ai { fill: var(--accent); font-style: normal; }
   #legend { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 12px; font: 8px var(--pixel); text-transform: uppercase; color: var(--muted);
             background: color-mix(in srgb, var(--panel) 90%, transparent); padding: 8px 10px; border: 2px solid var(--line2); }
   #legend i { display: inline-block; width: 8px; height: 8px; margin-right: 4px; vertical-align: -1px; }
+  #legend .trailkey { display: inline-block; width: 22px; border-top: 3px dotted var(--trail); vertical-align: 2px; margin-right: 4px; }
   #fit { position: absolute; right: 14px; bottom: 12px; }
   .badge { display: inline-block; font: 8px/1 var(--pixel); text-transform: uppercase; padding: 4px 6px; color: #fff; background: var(--idle); vertical-align: middle; }
   .badge.busy { background: var(--busy); } .badge.tool, .badge.warn { background: var(--tool); } .badge.blocked, .badge.error, .badge.breach { background: var(--error); }
@@ -192,11 +211,12 @@
 </div>
 <main>
   <section id="stage">
-    <svg id="graph" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"></path></marker></defs><g id="view"></g></svg>
+    <svg id="graph" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"></path></marker></defs><defs id="mapdefs"></defs><g id="view"><g id="map"></g><g id="live"></g></g></svg>
     <div id="empty"><img class="spr" data-sprite="jar" alt="">Waiting for the first event…</div>
     <div id="legend"><span><i style="background:var(--idle)"></i>idle</span><span><i style="background:var(--busy)"></i>waiting for model</span>
       <span><i style="background:var(--tool)"></i>running a tool</span><span><i style="background:var(--error)"></i>blocked / error</span>
-      <span><i style="background:var(--done)"></i>done</span><span>→ read another agent's post</span><span id="legend-ai" hidden>✦ line written by the model</span></div>
+      <span><i style="background:var(--done)"></i>done</span><span><span class="trailkey"></span>read another agent's post</span>
+      <span>speech: doing · thought: waiting for the model · zzz: idle</span><span id="legend-ai" hidden>✦ line written by the model</span></div>
     <button id="fit" title="fit width; wheel scrolls, Ctrl+wheel zooms">fit</button>
   </section>
   <aside id="drawer">
@@ -221,6 +241,8 @@
   document.querySelector('link[rel=icon]').href = S.url('jar');
   $('#treeline').style.backgroundImage = `url(${S.url('tree')})`;
   const critterOf = id => { const i = (state?.agents || []).findIndex(a => a.agent_id === id); return S.url(S.critter(Math.max(0, i))); };
+  setTimeout(() => buildMapDefs(), 0);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { buildMapDefs(); mapKey = ''; render(); });
 
   // ---- state (one object, replaced on every update; nothing accumulates client-side) ----
   let state = null, meta = null, frozen = false, es = null;
@@ -234,32 +256,55 @@
     es.onerror = () => { $('#conn').classList.remove('on'); $('#mode').textContent = 'reconnecting'; };
   }
 
-  // ---- graph: tree layout per agent, drawn as SVG nodes and edges (rebuilt from state; no listeners per node) ----
-  const R_AGENT = 28, R_SESSION = 17, SLOT = 200, ROW = 160, TOP = 70, LEFT = 150, BLOCK_GAP = 30;
+  // ---- graph: a forest map. Each agent has a clearing; its sessions and subagents grow below it along dirt roads;
+  // dotted trails show who read whose writing; every node says what it is doing in a bubble. The map layer
+  // (ground, clearings, woods) is redrawn only when the layout's geometry changes; the live layer on every update. ----
+  const R_AGENT = 30, R_SESSION = 18, SLOT = 270, ROW = 180, TOP = 110, LEFT = 210, BLOCK_GAP = 84, CLEAR_LEFT = 40;
   const clip = (t, n) => { t = String(t ?? ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
-  const wrap = (t, n, max) => {   // greedy word wrap into at most `max` lines of ~n chars; the last line is clipped
-    const words = String(t ?? '').split(' '), lines = []; let cur = '';
-    for (const w of words) { if (cur && (cur + ' ' + w).length > n) { lines.push(cur); cur = w; if (lines.length === max) break; } else cur = cur ? cur + ' ' + w : w; }
-    if (lines.length < max && cur) lines.push(cur);
-    if (lines.length === max && (cur || words.join(' ').length > lines.join(' ').length)) lines[max - 1] = clip(lines[max - 1] + (cur && lines[max - 1] !== cur ? ' ' + cur : ''), n);
+  const WIDE = /[ᄀ-ᇿ⺀-鿿가-힯豈-﫿＀-￯]/;   // CJK and Hangul take two columns
+  const vlen = t => [...String(t)].reduce((n, ch) => n + (WIDE.test(ch) ? 2 : 1), 0);
+  const clipV = (t, n) => { let out = '', w = 0;
+    for (const ch of String(t)) { const c = WIDE.test(ch) ? 2 : 1; if (w + c > n - 1) return out + '…'; out += ch; w += c; }
+    return out; };
+  const wrap = (t, n, max) => {   // greedy word wrap into at most `max` lines of n columns; the last line says if more was cut
+    const words = String(t ?? '').split(/\s+/).filter(Boolean), lines = [];
+    let cur = '', cut = false;
+    for (const w of words) {
+      const next = cur ? `${cur} ${w}` : w;
+      if (vlen(next) <= n) { cur = next; continue; }
+      if (cur) lines.push(cur);
+      if (lines.length === max) { cur = ''; cut = true; break; }
+      cur = vlen(w) > n ? clipV(w, n) : w;
+    }
+    if (cur) lines.push(cur);
+    if (cut) { const l = lines[max - 1]; lines[max - 1] = vlen(l) <= n - 2 ? `${l} …` : clipV(l, n - 1).replace(/…?$/, '…'); }
     return lines.length ? lines : [''];
   };
   const view = { k: 1, x: 0, y: 0, fitted: false };
+  const rnd = (a, b, c = 0) => {   // a stable hash in [0, 1): the woods do not move between renders
+    let x = (a * 374761393 + b * 668265263 + c * 1442695041) | 0;
+    x = Math.imul(x ^ (x >>> 13), 1274126177); return ((x ^ (x >>> 16)) >>> 0) / 4294967296; };
+  const noise = (x, y, s, seed) => {   // smooth value noise in [0, 1): groves and open ground instead of an even carpet
+    const gx = Math.floor(x / s), gy = Math.floor(y / s), fx = x / s - gx, fy = y / s - gy, sm = t => t * t * (3 - 2 * t);
+    const a = rnd(gx, gy, seed), b = rnd(gx + 1, gy, seed), c = rnd(gx, gy + 1, seed), d = rnd(gx + 1, gy + 1, seed);
+    const u = sm(fx), v = sm(fy);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v; };
+  const critterName = id => S.critter(Math.max(0, (state?.agents || []).findIndex(a => a.agent_id === id)));
 
   function layout() {
-    // One block per agent, stacked vertically. Inside a block the tree is top-down and left-aligned:
+    // One clearing per agent, stacked vertically. Inside a clearing the tree is top-down and left-aligned:
     // a node sits above its first child, siblings share the row to the right, so every agent node
     // lines up in one column and children of one parent are at the same height.
     const S = state.sessions, nodes = [], blocks = [];
     const kidsOf = sid => (S[sid]?.children || []).filter(c => S[c]);
-    const measure = sid => { const ks = kidsOf(sid); const w = ks.reduce((acc, k) => acc + measure(k), 0) + Math.max(0, ks.length - 1) * 10;
+    const measure = sid => { const ks = kidsOf(sid); const w = ks.reduce((acc, k) => acc + measure(k), 0);
       S[sid]._w = Math.max(SLOT, w); return S[sid]._w; };
-    const place = (sid, x0, y, parent) => {
+    const place = (sid, x0, y, parent, agentId) => {
       const s = S[sid];
-      const node = { id: sid, kind: 'session', x: x0 + SLOT / 2, y, parent, status: s.status, source: s.summary_source,
+      const node = { id: sid, kind: 'session', agentId, x: x0 + SLOT / 2, y, parent, status: s.status, source: s.summary_source,
                      label: s.title || (s.parent_id ? 'subagent' : sid), summary: s.summary, r: R_SESSION };
       nodes.push(node); let cx = x0, depth = 1;
-      kidsOf(sid).forEach(k => { depth = Math.max(depth, 1 + place(k, cx, y + ROW, node)); cx += S[k]._w + 10; });
+      kidsOf(sid).forEach(k => { depth = Math.max(depth, 1 + place(k, cx, y + ROW, node, agentId)); cx += S[k]._w; });
       return depth;
     };
     let y = TOP, width = 0;
@@ -267,41 +312,108 @@
       const roots = a.root_sessions.filter(r => S[r]);
       const tops = roots.length === 1 ? kidsOf(roots[0]) : roots;   // one root session: the agent node stands for it
       tops.forEach(measure);
-      const w = Math.max(SLOT, tops.reduce((acc, k) => acc + S[k]._w, 0) + Math.max(0, tops.length - 1) * 10);
-      const agent = { id: a.agent_id, kind: 'agent', x: LEFT + SLOT / 2, y, status: a.status, label: a.agent_id, task: a.task,
-                      summary: a.summary, source: a.summary_source, r: R_AGENT, flags: a.flags || [],
-                      sub: `${a.requests} calls${a.rewards.length ? ' · reward ' + a.rewards.map(r => r.reward ?? 'not measured').join(',') : ''}` };
+      const w = Math.max(SLOT, tops.reduce((acc, k) => acc + S[k]._w, 0));
+      const agent = { id: a.agent_id, kind: 'agent', agentId: a.agent_id, x: LEFT + SLOT / 2, y, status: a.status, label: a.agent_id,
+                      task: a.task, summary: a.summary, source: a.summary_source, r: R_AGENT, flags: a.flags || [],
+                      sub: `${a.requests} calls${a.rewards.length ? ' · reward ' + a.rewards.map(r => r.reward ?? '?').join(',') : ''}` };
       nodes.push(agent); let cx = LEFT, depth = 1;
-      tops.forEach(k => { depth = Math.max(depth, 1 + place(k, cx, y + ROW, agent)); cx += S[k]._w + 10; });
-      const h = depth * ROW; blocks.push({ y: y - TOP / 2, h });
+      tops.forEach(k => { depth = Math.max(depth, 1 + place(k, cx, y + ROW, agent, a.agent_id)); cx += S[k]._w; });
+      const h = depth * ROW;
+      blocks.push({ x0: CLEAR_LEFT, x1: LEFT + w + 150, y0: y - TOP / 2 + 8, y1: y - TOP / 2 + h - 8 });   // room for the bubbles
       width = Math.max(width, LEFT + w); y += h + BLOCK_GAP;
     });
-    return { nodes, blocks, width: width + 40, height: y };
+    return { nodes, blocks, width: width + 160, height: y - BLOCK_GAP + 40 };
   }
 
+  // ---- the map layer ----
+  const DECOR = ['tree', 'oak', 'bush', 'rock', 'flowers', 'stump'];
+  function buildMapDefs() {
+    const css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
+    const floor = S.tile('floor', { 1: v('--floor'), 2: v('--floor2'), 3: v('--floor3') });
+    const meadow = S.tile('meadow', { 1: v('--meadow'), 2: v('--meadow2'), 3: v('--meadow3') });
+    const syms = [...DECOR, ...S.critters].map(n => `<symbol id="s-${n}" viewBox="0 0 16 16"><image href="${S.url(n)}" width="16" height="16" style="image-rendering:pixelated"></image></symbol>`).join('');
+    $('#mapdefs').innerHTML = `<pattern id="p-floor" patternUnits="userSpaceOnUse" width="32" height="32"><image href="${floor}" width="32" height="32"></image></pattern>
+      <pattern id="p-meadow" patternUnits="userSpaceOnUse" width="32" height="32"><image href="${meadow}" width="32" height="32"></image></pattern>${syms}`;
+  }
+  const clearingPath = ({ x0, x1, y0, y1 }) => { const a = 16, b = 8;   // a rectangle with its corners stepped twice
+    return `M${x0 + a},${y0} H${x1 - a} V${y0 + b} H${x1 - b} V${y0 + a} H${x1} V${y1 - a} H${x1 - b} V${y1 - b} H${x1 - a} V${y1} `
+         + `H${x0 + a} V${y1 - b} H${x0 + b} V${y1 - a} H${x0} V${y0 + a} H${x0 + b} V${y0 + b} H${x0 + a} Z`; };
+  function mapSvg(g, w, h) {
+    const inClearing = (x, y, pad) => g.blocks.some(b => x > b.x0 - pad && x < b.x1 + pad && y > b.y0 - pad && y < b.y1 + pad);
+    // where nothing may grow inside a clearing: each node with its bubble and labels, and the roads between them
+    const keepOut = g.nodes.map(n => [n.x - n.r - 30, n.y - n.r - 46, n.x + n.r + 250, n.y + n.r + 44]);
+    g.nodes.filter(n => n.parent).forEach(n => keepOut.push([Math.min(n.x, n.parent.x) - 24, n.parent.y, Math.max(n.x, n.parent.x) + 24, n.y]));
+    const free = (x, y) => !keepOut.some(([a, b, c, d]) => x + 32 > a && x < c && y + 32 > b && y < d);
+    // distance from a point to the nearest clearing: the woods are thick at a clearing's edge, then open up
+    const edge = (x, y) => Math.min(...g.blocks.map(b => Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.y0 - y, 0, y - b.y1))));
+    const woods = [], meadow = [];
+    for (let gy = -2; gy * 28 < h + 40; gy++) for (let gx = -2; gx * 30 < w; gx++) {
+      const r = rnd(gx, gy), x = Math.round((gx * 30 + (rnd(gx, gy, 1) - 0.5) * 18) / 2) * 2;
+      const y = Math.round((gy * 28 + (rnd(gx, gy, 2) - 0.5) * 16) / 2) * 2;
+      if (inClearing(x + 16, y + 30, 6)) {
+        if ((gx % 3 === 0) && (gy % 3 === 0) && r < 0.5 && free(x, y))
+          meadow.push([x, y, r < 0.25 ? 'flowers' : r < 0.36 ? 'bush' : r < 0.44 ? 'rock' : 'stump']);
+        continue;
+      }
+      const grove = noise(x, y, 190, 7), near = g.blocks.length ? edge(x + 16, y + 30) : 999;
+      const density = near < 70 ? 0.82 : grove > 0.56 ? 0.8 : grove > 0.42 ? 0.32 : 0.05;
+      if (r >= density) continue;
+      const open = density < 0.1, pines = noise(x, y, 320, 11) > 0.45;
+      woods.push([x, y, open ? (r < 0.02 ? 'rock' : r < 0.035 ? 'stump' : 'flowers')
+                             : (pines ? (r < density * 0.8 ? 'tree' : 'oak') : (r < density * 0.75 ? 'oak' : 'bush'))]);
+    }
+    const use = ([x, y, sp]) => `<use href="#s-${sp}" x="${x}" y="${y}" width="32" height="32"></use>`;
+    return `<rect x="-3000" y="-3000" width="${w + 6000}" height="${h + 6000}" fill="url(#p-floor)"></rect>`
+      + g.blocks.map(b => `<path class="clearing" d="${clearingPath(b)}" fill="url(#p-meadow)"></path>`).join('')
+      + `<g class="decor">${meadow.sort((a, b) => a[1] - b[1]).map(use).join('')}</g>`
+      + `<g class="woods">${woods.sort((a, b) => a[1] - b[1]).map(use).join('')}</g>`;
+  }
+
+  // ---- the live layer ----
   // a square frame with its corners cut one step in: the pixel version of a ring
   const frame = (r, cls) => { const c = Math.max(3, Math.round(r / 5));
     return `<path class="${cls}" d="M${-r + c},${-r} H${r - c} V${-r + c} H${r} V${r - c} H${r - c} V${r} H${-r + c} V${r - c} H${-r} V${-r + c} H${-r + c} Z"></path>`; };
+  const chip = (t, y, cls) => { const w = Math.round(String(t).length * 6 + 10);
+    return `<rect class="chip" x="${-w / 2}" y="${y - 9}" width="${w}" height="13"></rect><text class="${cls}" y="${y + 1}">${esc(t)}</text>`; };
 
   function nodeSvg(n) {
     const sel = drawer.kind === n.kind && drawer.id === n.id ? ' selected' : '';
     const data = n.kind === 'agent' ? `data-agent="${esc(n.id)}"` : `data-session="${esc(n.id)}"`;
-    const inner = n.kind === 'agent' ? `<image href="${critterOf(n.id)}" x="-20" y="-20" width="40" height="40"></image>` : '';
-    const label = `<text class="label" y="${n.r + 16}">${esc(clip(n.kind === 'agent' ? `${n.label} · ${n.task || ''}` : n.label, 30))}</text>`;
-    const y0 = n.r + 31, lines = wrap(n.summary, 30, 2), ai = n.source === 'model' ? '<tspan class="ai">✦ </tspan>' : '';
-    const sum = lines.map((l, i) => `<text class="sum now" y="${y0 + i * 14}">${i === 0 ? ai : ''}${esc(l)}</text>`).join('');
-    const sub = n.sub ? `<text class="sum" y="${y0 + lines.length * 14}">${esc(n.sub)}</text>` : '';
+    const size = n.kind === 'agent' ? 44 : 26;
+    const critter = `<use href="#s-${critterName(n.agentId)}" x="${-size / 2}" y="${-size / 2}" width="${size}" height="${size}"></use>`;
+    const label = chip(clip(n.kind === 'agent' ? `${n.label} · ${n.task || ''}` : n.label, 30), n.r + 20, 'label');
+    const sub = n.sub ? chip(n.sub, n.r + 35, 'sub') : '';
     const flag = n.flags && n.flags.length ? `<g class="flag" transform="translate(${n.r},${-n.r})"><title>${esc(flagText(n.flags))}</title><rect x="-8" y="-8" width="16" height="16"></rect><text y="1">!</text></g>` : '';
     return `<g class="n ${n.status}${sel}" transform="translate(${n.x},${n.y})" ${data}><title>${esc(n.label)} — ${esc(n.summary)}</title>
-      ${frame(n.r + 6, 'halo')}${frame(n.r, 'ring')}${inner}${label}${sum}${sub}${flag}</g>`;
+      ${frame(n.r + 6, 'halo')}${frame(n.r, 'ring')}${critter}${label}${sub}${flag}</g>`;
   }
   const flagLine = f => f.summary ? `${f.kind}: ${f.summary}` : `${f.kind === 'trap' ? 'used trap credential' : f.kind} ${f.account || ''} on ${f.service || '?'}${f.note ? ' (' + f.note + ')' : ''}`;
   const flagText = flags => flags.map(flagLine).join('\n');
 
-  const edgeSvg = n => { const p = n.parent, y0 = p.y + p.r + (p.kind === 'agent' ? 54 : 52), y1 = n.y - n.r - 6, my = (y0 + y1) / 2;
-    return `<path class="edge${n.status === 'busy' || n.status === 'tool' ? ' live' : ''}" d="M${p.x},${y0} C${p.x},${my} ${n.x},${my} ${n.x},${y1}"></path>`; };
+  // the bubble's outline: a box with stepped corners and, for speech, a stepped tail pointing back at the node
+  const bubblePath = (x0, y0, w, h, cy, say) => { const x1 = x0 + w, y1 = y0 + h, c = 4;
+    const tail = say ? `V${cy + 6} H${x0 - 4} V${cy + 3} H${x0 - 8} V${cy} H${x0 - 12} V${cy - 3} H${x0} ` : '';
+    return `M${x0 + c},${y0} H${x1 - c} V${y0 + c} H${x1} V${y1 - c} H${x1 - c} V${y1} H${x0 + c} V${y1 - c} H${x0} ${tail}V${y0 + c} H${x0 + c} Z`; };
+  function bubbleSvg(n) {
+    const summary = n.summary || '';
+    const sleep = /^(Idle|Starting)$/.test(summary);
+    const think = !sleep && (n.status === 'busy' || /^(Thinking|Waiting for the model)$/.test(summary));
+    const kind = sleep ? 'sleep' : think ? 'think' : 'say';
+    const lines = sleep ? ['z z z'] : wrap(summary, 30, 3);
+    const ai = n.source === 'model' && !sleep;
+    const w = sleep ? 48 : Math.max(48, Math.round(Math.max(...lines.map(vlen)) * 6.3 + (ai ? 12 : 0) + 22));
+    const h = lines.length * 15 + 12, x0 = n.x + n.r + 18, cy = n.y - 6, y0 = Math.round(cy - h / 2);
+    const puffs = kind === 'say' ? '' : `<rect class="puff" x="${x0 - 9}" y="${cy + 2}" width="6" height="6"></rect><rect class="puff" x="${x0 - 15}" y="${cy + 9}" width="4" height="4"></rect>`;
+    const text = lines.map((l, i) => `<text class="btext" x="${x0 + (sleep ? 9 : 11)}" y="${y0 + 18 + i * 15}">${i === 0 && ai ? '<tspan class="ai">✦ </tspan>' : ''}${esc(l)}</text>`).join('');
+    const data = n.kind === 'agent' ? `data-agent="${esc(n.id)}"` : `data-session="${esc(n.id)}"`;
+    return `<g class="bubble ${kind} ${n.status}" ${data}><title>${esc(summary)}</title><path class="bbody" d="${bubblePath(x0, y0, w, h, cy, kind === 'say')}"></path>${puffs}${text}</g>`;
+  }
 
-  // Who read whose writing: one arrow per (writer, reader, service), drawn as an arc left of the agent column.
+  const edgeSvg = n => { const p = n.parent, y0 = p.y + p.r + 42, y1 = n.y - n.r - 8, my = (y0 + y1) / 2;
+    const d = `M${p.x},${y0} C${p.x},${my} ${n.x},${my} ${n.x},${y1}`;
+    return `<path class="road-edge" d="${d}"></path><path class="road" d="${d}"></path>${n.status === 'busy' || n.status === 'tool' ? `<path class="road-live" d="${d}"></path>` : ''}`; };
+
+  // Who read whose writing: one dotted trail per (writer, reader, service), an arc left of the agent column.
   function interactionsSvg(g) {
     const pos = Object.fromEntries(g.nodes.filter(n => n.kind === 'agent').map(n => [n.id, n]));
     const pairs = new Map();
@@ -310,12 +422,14 @@
     return [...pairs.values()].map(e => {
       const a = pos[e.from], b = pos[e.to]; if (!a || !b) return '';
       const pk = `${e.from}|${e.to}`, idx = seen.get(pk) || 0; seen.set(pk, idx + 1);
-      const x = a.x - a.r - 8, bulge = Math.max(50, Math.abs(b.y - a.y) / 3) + idx * 34, my = (a.y + b.y) / 2;
+      const x = a.x - a.r - 10, bulge = Math.max(50, Math.abs(b.y - a.y) / 3) + idx * 34, my = (a.y + b.y) / 2;
       const recent = state.last_ts && e.ts && state.last_ts - e.ts < 30 ? ' recent' : '';
-      return `<path class="flow${recent}" d="M${x},${a.y} C${x - bulge},${a.y} ${x - bulge},${b.y} ${x},${b.y}" marker-end="url(#arrow)"></path>
-        <text class="flowlabel" x="${x - bulge - 4}" y="${my + idx * 14}" text-anchor="end">${esc(e.service)} ×${e.n}</text>`;
+      const label = `${e.service} ×${e.n}`, lw = label.length * 6 + 10, lx = Math.round(x - bulge * 0.75 - lw - 2), ly = Math.round(my + idx * 16);
+      return `<path class="trail${recent}" d="M${x},${a.y} C${x - bulge},${a.y} ${x - bulge},${b.y} ${x},${b.y}" marker-end="url(#arrow)"></path>
+        <rect class="chip" x="${lx}" y="${ly - 9}" width="${lw}" height="13"></rect><text class="trailtext" x="${lx + 5}" y="${ly + 1}">${esc(label)}</text>`;
     }).join('');
   }
+  let mapKey = '';
 
   function applyView() { $('#view').setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`); }
   function fit(g) {
@@ -335,9 +449,15 @@
     $('#empty').hidden = state.agents.length > 0;
     $('#legend-ai').hidden = !(meta && meta.summarizer);
     const g = layout();
-    const seps = g.blocks.slice(1).map(b => `<line class="sep" x1="0" x2="${Math.max(g.width, 4000)}" y1="${b.y - BLOCK_GAP / 2}" y2="${b.y - BLOCK_GAP / 2}"></line>`).join('');
-    $('#view').innerHTML = seps + g.nodes.filter(n => n.parent).map(edgeSvg).join('') + interactionsSvg(g) + g.nodes.map(nodeSvg).join('');
     if (!view.fitted) fit(g);
+    // the map covers the stage at the current zoom; it is rebuilt only when that or the layout changes
+    const box = $('#graph').getBoundingClientRect(), k = Math.max(view.k, 0.25);
+    const mw = Math.max(g.width + 400, Math.ceil(box.width / k / 400) * 400 + 400);
+    const mh = Math.max(g.height + 160, Math.ceil(box.height / k / 400) * 400 + 400);
+    const key = JSON.stringify([mw, mh, g.blocks, g.nodes.map(n => [n.x, n.y])]);
+    if (key !== mapKey) { mapKey = key; $('#map').innerHTML = mapSvg(g, mw, mh); }
+    $('#live').innerHTML = g.nodes.filter(n => n.parent).map(edgeSvg).join('') + interactionsSvg(g)
+      + g.nodes.map(nodeSvg).join('') + g.nodes.map(bubbleSvg).join('');
     if (meta && (meta.mode === 'replay' || state.started_ts)) {
       $('#scrub').hidden = false;
       const r = $('#scrub-range'); r.min = Math.floor(state.started_ts || 0); r.max = Math.ceil(state.last_ts || r.min + 1);

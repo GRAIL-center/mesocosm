@@ -57,6 +57,98 @@
       '......kkkk......',
     ],
 
+    // ---- the map: what grows between the clearings ---------------------------------------------
+    oak: [
+      '................',
+      '.....kkkkkk.....',
+      '...kkgllggGkk...',
+      '..kglllgggGGGk..',
+      '.kgllgggggGGGGk.',
+      '.kglggggggGGGGk.',
+      'kgggggggggGGGGGk',
+      'kggggggggGGGGGGk',
+      'kgggggggGGGGGGGk',
+      '.kGgggGGGGGGGGk.',
+      '.kkGGGGGGGGGGkk.',
+      '...kkkkbBkkkk...',
+      '......kbBk......',
+      '......kbBk......',
+      '.....kbbBBk.....',
+      '................',
+    ],
+    bush: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '......kkkk......',
+      '....kkgllgkk....',
+      '...kglggggGGk...',
+      '..kglggggggGGk..',
+      '.kgggggrgggGGGk.',
+      '.kgggrgggggGGGk.',
+      'kggggggggrgGGGGk',
+      'kGgggggggggGGGGk',
+      '.kkkkkkkkkkkkkk.',
+      '................',
+    ],
+    rock: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '......kkkk......',
+      '....kksssskk....',
+      '...ksswsssSSk...',
+      '..kssssssSSSSk..',
+      '..ksssssSSSSSk..',
+      '.kSssssSSSSSSSk.',
+      '.kkkkkkkkkkkkkk.',
+      '................',
+    ],
+    flowers: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '.....p......y...',
+      '....pyp....yYy..',
+      '.....p..w...y...',
+      '.....g.wyw..g...',
+      '..v..g..w...g...',
+      '.vYv.g..g..gg...',
+      '..v.gg..g.g.....',
+      '...g..g.g.g.....',
+    ],
+    stump: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '....kkkkkkkk....',
+      '...kttbtttbtk...',
+      '...ktbtbbtbBk...',
+      '...kbbbbbbbBk...',
+      '...kbBbbbbBBk...',
+      '..kkbBbbbbBBkk..',
+      '.kGkkkkkkkkkkGk.',
+      '................',
+    ],
+
     // ---- fences: what keeps the world closed ------------------------------------------------
     fence: [          // sandbox: isolated networks, verified inside every agent
       '................',
@@ -536,23 +628,74 @@
     ],
   };
 
+  // Ground tiles for the forest map: digits are the theme's colours (passed in, so day and night differ),
+  // letters the sprite palette. They tile seamlessly.
+  const TILES = {
+    floor: [          // the forest floor between the clearings
+      '1111111111111111',
+      '1111121111111111',
+      '1111232111111111',
+      '1111111111111111',
+      '1111111111112111',
+      '1111111111121211',
+      '1311111111111111',
+      '1111111111111111',
+      '1111111211111111',
+      '1111112321111131',
+      '1111111111111111',
+      '1111111111111111',
+      '1121111111111111',
+      '1213111111112111',
+      '1111111111123211',
+      '1111111111111111',
+    ],
+    meadow: [         // a clearing: shorter, lighter grass with the odd flower
+      '1111111111111111',
+      '1111111111131111',
+      '1121111111313111',
+      '1212111111111111',
+      '1111111111111111',
+      '1111111p11111111',
+      '1111111111111121',
+      '1311111111111212',
+      '1111111111111111',
+      '1111131111111111',
+      '1111313111111111',
+      '1111111111111111',
+      '1111111111y11111',
+      '1121111111111111',
+      '1212111111111311',
+      '1111111111111111',
+    ],
+  };
+
   const CRITTERS = ['hedgehog', 'squirrel', 'frog', 'deer', 'bear', 'raccoon'];
   const cache = {};
 
-  function url(name) {
-    if (cache[name]) return cache[name];
-    const rows = SPRITES[name];
-    if (!rows) return '';
+  function draw(rows, colors, scale) {
     const c = document.createElement('canvas');
-    c.width = 16; c.height = 16;
+    c.width = rows[0].length * scale; c.height = rows.length * scale;
     const ctx = c.getContext('2d');
     rows.forEach((row, y) => [...row].forEach((ch, x) => {
-      if (ch === '.' || !PALETTE[ch]) return;
-      ctx.fillStyle = PALETTE[ch];
-      ctx.fillRect(x, y, 1, 1);
+      const color = colors[ch] || PALETTE[ch];
+      if (ch === '.' || !color) return;
+      ctx.fillStyle = color;
+      ctx.fillRect(x * scale, y * scale, scale, scale);
     }));
-    return (cache[name] = c.toDataURL());
+    return c.toDataURL();
   }
 
-  window.MesoSprites = { url, names: Object.keys(SPRITES), critter: i => CRITTERS[i % CRITTERS.length], PALETTE, SPRITES };
+  function url(name, scale = 1) {
+    const key = `${name}@${scale}`;
+    if (!cache[key] && SPRITES[name]) cache[key] = draw(SPRITES[name], {}, scale);
+    return cache[key] || '';
+  }
+
+  // colors: {'1': base, '2': dark, '3': light}; drawn at `scale` so no smoothing is ever needed
+  function tile(name, colors, scale = 2) {
+    return TILES[name] ? draw(TILES[name], colors, scale) : '';
+  }
+
+  window.MesoSprites = { url, tile, names: Object.keys(SPRITES), critter: i => CRITTERS[i % CRITTERS.length],
+                         critters: CRITTERS, PALETTE, SPRITES, TILES };
 })();
