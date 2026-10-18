@@ -21,6 +21,7 @@ def test_compose_topology_invariants():
         a = svc[agent_id]
         assert a["networks"] == {"sandbox": {"ipv4_address": f"172.30.0.{10 + i}"}}
         assert "ports" not in a and "network_mode" not in a and "extra_hosts" not in a
+        assert a["healthcheck"]["test"][-1] == "http://127.0.0.1:4096/global/health"
         assert a["environment"]["MESOCOSM_RUN"] == "lbl"
         assert a["environment"]["MESOCOSM_GATEWAY_URL"] == "http://gateway:8080"
         assert a["environment"]["MESOCOSM_SERVICES"] == "board,wiki,git,pypi,sites" and a["environment"]["MESOCOSM_CHANNELS"] == ""

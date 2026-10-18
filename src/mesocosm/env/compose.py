@@ -117,6 +117,9 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
             "volumes": [f"{spike}/workspace/{agent.id}:/work"] + (["shared:/shared"] if "shared_dir" in channels
                                                                    else []),
             "depends_on": depends,
+            # `up --wait` returns only once the OpenCode server answers; the run manager connects right after
+            "healthcheck": {"test": ["CMD", "curl", "-fsS", "http://127.0.0.1:4096/global/health"],
+                            "interval": "3s", "timeout": "3s", "retries": 40, "start_period": "10s"},
         }
     out = {
         "name": f"mesocosm-{manifest.name}",
