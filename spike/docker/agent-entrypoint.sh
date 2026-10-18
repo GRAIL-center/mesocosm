@@ -1,5 +1,5 @@
 #!/bin/sh
-# Render the agent's opencode.json from environment, then start the OpenCode server.
+# Render the agent's opencode.json (global config) from environment, then start the OpenCode server.
 # Every model request from this agent goes to the gateway with the agent's identity
 # in headers (ADR-0003). The agent never learns the inference server's address.
 set -eu
@@ -11,8 +11,11 @@ MESOCOSM_MODEL_ID="${MESOCOSM_MODEL_ID:-mesocosm-3b}"
 MESOCOSM_GATEWAY_KEY="${MESOCOSM_GATEWAY_KEY:-mesocosm-local}"
 MESOCOSM_CONTEXT_LIMIT="${MESOCOSM_CONTEXT_LIMIT:-32768}"
 
-mkdir -p /work
-cat > /work/opencode.json <<EOF
+# The config lives in OpenCode's global location, not in the workspace: the workspace belongs to the
+# agent and the memory policy may empty it between tasks (ADR-0012).
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+mkdir -p /work "$CONFIG_DIR"
+cat > "$CONFIG_DIR/opencode.json" <<EOF
 {
   "\$schema": "https://opencode.ai/config.json",
   "model": "mesocosm/${MESOCOSM_MODEL_ID}",

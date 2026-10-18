@@ -25,4 +25,5 @@ class DockerStack:
         return await self._compose("up", "-d", "--build", "--wait")
 
     async def down(self) -> str:
-        return await self._compose("down")
+        """Remove the project's containers, networks and volumes: the next run starts from a fresh world."""
+        return await self._compose("down", "-v")

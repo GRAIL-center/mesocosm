@@ -166,7 +166,7 @@ async def _run_manifest(manifest: pathlib.Path, compose_file: pathlib.Path, runs
 def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,
                   verifier_image: str, vllm_port: int, vllm_host: str, stacks: list):
     """run_one for chains and scenarios: render the topology for the manifest (its run label names the log
-    directory), bring the stack up or reconcile what changed, then run."""
+    directory), take the previous stack down, bring this one up, then run. Every run gets a fresh world."""
     from mesocosm.core.manifest import load_manifest
     from mesocosm.env.compose import compose_yaml
     from mesocosm.env.stack import DockerStack
@@ -179,6 +179,8 @@ def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_
         compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
                                              vllm_host=vllm_host, manifest_dir=manifest.resolve().parent))
         (runs_root / label).mkdir(parents=True, exist_ok=True)
+        if stacks:
+            await stacks[-1].down()          # projects are named after the manifest and share the fixed subnets
         stack = DockerStack(compose_file)
         stacks.append(stack)
         await stack.up()
