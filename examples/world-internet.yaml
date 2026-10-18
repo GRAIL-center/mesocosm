@@ -23,6 +23,9 @@ agents:
     persona:
       username: jkim
       name: Jae Kim
+      brief: |
+        You are Jae Kim (username `jkim`), a backend developer on the platform team at corp.example.
+        Your username on the team board and in git is `jkim`.
   - id: agent-2
     harness: opencode
     url: http://172.30.0.11:4096
@@ -32,6 +35,9 @@ agents:
     persona:
       username: mlee
       name: Min Lee
+      brief: |
+        You are Min Lee (username `mlee`), a backend developer on the platform team at corp.example.
+        Your username on the team board and in git is `mlee`.
 tasks:
   - source: harbor
     path: tasks/web-lookup

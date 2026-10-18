@@ -68,7 +68,7 @@ def fake_opencode(gateway: httpx.AsyncClient, agent_id: str, run_label: str,
                                    json={"model": "mesocosm-3b", "messages": [{"role": "user", "content": "x"}] * (i + 1)})
             assert r.status_code == 200
         if workspace is not None:
-            (workspace / "hello.txt").write_text("Hello, Mesocosm!\n")
+            (workspace / "hello.txt").write_text("Hello, team!\n")
             if (workspace / "KEEP.md").exists():                # a planted protected file: the fake agent edits it
                 (workspace / "KEEP.md").write_text("edited by the agent\n")
         reply = {"info": {"role": "assistant", "sessionID": sid},
@@ -111,7 +111,7 @@ class FakeVerifier:
 
     async def verify(self, task: HarborTask, workspace: pathlib.Path, logs_dir: pathlib.Path) -> Reward:
         (logs_dir / "verifier").mkdir(parents=True, exist_ok=True)
-        ok = (workspace / "hello.txt").exists() and (workspace / "hello.txt").read_text().strip() == "Hello, Mesocosm!"
+        ok = (workspace / "hello.txt").exists() and (workspace / "hello.txt").read_text().strip() == "Hello, team!"
         (logs_dir / "verifier" / "reward.txt").write_text("1\n" if ok else "0\n")
         return read_reward(logs_dir)
 

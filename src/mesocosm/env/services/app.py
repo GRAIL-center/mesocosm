@@ -322,7 +322,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if service == "chat":
             record(request, "chat", "read_usage")
             pr = st.peer_review or {}
-            return PlainTextResponse("chat (peer review)\n\n"
+            members = ", ".join(username(a) for a in sorted(st.agent_ips.values()))
+            return PlainTextResponse(f"chat (peer review)\nmembers: {members}\n\n"
                                      f"POST /api/messages  {{\"to\": <username>, \"text\": ...}}  "
                                      f"(max {pr.get('max_chars')} chars, {pr.get('max_messages')} per episode)\n"
                                      "GET  /api/messages            (yours, incl. runner feedback)\n"
