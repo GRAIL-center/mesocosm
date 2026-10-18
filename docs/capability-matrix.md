@@ -47,13 +47,13 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 
 | Service | Status | Evidence |
 |---|---|---|
-| `board`: posts and replies over REST, HTML view, writer and reader identity logged by address | supported in tests; Docker run pending | `tests/test_services.py` |
-| `wiki`: markdown pages, timed visibility, reads logged | supported in tests | `tests/test_services.py` |
-| `git`: smart HTTP clone/fetch/push to bare repositories, pushes and fetches logged | supported in tests (real `git clone`/`push` against the app) | `tests/test_services.py` |
-| `pypi`: PEP 503 index over a wheel cache filled at image build; agents' pip points at it | supported in tests; `pip install` from an agent container pending | `tests/test_services.py`, `spike/docker/Dockerfile.services` |
+| `board`: posts and replies over REST, HTML view, writer and reader identity logged by address | supported: agent-1 posted, agent-2 read it and replied; writer, reader and the reader's model request share the content hash (M2 exit criterion) | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_services.py` |
+| `wiki`: markdown pages, timed visibility, reads logged | supported: both agents read `getting-started` first; timed visibility in tests | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_services.py` |
+| `git`: smart HTTP clone/fetch/push to bare repositories, pushes and fetches logged | supported: both agents cloned and pushed `project`; agent-2's clone of agent-1's push recorded as an interaction | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_services.py` |
+| `pypi`: PEP 503 index over a wheel cache filled at image build; agents' pip points at it | supported: `pip install requests` inside an agent container resolved five wheels from the index with no internet | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_services.py` |
 | `sites`: static mock websites | supported in tests | `tests/test_services.py` |
 | `pastebin` hidden channel: unlisted paste service present only when enabled | supported in tests | `tests/test_services.py` |
-| Services log copied into the bundle as `native/services/services.jsonl` and `service.<op>` events | supported in tests | `tests/test_run_e2e.py` |
+| Services log copied into the bundle as `native/services/services.jsonl` and `service.<op>` events | supported: 63 service records, 689 events in the Docker run | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_run_e2e.py` |
 
 ## Conditions
 
@@ -61,7 +61,7 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 |---|---|---|---|
 | Completion/prompt token budget per agent | gateway | supported: receipt on set, 429 `mesocosm_budget_exhausted` to the harness, recorded; OpenCode surfaces `session.error` | Colab L4 2026-10-17, #4 |
 | Request-count budget per agent | gateway | supported: stopped a 200-request compaction loop | Colab L4 2026-10-17, #2 |
-| Hidden channel available / unavailable (`channels: [{type: pastebin}]`, `shared_dir`) | compose + services; verified inside every agent by `egress-check`, receipt per channel, run aborts on contradiction | unverified in Docker (unit and e2e tests with fakes pass) | `tests/test_run_e2e.py`, `tests/test_services.py`, ADR-0010 |
+| Hidden channel available / unavailable (`channels: [{type: pastebin}]`, `shared_dir`) | compose + services; verified inside every agent by `egress-check`, receipt per channel, run aborts on contradiction | supported for the disabled state in Docker (both agents confirmed absence, receipts `applied`); the enabled state is covered by unit and e2e tests only | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_run_e2e.py`, `tests/test_services.py`, ADR-0010 |
 | Information exposure timing (when a document becomes readable) | wiki service (`visible_from` / `visible_after_seconds` front matter) | supported by the service (hidden pages 404 and are logged as `read_hidden`); not yet driven from the manifest as a condition (M3) | `tests/test_services.py` |
 | Memory carried / reset | workspace manager + harness session | unverified | M3 |
 | Task difficulty | task adapter | unverified | M3 |
@@ -72,5 +72,6 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 |---|---|---|
 | Agent container has no route to the internet (HTTP, DNS, ICMP) | supported: HTTPS, raw-IP and ICMP blocked; external names do not resolve on the internal network (no DNS sinkhole needed with Docker 29.9.1) | Colab L4 2026-10-18, #6 |
 | Agent container reaches the gateway only | supported: gateway reachable, inference server unreachable; task completed through the gateway container | Colab L4 2026-10-18, #6 |
+| `mesocosm run` end to end against the Docker topology (M1 exit criterion) | supported: control plane on the Docker host with the fixed sandbox addresses (inside rootless Docker's network namespace on Colab); egress check, budgets, two agents, verifier rewards 1.0, services log in the bundle | Colab L4 2026-10-18, run `world-demo` (M2 issue) |
 | Gateway reaches the inference server only | supported for the inference leg (gateway → host vLLM); the gateway's `edge` network is not otherwise restricted yet | Colab L4 2026-10-18, #6 |
 | Agents cannot reach each other when `isolate_agents: true` (per-agent networks; `egress-check` peer lines) | supported: peers unreachable with the option on, reachable on the shared sandbox | Colab L4 2026-10-18, #6 |

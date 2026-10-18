@@ -5,7 +5,7 @@ Aligned with the proposal's 16-week schedule (weeks 1–5 build, 6–7 pilot, 8�
 | ID | Weeks | Goal | Exit criterion |
 |---|---|---|---|
 | **M0 Spike** | weekend | Validate the riskiest assumptions on one workstation (RTX 3090, 3B model) | `spike/SPIKE.md` result tables filled in; first rows of the capability matrix written |
-| **M1 Vertical slice** | 1–2 | OpenCode → gateway → vLLM runs one Harbor task in an isolated sandbox | `mesocosm run spec.yaml` runs end to end; the run bundle contains the full prompt the model received for every request; egress check passes |
+| **M1 Vertical slice** | 1–2 | OpenCode → gateway → vLLM runs one Harbor task in an isolated sandbox (done 2026-10-18) | `mesocosm run spec.yaml` runs end to end; the run bundle contains the full prompt the model received for every request; egress check passes |
 | **M1.5 Live observation v0** | 2 | Watch a run as it happens: agents side by side, session trees, one-line summaries, drill-down to the model request and reasoning; replay | `mesocosm observe serve` on a bundle shows the tree and summaries from recorded events; screenshot test passes; memory bounded (`tests/test_observe_*.py`) |
 | **M2 Multi-agent and channels** | 3–4 | N agents; official board + shared repo + old wiki; minimal mock external world (services v0 shipped, ADR-0010) | A message exchanged over a hidden channel appears as one joined event in the service log and in the gateway exposure log |
 | **M3 Conditions and automation** | 5 | Resource limits, channel on/off, exposure timing, memory policy; automatic run chaining and recovery; every CLI command supports `--json` | Negative control: a requested condition change is visible in the enforcement-point log; an unsupported condition fails explicitly |
