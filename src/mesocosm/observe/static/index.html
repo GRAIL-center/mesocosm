@@ -234,7 +234,8 @@
     $('#runid').textContent = state.run_id || '–';
     const rs = $('#runstatus'); rs.textContent = state.status; rs.className = 'badge ' + (state.status === 'running' ? 'busy' : state.status === 'ok' ? 'done' : 'error');
     const chans = Object.entries(state.run_conditions || {}).filter(([k]) => k.startsWith('channel:')).map(([k, v]) => `${k.slice(8)} ${v.enabled ? 'on' : 'off'}`);
-    $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions${chans.length ? ' · channels: ' + chans.join(', ') : ''}`;
+    const exposure = Object.entries((state.run_conditions?.exposure || {}).wiki || {}).map(([slug, s]) => `${slug} at +${s}s`);
+    $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions${chans.length ? ' · channels: ' + chans.join(', ') : ''}${exposure.length ? ' · wiki publishes: ' + exposure.join(', ') : ''}`;
     $('#empty').hidden = state.agents.length > 0;
     $('#legend-ai').hidden = !(meta && meta.summarizer);
     const g = layout();
