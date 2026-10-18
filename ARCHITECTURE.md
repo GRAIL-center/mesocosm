@@ -51,6 +51,7 @@ An OpenAI-compatible reverse proxy in front of vLLM.
 - vLLM serves the open-weight model. NNsight hooks capture activations at selected layers and token positions, keyed by request id.
 - Capture policy: per-step summary features (e.g. norms, probe scores) always; raw tensors only for *suspicious windows* flagged by detectors or requested by the researcher.
 - Recompute service: re-runs recorded token sequences through the same weights to regenerate activations that were not stored, and reports the numerical difference from originals captured during execution. Original capture, later recomputation and a fresh rollout are three distinct operations and are labeled as such.
+- Live view *(v0 shipped)*: `mesocosm observe serve` tails the run bundle and the gateway log and shows every agent as a node with its session tree (subagents), a one-line rule-based summary per node, and a drill-down to the exact model request, its reasoning field, tool calls and the timeline. Read-only, bounded, same code for live and replay (ADR-0008).
 
 ### Sandbox and services — `mesocosm.env` *(M1–M2)*
 

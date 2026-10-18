@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesocosm observe</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1b1f24; --muted: #6b7280; --line: #e3e6ea;
+    --idle: #9aa3ad; --busy: #2f6fed; --tool: #d98e04; --blocked: #c62828; --error: #c62828; --done: #2e8b57;
+    --accent: #2f6fed; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121417; --panel: #1b1f24; --ink: #e6e8eb; --muted: #9aa3ad; --line: #2a3038; --idle: #6b7280; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 20px; border-bottom: 1px solid var(--line);
+           background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .2px; }
+  header .meta { color: var(--muted); display: flex; gap: 14px; align-items: center; flex: 1; min-width: 0; white-space: nowrap; }
+  header code { font-family: var(--mono); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); display: inline-block; margin-right: 6px; }
+  .dot.on { background: var(--done); }
+  button { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+           padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #scrub { display: flex; align-items: center; gap: 10px; padding: 8px 20px; border-bottom: 1px solid var(--line);
+           background: var(--panel); color: var(--muted); font-size: 12px; }
+  #scrub input[type=range] { flex: 1; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #agents { flex: 1; display: flex; flex-wrap: wrap; gap: 18px; padding: 22px 20px; overflow: auto; align-items: flex-start; align-content: flex-start; }
+  #empty { color: var(--muted); padding: 40px 20px; }
+  .agent { flex: 1 1 240px; max-width: 340px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 14px 12px; }
+  .orb { display: block; margin: 0 auto 8px; cursor: pointer; }
+  .orb circle.ring { fill: none; stroke-width: 5; transition: stroke .3s; }
+  .orb circle.core { fill: var(--panel); }
+  .orb text { font: 600 13px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
+  .orb.busy circle.ring, .orb.tool circle.ring { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { stroke-opacity: 1; } 50% { stroke-opacity: .35; } }
+  .st-idle { stroke: var(--idle); } .st-busy { stroke: var(--busy); } .st-tool { stroke: var(--tool); }
+  .st-blocked { stroke: var(--blocked); } .st-error { stroke: var(--error); } .st-done { stroke: var(--done); }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; color: #fff; background: var(--idle); vertical-align: middle; }
+  .badge.busy { background: var(--busy); } .badge.tool { background: var(--tool); } .badge.blocked, .badge.error { background: var(--error); }
+  .badge.done { background: var(--done); }
+  .agent .summary { text-align: center; min-height: 2.9em; margin: 6px 0 4px; overflow: hidden; display: -webkit-box;
+                    -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .agent .stats { text-align: center; color: var(--muted); font-size: 12px; }
+  .tree { list-style: none; margin: 12px 0 0; padding: 0; border-top: 1px solid var(--line); padding-top: 10px; }
+  .tree ul { list-style: none; margin: 0; padding-left: 14px; border-left: 1px solid var(--line); }
+  .tree li, .tree ul { margin: 4px 0; min-width: 0; }
+  .node { display: flex; align-items: baseline; gap: 6px; cursor: pointer; padding: 3px 6px; border-radius: 6px; min-width: 0; }
+  .node:hover, .node.selected { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .node .sdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px; background: var(--idle); position: relative; top: -1px; }
+  .node .sdot.busy { background: var(--busy); } .node .sdot.tool { background: var(--tool); }
+  .node .sdot.error { background: var(--error); } .node .sdot.done { background: var(--done); }
+  .node .title { font-weight: 600; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; flex: 0 1 auto; }
+  .node .nsum { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  #drawer { width: 0; border-left: 1px solid var(--line); background: var(--panel); overflow: hidden; transition: width .2s; display: flex; flex-direction: column; }
+  #drawer.open { width: 520px; }
+  #drawer .dhead { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  #drawer .dhead h2 { font-size: 14px; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tabs { display: flex; gap: 4px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 10px; color: var(--muted); }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); }
+  #dbody { padding: 12px 16px; overflow: auto; flex: 1; min-height: 0; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 4px 10px; font-size: 13px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .row { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .row .when { color: var(--muted); font-size: 11px; font-family: var(--mono); }
+  .msg { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; overflow: hidden; }
+  .msg summary { padding: 6px 10px; cursor: pointer; background: color-mix(in srgb, var(--line) 50%, transparent); font-size: 12px; }
+  .msg pre { margin: 0; padding: 10px; font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; }
+  .role-system summary { border-left: 3px solid var(--muted); } .role-user summary { border-left: 3px solid var(--done); }
+  .role-assistant summary { border-left: 3px solid var(--busy); } .role-tool summary { border-left: 3px solid var(--tool); }
+  .reasoning pre { background: color-mix(in srgb, var(--tool) 8%, transparent); }
+  .clickable { cursor: pointer; color: var(--accent); }
+  .muted { color: var(--muted); }
+  pre.block { font: 12px/1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; background: color-mix(in srgb, var(--line) 50%, transparent); padding: 8px; border-radius: 6px; margin: 4px 0; max-height: 300px; overflow: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mesocosm</h1>
+  <div class="meta">
+    <span><span id="conn" class="dot"></span><span id="mode">connecting</span></span>
+    <code id="runid">–</code>
+    <span id="runstatus" class="badge idle">–</span>
+    <span id="elapsed" class="muted"></span>
+    <span id="counts" class="muted"></span>
+  </div>
+  <button id="livebtn" class="primary" hidden>Back to live</button>
+</header>
+<div id="scrub" hidden>
+  <span id="scrub-label">history</span>
+  <input id="scrub-range" type="range" min="0" max="1000" value="1000" step="1">
+  <span id="scrub-time" class="muted"></span>
+</div>
+<main>
+  <section id="agents"><div id="empty">Waiting for the first event…</div></section>
+  <aside id="drawer">
+    <div class="dhead"><h2 id="dtitle"></h2><span id="dbadge" class="badge idle"></span><button id="dclose" title="close">✕</button></div>
+    <div class="tabs" id="dtabs"></div>
+    <div id="dbody"></div>
+  </aside>
+</main>
+<script>
+(() => {
+  'use strict';
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtTime = ts => ts ? new Date(ts * 1000).toLocaleTimeString([], {hour12: false}) : '';
+  const ago = ts => ts ? Math.max(0, Math.round(Date.now() / 1000 - ts)) + 's ago' : '';
+  const dur = s => { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60), h = Math.floor(m / 60);
+    return h ? `${h}h ${m % 60}m` : m ? `${m}m ${s % 60}s` : `${s}s`; };
+
+  // ---- state (one object, replaced on every update; nothing accumulates client-side) ----
+  let state = null, meta = null, frozen = false, es = null;
+  const drawer = { kind: null, id: null, tab: 'overview', lastFetch: 0, cache: null };
+
+  function connect() {
+    if (es) es.close();
+    es = new EventSource('/events');
+    es.addEventListener('state', e => { if (frozen) return; const p = JSON.parse(e.data); meta = p.meta; state = p.state; render(); });
+    es.onopen = () => { $('#conn').classList.add('on'); };
+    es.onerror = () => { $('#conn').classList.remove('on'); $('#mode').textContent = 'reconnecting'; };
+  }
+
+  // ---- rendering: reconcile by id; event delegation, so no listeners pile up ----
+  const orb = (id, status) => `<svg class="orb ${status}" width="96" height="96" viewBox="0 0 96 96" data-agent="${esc(id)}">
+      <circle class="ring st-${status}" cx="48" cy="48" r="40"></circle><circle class="core" cx="48" cy="48" r="36"></circle>
+      <text x="48" y="48">${esc(id.length > 10 ? id.slice(0, 9) + '…' : id)}</text></svg>`;
+
+  function treeHtml(sessionIds, sessions, depth = 0) {
+    if (!sessionIds.length || depth > 12) return '';
+    return `<ul>${sessionIds.map(sid => {
+      const s = sessions[sid]; if (!s) return '';
+      const sel = drawer.kind === 'session' && drawer.id === sid ? ' selected' : '';
+      const title = s.parent_id ? (s.title || 'subagent') : (s.title || sid);
+      return `<li><div class="node${sel}" data-session="${esc(sid)}"><span class="sdot ${s.status}"></span>
+        <span class="title">${esc(title)}</span><span class="nsum">${esc(s.summary)}</span></div>${treeHtml(s.children, sessions, depth + 1)}</li>`;
+    }).join('')}</ul>`;
+  }
+
+  function render() {
+    if (!state) return;
+    $('#mode').textContent = frozen ? 'paused (scrubbing)' : (meta.mode === 'replay' ? `replay ×${meta.replay_speed}${meta.replay_done ? ' · finished' : ''}` : 'live');
+    $('#runid').textContent = state.run_id || '–';
+    const rs = $('#runstatus'); rs.textContent = state.status; rs.className = 'badge ' + (state.status === 'running' ? 'busy' : state.status === 'ok' ? 'done' : 'error');
+    $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions`;
+    const host = $('#agents');
+    $('#empty')?.remove();
+    const seen = new Set();
+    state.agents.forEach(a => {
+      seen.add(a.agent_id);
+      let card = host.querySelector(`.agent[data-agent="${CSS.escape(a.agent_id)}"]`);
+      if (!card) { card = document.createElement('div'); card.className = 'agent'; card.dataset.agent = a.agent_id;
+        card.innerHTML = `<div class="orbwrap"></div><div class="summary"></div><div class="stats"></div><ul class="tree"></ul>`; host.appendChild(card); }
+      const ow = $('.orbwrap', card);
+      if (ow.dataset.status !== a.status) { ow.innerHTML = orb(a.agent_id, a.status); ow.dataset.status = a.status; }
+      $('.summary', card).textContent = a.summary;
+      const reward = a.rewards.length ? ` · reward ${a.rewards.map(r => r.reward ?? '?').join(',')}` : '';
+      $('.stats', card).textContent = `${a.requests} model calls · ${a.completion_tokens} out tokens${reward}`;
+      const roots = a.root_sessions.length ? a.root_sessions
+        : Object.values(state.sessions).filter(s => s.agent_id === a.agent_id && !s.parent_id).map(s => s.session_id);
+      $('.tree', card).innerHTML = treeHtml(roots, state.sessions).replace(/^<ul>|<\/ul>$/g, '') || '<li class="muted">no session yet</li>';
+    });
+    host.querySelectorAll('.agent').forEach(c => { if (!seen.has(c.dataset.agent)) c.remove(); });
+    if (!frozen && meta && (meta.mode === 'replay' || state.started_ts)) {
+      $('#scrub').hidden = false;
+      const r = $('#scrub-range'); r.min = Math.floor(state.started_ts || 0); r.max = Math.ceil(state.last_ts || r.min + 1);
+      if (!frozen) { r.value = r.max; $('#scrub-time').textContent = fmtTime(state.last_ts); }
+    }
+    maybeRefreshDrawer();
+  }
+
+  setInterval(() => {   // one clock, started once
+    if (!state) return;
+    const end = frozen ? Number($('#scrub-range').value) : (state.last_ts || state.started_ts);
+    $('#elapsed').textContent = state.started_ts ? `elapsed ${dur(end - state.started_ts)}` : '';
+  }, 1000);
+
+  // ---- drawer ----
+  const tabsFor = kind => kind === 'session' ? ['overview', 'tools', 'timeline', 'requests'] : ['overview', 'requests'];
+  function openDrawer(kind, id) { drawer.kind = kind; drawer.id = id; drawer.tab = 'overview'; drawer.cache = null; drawer.lastFetch = 0;
+    $('#drawer').classList.add('open'); render(); refreshDrawer(true); }
+  function closeDrawer() { drawer.kind = null; drawer.id = null; drawer.cache = null; $('#drawer').classList.remove('open'); $('#dbody').innerHTML = ''; render(); }
+  function maybeRefreshDrawer() { if (drawer.kind && !frozen && Date.now() - drawer.lastFetch > 2000) refreshDrawer(false); }
+
+  async function refreshDrawer(force) {
+    if (!drawer.kind) return;
+    drawer.lastFetch = Date.now();
+    try {
+      if (drawer.kind === 'session') drawer.cache = await (await fetch(`/session/${encodeURIComponent(drawer.id)}`)).json();
+      else drawer.cache = await (await fetch(`/agent/${encodeURIComponent(drawer.id)}/requests`)).json();
+    } catch (e) { drawer.cache = { error: String(e) }; }
+    drawDrawer();
+  }
+
+  function drawDrawer() {
+    const d = drawer.cache; if (!d || !drawer.kind) return;
+    const agent = drawer.kind === 'agent' ? state.agents.find(a => a.agent_id === drawer.id) : null;
+    const status = drawer.kind === 'session' ? d.status : agent?.status;
+    $('#dtitle').textContent = drawer.kind === 'session' ? `${d.parent_id ? 'subagent ' : 'session '}${d.title || d.session_id}` : `agent ${drawer.id}`;
+    const b = $('#dbadge'); b.textContent = status || ''; b.className = 'badge ' + (status || 'idle');
+    $('#dtabs').innerHTML = tabsFor(drawer.kind).map(t => `<button data-tab="${t}" class="${drawer.tab === t ? 'active' : ''}">${t}</button>`).join('');
+    const body = $('#dbody');
+    if (drawer.tab === 'overview') body.innerHTML = overviewHtml(d, agent);
+    else if (drawer.tab === 'tools') body.innerHTML = toolsHtml(d.items || []);
+    else if (drawer.tab === 'timeline') body.innerHTML = timelineHtml(d.items || []);
+    else if (drawer.tab === 'requests') body.innerHTML = requestsHtml(d.requests || [], drawer.kind === 'session' ? d.agent_id : drawer.id);
+  }
+
+  function overviewHtml(d, agent) {
+    if (agent) {
+      const budget = Object.entries(agent.budget || {}).map(([k, v]) => `${k}: ${esc(JSON.stringify(v))}`).join(', ') || 'none';
+      return `<dl class="kv"><dt>status</dt><dd>${esc(agent.status)}</dd><dt>now</dt><dd>${esc(agent.summary)}</dd>
+        <dt>task</dt><dd>${esc(agent.task || '–')}</dd><dt>budget</dt><dd>${budget}</dd>
+        <dt>model calls</dt><dd>${agent.requests} (${agent.completion_tokens} completion tokens)</dd>
+        <dt>last call</dt><dd>${fmtTime(agent.last_request_ts)} ${agent.last_request_ts ? '(' + ago(agent.last_request_ts) + ')' : ''}</dd>
+        <dt>rewards</dt><dd>${agent.rewards.length ? agent.rewards.map(r => `${esc(r.task)} → ${esc(r.reward)}`).join('<br>') : '–'}</dd>
+        <dt>last error</dt><dd>${esc(agent.last_error || '–')}</dd>
+        <dt>sessions</dt><dd>${agent.root_sessions.map(s => `<span class="clickable" data-session="${esc(s)}">${esc(s)}</span>`).join('<br>') || '–'}</dd></dl>`;
+    }
+    const tk = d.tokens || {};
+    return `<dl class="kv"><dt>status</dt><dd>${esc(d.status)}</dd><dt>now</dt><dd>${esc(d.summary)}</dd>
+      <dt>agent</dt><dd>${esc(d.agent_id || '?')}</dd><dt>parent</dt><dd>${d.parent_id ? `<span class="clickable" data-session="${esc(d.parent_id)}">${esc(d.parent_id)}</span>` : 'root session'}</dd>
+      <dt>subagents</dt><dd>${(d.children || []).map(s => `<span class="clickable" data-session="${esc(s)}">${esc(s)}</span>`).join('<br>') || '–'}</dd>
+      <dt>created</dt><dd>${fmtTime(d.created_ts)}</dd><dt>updated</dt><dd>${fmtTime(d.updated_ts)} ${d.updated_ts ? '(' + ago(d.updated_ts) + ')' : ''}</dd>
+      <dt>tool calls</dt><dd>${d.tool_calls}</dd><dt>text parts</dt><dd>${d.text_parts}</dd>
+      <dt>tokens</dt><dd>${tk.input != null ? `in ${tk.input} · out ${tk.output} · reasoning ${tk.reasoning ?? 0}` : '–'}</dd>
+      <dt>error</dt><dd>${esc(d.error || '–')}</dd></dl>
+      ${d.live_text ? `<p class="muted" style="margin-top:12px">streaming text</p><pre class="block">${esc(d.live_text)}</pre>` : ''}`;
+  }
+
+  function toolsHtml(items) {
+    const tools = items.filter(i => i.kind === 'tool');
+    if (!tools.length) return '<p class="muted">no tool calls yet</p>';
+    return tools.map(t => `<details class="msg role-tool"><summary><span class="when">${fmtTime(t.ts)}</span> &nbsp;<b>${esc(t.tool)}</b> ${esc(t.input_summary || '')} <span class="badge ${t.status === 'completed' ? 'done' : t.status === 'error' ? 'error' : 'tool'}">${esc(t.status)}</span></summary>
+      <pre>${esc(t.title ? t.title + '\n' : '')}${esc(t.output ?? t.error ?? '(no output yet)')}</pre></details>`).join('');
+  }
+
+  function timelineHtml(items) {
+    if (!items.length) return '<p class="muted">nothing yet</p>';
+    return items.map(i => {
+      let text = i.kind === 'tool' ? `<b>${esc(i.tool)}</b> ${esc(i.input_summary || '')} · ${esc(i.status)}`
+        : i.kind === 'file' ? `edited <b>${esc(i.path)}</b>` : i.kind === 'reasoning' ? `<i>thinking:</i> ${esc(i.text)}` : esc(i.text);
+      return `<div class="row"><span class="when">${fmtTime(i.ts)}</span> <span class="badge ${i.kind === 'error' ? 'error' : i.kind === 'tool' ? 'tool' : 'idle'}">${esc(i.kind)}</span> ${text}</div>`;
+    }).join('');
+  }
+
+  function requestsHtml(reqs, agentId) {
+    if (!reqs.length) return `<p class="muted">no model requests recorded${drawer.kind === 'session' ? ' for this session (matched by time; see the agent view for all)' : ''}</p>`;
+    return reqs.slice().reverse().map(r => `<div class="row"><span class="when">${fmtTime(r.ts)}</span>
+      <span class="clickable" data-request="${esc(r.request_id)}" data-agent="${esc(agentId)}">${esc(r.event)} ${r.status}</span>
+      · ${r.n_messages ?? '?'} msgs · ${r.latency_ms ?? '?'} ms · ${r.prompt_tokens ?? '?'}→${r.completion_tokens ?? '?'} tok
+      ${r.tool_calls?.length ? '· tools ' + esc(r.tool_calls.join(',')) : ''} ${r.reasoning_chars ? '· CoT ' + r.reasoning_chars + ' chars' : ''}
+      ${r.has_token_ids ? '· ids' : ''}<div id="req-${esc(r.request_id)}"></div></div>`).join('');
+  }
+
+  async function expandRequest(agentId, rid) {
+    const slot = document.getElementById(`req-${rid}`); if (!slot) return;
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    slot.innerHTML = '<p class="muted">loading…</p>';
+    const res = await fetch(`/request/${encodeURIComponent(agentId)}/${encodeURIComponent(rid)}`);
+    if (!res.ok) { slot.innerHTML = `<p class="muted">${esc((await res.json()).detail || res.statusText)}</p>`; return; }
+    const rec = await res.json(); const req = rec.request || {}, resp = rec.response || {};
+    const msgs = (req.messages || []).map((m, i) => {
+      const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content, null, 1);
+      const calls = (m.tool_calls || []).map(c => `\n[tool_call ${c.function?.name}] ${c.function?.arguments || ''}`).join('');
+      return `<details class="msg role-${esc(m.role)}" ${i === (req.messages || []).length - 1 ? 'open' : ''}><summary>${i + 1}. ${esc(m.role)} ${m.tool_call_id ? '(result of ' + esc(m.tool_call_id) + ')' : ''} · ${(content || '').length} chars</summary><pre>${esc(content)}${esc(calls)}</pre></details>`;
+    }).join('');
+    const tools = (req.tools || []).map(t => t.function?.name).filter(Boolean);
+    const calls = (resp.tool_calls || []).map(c => `[${c.function?.name}] ${c.function?.arguments || ''}`).join('\n');
+    slot.innerHTML = `<p class="muted">what the model saw · model ${esc(req.model)} · temperature ${esc(req.temperature ?? 'default')} · tools offered: ${esc(tools.join(', ') || 'none')}</p>${msgs}
+      <p class="muted">what the model answered · finish ${esc(resp.finish_reason)} · token ids ${resp.prompt_token_ids ? 'recorded' : 'absent'}</p>
+      ${resp.reasoning ? `<details class="msg reasoning" open><summary>reasoning (CoT) · ${resp.reasoning.length} chars</summary><pre>${esc(resp.reasoning)}</pre></details>` : '<p class="muted">no separate reasoning field in this response</p>'}
+      ${resp.content ? `<details class="msg role-assistant" open><summary>content</summary><pre>${esc(resp.content)}</pre></details>` : ''}
+      ${calls ? `<details class="msg role-tool" open><summary>tool calls</summary><pre>${esc(calls)}</pre></details>` : ''}`;
+  }
+
+  // ---- scrubbing: ask the server for the state at a time; nothing is kept client-side ----
+  let scrubTimer = null;
+  $('#scrub-range').addEventListener('input', e => {
+    frozen = true; $('#livebtn').hidden = false; $('#scrub-time').textContent = fmtTime(Number(e.target.value));
+    clearTimeout(scrubTimer);
+    scrubTimer = setTimeout(async () => {
+      const p = await (await fetch(`/state?at=${e.target.value}`)).json(); meta = p.meta; state = p.state; render();
+    }, 150);
+  });
+  $('#livebtn').addEventListener('click', () => { frozen = false; $('#livebtn').hidden = true; connect(); });
+
+  // ---- one delegated click handler for everything ----
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-tab], [data-session], [data-request], .orb, #dclose');
+    if (!t) return;
+    if (t.id === 'dclose') return closeDrawer();
+    if (t.dataset.tab) { drawer.tab = t.dataset.tab; return drawDrawer(); }
+    if (t.dataset.request) return expandRequest(t.dataset.agent, t.dataset.request);
+    if (t.dataset.session) return openDrawer('session', t.dataset.session);
+    if (t.classList.contains('orb')) return openDrawer('agent', t.dataset.agent);
+  });
+
+  connect();
+})();
+</script>
+</body>
+</html>

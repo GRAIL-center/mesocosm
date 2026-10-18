@@ -14,8 +14,10 @@ import typer
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Mesocosm research world")
 world_app = typer.Typer(no_args_is_help=True, help="World manifests")
 env_app = typer.Typer(no_args_is_help=True, help="Sandbox environment")
+observe_app = typer.Typer(no_args_is_help=True, help="Live observation of a run")
 app.add_typer(world_app, name="world")
 app.add_typer(env_app, name="env")
+app.add_typer(observe_app, name="observe")
 
 JSON_OPT = typer.Option(False, "--json", help="Print one JSON object on stdout")
 
@@ -88,6 +90,23 @@ def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "
         _emit({"compose": text, "run_label": run_label}, json_)
     else:
         sys.stdout.write(text)
+
+
+@observe_app.command("serve")
+def observe_serve(bundle: pathlib.Path,
+                  gateway_log: pathlib.Path = typer.Option(
+                      None, "--gateway-log",
+                      help="The gateway's gateway.jsonl to tail live; default: the copy inside the bundle"),
+                  host: str = typer.Option("127.0.0.1", "--host"), port: int = typer.Option(8090, "--port"),
+                  replay: float = typer.Option(None, "--replay", help="Replay the bundle at this speed, not live"),
+                  json_: bool = JSON_OPT) -> None:
+    """Serve the live view of a run: agents, their session trees, one-line summaries, drill-down."""
+    from mesocosm.observe.server import serve
+
+    _emit({"url": f"http://{host}:{port}", "bundle": str(bundle),
+           "gateway_log": str(gateway_log) if gateway_log else None,
+           "mode": f"replay x{replay}" if replay else "live"}, json_)
+    serve(bundle, gateway_log, host, port, replay)
 
 
 @app.command()

@@ -14,6 +14,7 @@ Pre-alpha. The M1 vertical slice is implemented and tested against fakes (manife
 uv run mesocosm world validate examples/spike-world.yaml --json   # check a manifest
 uv run mesocosm env compose examples/spike-world.yaml              # render the sandbox topology
 uv run mesocosm run examples/spike-world.yaml --json               # needs vLLM, the gateway and the Compose sandbox up
+uv run mesocosm observe serve runs/<run_id> --gateway-log runs/spike/gateway.jsonl   # live view at http://127.0.0.1:8090
 ```
 
 ## What the platform does (target)
@@ -37,7 +38,7 @@ src/mesocosm/
   gateway/    OpenAI-compatible model gateway: exposure logging, budgets, request tagging
   env/        sandbox networks, shared services (board, repo, wiki), mock external world
   adapters/   harness adapters (opencode/), task adapters (harbor/)
-  observe/    activation capture (vLLM + NNsight), recompute verification, dashboards
+  observe/    live view of a run (agents, session trees, drill-down); activation capture and recompute (M5)
   judge/      traps, environment-state checks, LLM judges, behavior catalog (Ethogram)
   cli/        `mesocosm` command line
 spike/        M0 scripts and runbook (host-only day 1, Docker isolation day 2)
