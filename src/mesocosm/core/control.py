@@ -31,6 +31,12 @@ def gateway_url_of(bundle_root: str | pathlib.Path) -> str:
     return RunBundle.open(bundle_root).manifest()["manifest"]["gateway"]["url"]
 
 
+def gateway_admin_of(bundle_root: str | pathlib.Path) -> GatewayAdmin:
+    """A client for the gateway the bundle's manifest names, with its control key."""
+    spec = RunBundle.open(bundle_root).manifest()["manifest"]["gateway"]
+    return GatewayAdmin(spec["url"], api_key=spec.get("api_key", "mesocosm-local"))
+
+
 async def pause_run(bundle_root: str | pathlib.Path, gateway: GatewayAdmin, agent_id: str | None = None,
                     reason: str | None = None) -> Receipt:
     bundle = RunBundle.open(bundle_root)

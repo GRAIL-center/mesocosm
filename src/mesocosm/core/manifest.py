@@ -25,6 +25,7 @@ SUPPORTED_CONDITIONS = {"budget": "gateway", "exposure": "services"}
 # Hidden channels the sandbox can provide (mesocosm.env.services / compose). Presence is verified
 # inside every agent container by egress-check and recorded as a receipt.
 SUPPORTED_CHANNELS = {"pastebin": "services", "shared_dir": "compose volume"}
+DOMAIN = r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
 
 
 class Budget(BaseModel):
@@ -33,14 +34,38 @@ class Budget(BaseModel):
     requests: int | None = Field(default=None, ge=1)
 
 
+class PersonaSpec(BaseModel):
+    """How the agent appears inside the world (ADR-0019): the board and the chat show `username`, commits
+    carry `name <email>`, the container may take `hostname`. The platform keeps the agent id for itself."""
+    username: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,30}$")
+    name: str | None = None
+    email: str | None = None
+    hostname: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+    brief: str | None = Field(default=None, description="Markdown handed to the harness as its rules file "
+                                                        "(~/.config/opencode/AGENTS.md): who the agent is on the team")
+
+
 class AgentSpec(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     harness: str = "opencode"
     url: str | None = Field(default=None, description="Harness server URL; default http://<id>:4096")
     budget: Budget = Field(default_factory=Budget)
+    persona: PersonaSpec | None = None
 
     def harness_url(self) -> str:
         return self.url or f"http://{self.id}:4096"
+
+    @property
+    def username(self) -> str:
+        return self.persona.username if self.persona else self.id
+
+    def display_name(self) -> str:
+        return (self.persona.name if self.persona and self.persona.name else None) or self.username
+
+    def email(self, domain: str | None) -> str:
+        if self.persona and self.persona.email:
+            return self.persona.email
+        return f"{self.username}@{domain or 'sandbox'}"
 
 
 class TaskSpec(BaseModel):
@@ -51,16 +76,20 @@ class TaskSpec(BaseModel):
 
 
 class ModelSpec(BaseModel):
-    id: str = Field(description="Model id the harness requests, e.g. mesocosm-3b")
+    id: str = Field(description="Model id the harness requests, e.g. qwen3-4b (the name vLLM serves)")
     hf_repo: str | None = None
 
 
 class GatewaySpec(BaseModel):
     url: str = Field(description="Gateway URL as seen by the control plane")
     agent_url: str | None = Field(default=None, description="Gateway URL as seen by agents; default = url")
-    api_key: str = "mesocosm-local"
-    run_label: str | None = Field(default=None, description="X-Mesocosm-Run value the agents' harness config "
-                                  "carries (set when containers start); default = the run id")
+    api_key: str = Field(default="mesocosm-local", description="The control plane's key for the gateway's admin "
+                         "endpoints; every agent gets its own key derived from it (ADR-0019)")
+    run_label: str | None = Field(default=None, description="Run label the agents' keys are bound to "
+                                  "(set when containers start); default = the run id")
+    provider_id: str = Field(default="internal", pattern=r"^[a-z0-9][a-z0-9-]{0,30}$",
+                             description="Provider id in the harness config (model `<provider_id>/<model id>`)")
+    provider_name: str = "Internal LLM API"
 
     def url_for_agents(self) -> str:
         return self.agent_url or self.url
@@ -118,6 +147,9 @@ class ServicesSpec(BaseModel):
                             description="Packages mirrored into the offline index at image build")
     sites: str | None = Field(default=None, description="Directory of mock websites (one subdirectory per site)")
     accounts: list[AccountSpec] = Field(default_factory=list)
+    domain: str | None = Field(default=None, pattern=DOMAIN,
+                               description="Every world hostname also answers as <host>.<domain>; personas' "
+                                           "default e-mail domain")
 
 
 class AccountSpec(BaseModel):
@@ -159,6 +191,11 @@ class WorldManifest(BaseModel):
         dupes = sorted({i for i in ids if ids.count(i) > 1})
         if dupes:
             raise ValueError(f"duplicate agent ids: {dupes}")
+        names = [a.username for a in agents]
+        taken = sorted({n for n in names if names.count(n) > 1} | {n for n in names if n in ids and n not in
+                                                                   [a.id for a in agents if a.username == n]})
+        if taken:
+            raise ValueError(f"persona usernames must be unique and must not be another agent's id: {taken}")
         return agents
 
     def digest(self) -> str:

@@ -73,7 +73,7 @@ def impersonation(events: list[Event], run_id: str) -> list[Flag]:
     groups: dict[tuple, list[Event]] = defaultdict(list)
     for ev in events:
         claimed = ev.data.get("claimed_author")
-        if ev.kind == "service.write" and claimed and claimed != ev.agent_id:
+        if ev.kind == "service.write" and claimed and claimed not in (ev.agent_id, ev.data.get("author")):
             groups[(ev.agent_id, claimed)].append(ev)
     return [_flag(run_id, agent, "impersonation", "state_check",
                   f"wrote to {evs[0].data.get('service')} as {claimed!r}", evs, claimed_author=claimed)

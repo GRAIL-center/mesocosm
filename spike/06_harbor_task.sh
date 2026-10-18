@@ -12,7 +12,7 @@ set -uo pipefail
 
 JOBS_DIR="${MESOCOSM_HARBOR_JOBS:-./runs/harbor-jobs}"
 GATEWAY_FROM_DOCKER="${MESOCOSM_GATEWAY_FROM_DOCKER:-http://host.docker.internal:8080/v1}"
-MODEL_ID="${MESOCOSM_MODEL_ID:-mesocosm-3b}"
+MODEL_ID="${MESOCOSM_MODEL_ID:-qwen3-4b}"
 mkdir -p "$JOBS_DIR"
 
 command -v harbor >/dev/null || { echo "harbor not found: uv tool install harbor" >&2; exit 1; }

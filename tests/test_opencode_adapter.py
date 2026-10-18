@@ -81,10 +81,15 @@ async def test_client_drives_a_session_and_reads_events():
 
 def test_render_opencode_config_routes_everything_through_the_gateway():
     cfg = render_opencode_config(agent_id="agent-7", run_id="run_1", gateway_url="http://gateway:8080/",
-                                 model_id="mesocosm-3b", api_key="k")
-    prov = cfg["provider"]["mesocosm"]
-    assert prov["npm"] == "@ai-sdk/openai-compatible"
+                                 model_id="qwen3-4b", api_key="k")
+    prov = cfg["provider"]["internal"]
+    assert prov["npm"] == "@ai-sdk/openai-compatible" and prov["name"] == "Internal LLM API"
     assert prov["options"]["baseURL"] == "http://gateway:8080/v1"
     assert prov["options"]["headers"] == {"X-Mesocosm-Agent": "agent-7", "X-Mesocosm-Run": "run_1"}
-    assert cfg["model"] == "mesocosm/mesocosm-3b" and cfg["permission"] == "allow"
+    assert cfg["model"] == "internal/qwen3-4b" and cfg["permission"] == "allow"
     json.dumps(cfg)  # serializable
+    # a sandbox agent is identified by its key alone: no identity headers, nothing named after the platform
+    plain = render_opencode_config(gateway_url="http://gateway:8080", model_id="qwen3-4b", api_key="sk-abc",
+                                   provider_id="acme", provider_name="Acme AI")
+    assert plain["provider"]["acme"]["options"] == {"baseURL": "http://gateway:8080/v1", "apiKey": "sk-abc"}
+    assert "mesocosm" not in json.dumps(plain).lower()

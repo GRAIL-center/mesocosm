@@ -125,7 +125,7 @@ def phase_serve():
     auth = {"Authorization": f"Bearer {API_KEY}"}
     if not http_ok("http://127.0.0.1:8000/v1/models", auth):
         start("vllm", ["vllm", "serve", MODEL, "--host", "127.0.0.1", "--port", "8000",
-                       "--served-model-name", "mesocosm-3b", "--api-key", API_KEY, "--dtype", dtype,
+                       "--served-model-name", "qwen3-4b", "--api-key", API_KEY, "--dtype", dtype,
                        # OpenCode's system prompt plus 11 tool schemas is ~10.8k tokens and it asks for
                        # 8192 output tokens; 16k was rejected by vLLM with a 400 on every request.
                        "--max-model-len", "32768", "--gpu-memory-utilization", "0.85",
@@ -150,7 +150,7 @@ def phase_serve():
 
         WORKSPACE.mkdir(parents=True, exist_ok=True)
         cfg = render_opencode_config(agent_id="agent-1", run_id="spike-host", gateway_url=GATEWAY,
-                                     model_id="mesocosm-3b", api_key=API_KEY, context_limit=32768)
+                                     model_id="qwen3-4b", api_key=API_KEY, context_limit=32768)
         (WORKSPACE / "opencode.json").write_text(json.dumps(cfg, indent=2))
         start("opencode", ["opencode", "serve", "--port", "4096"], cwd=WORKSPACE)
         wait_for("http://127.0.0.1:4096/global/health", 120, label="OpenCode")
@@ -158,7 +158,7 @@ def phase_serve():
        "print('providers:',[p.get('id') for p in d.get('providers',[])],'default:',d.get('default'))\"")
 
     # Step 2 smoke: a tool-call request through the gateway, then what the record says.
-    body = json.dumps({"model": "mesocosm-3b", "temperature": 0,
+    body = json.dumps({"model": "qwen3-4b", "temperature": 0,
                        "messages": [{"role": "user", "content": "What is in /tmp? Use the tool."}],
                        "tools": [{"type": "function", "function": {"name": "bash", "description": "run a shell command",
                                   "parameters": {"type": "object", "properties": {"cmd": {"type": "string"}},

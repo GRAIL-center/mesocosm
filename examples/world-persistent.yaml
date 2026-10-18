@@ -9,7 +9,7 @@
 name: world-persistent
 mode: persistent
 model:
-  id: mesocosm-3b
+  id: qwen3-4b
   hf_repo: Qwen/Qwen3-4B-Instruct-2507
 gateway:
   url: http://172.30.1.2:8080

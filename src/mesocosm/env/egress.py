@@ -1,15 +1,20 @@
 """Egress verification: a run may start only if every agent container fails to reach the outside.
 
-The check itself is `spike/07_egress_check.sh` (installed as `egress-check` in the agent image);
-this module runs it and parses its output. A WARN line (external DNS resolves) does not block the
-run but is recorded; a FAIL line does.
+The check itself is `spike/07_egress_check.sh`. It is not part of the agent image: the verifier pipes
+the script into each container over `docker compose exec` with the facts it needs (gateway URL,
+peers, services, channels) as variables of that one process, so nothing about the platform is left
+on the agent's filesystem or in its environment (ADR-0019). A WARN line (external DNS resolves) does
+not block the run but is recorded; a FAIL line does.
 """
 
 from __future__ import annotations
 
 import asyncio
 import pathlib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+
+SCRIPT = pathlib.Path(__file__).resolve().parents[3] / "spike" / "07_egress_check.sh"
 
 
 @dataclass
@@ -42,10 +47,14 @@ def parse_egress_output(text: str, exit_code: int | None = 0) -> EgressResult:
 
 
 class DockerEgressVerifier:
-    """Runs `egress-check` inside each agent's container via `docker compose exec`."""
+    """Runs the check inside each agent's container via `docker compose exec -T <agent> sh -s < script`,
+    with `env_for[agent_id]` passed as `-e` variables of that process only."""
 
-    def __init__(self, compose_file: str | pathlib.Path):
+    def __init__(self, compose_file: str | pathlib.Path, env_for: Mapping[str, Mapping[str, str]] | None = None,
+                 script: pathlib.Path = SCRIPT):
         self.compose_file = str(compose_file)
+        self.env_for = env_for or {}
+        self.script = script
 
     async def verify(self, agent_ids: list[str]) -> dict[str, EgressResult]:
         """All agents are checked at once; the check is a few seconds per container."""
@@ -53,8 +62,9 @@ class DockerEgressVerifier:
         return dict(zip(agent_ids, results, strict=True))
 
     async def _check(self, agent_id: str) -> EgressResult:
+        env_args = [arg for k, v in sorted(self.env_for.get(agent_id, {}).items()) for arg in ("-e", f"{k}={v}")]
         proc = await asyncio.create_subprocess_exec(
-            "docker", "compose", "-f", self.compose_file, "exec", "-T", agent_id, "egress-check",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-        out, _ = await proc.communicate()
+            "docker", "compose", "-f", self.compose_file, "exec", "-T", *env_args, agent_id, "sh", "-s",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        out, _ = await proc.communicate(self.script.read_bytes())
         return parse_egress_output(out.decode("utf-8", "replace"), proc.returncode)

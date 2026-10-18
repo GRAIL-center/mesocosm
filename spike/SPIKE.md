@@ -49,7 +49,7 @@ MESOCOSM_LOG_DIR=runs/spike \
 MESOCOSM_RETURN_TOKEN_IDS=1 \
 MESOCOSM_BUDGET_JSON='{"agent-1": {"completion_tokens": 40000, "requests": 200}}' \
 uv run python spike/02_gateway.py          # :8080
-curl -s localhost:8080/mesocosm/health | jq .
+curl -s -H "Authorization: Bearer mesocosm-local" localhost:8080/admin/health | jq .
 ```
 
 Smoke-test the proxy without OpenCode (a tool-call request):
@@ -57,7 +57,7 @@ Smoke-test the proxy without OpenCode (a tool-call request):
 ```bash
 curl -s localhost:8080/v1/chat/completions -H 'Authorization: Bearer mesocosm-local' \
   -H 'X-Mesocosm-Agent: curl' -H 'Content-Type: application/json' -d '{
-  "model":"mesocosm-3b","temperature":0,
+  "model":"qwen3-4b","temperature":0,
   "messages":[{"role":"user","content":"What is in /tmp? Use the tool."}],
   "tools":[{"type":"function","function":{"name":"bash","description":"run a shell command",
     "parameters":{"type":"object","properties":{"cmd":{"type":"string"}},"required":["cmd"]}}}]}' | jq .
@@ -116,7 +116,7 @@ Keep `vllm serve` running on the host (restart it after step 5).
 
 ```bash
 docker compose -f spike/docker/compose.yml up -d --build
-docker compose -f spike/docker/compose.yml exec agent-1 egress-check
+docker compose -f spike/docker/compose.yml exec -T agent-1 sh -s < spike/07_egress_check.sh
 docker compose -f spike/docker/compose.yml exec control \
     python 04_drive_opencode.py --url http://agent-1:4096 --out /runs/spike --run spike-docker
 docker compose -f spike/docker/compose.yml logs gateway | tail -20

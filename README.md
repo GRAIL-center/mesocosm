@@ -19,7 +19,7 @@ uv run mesocosm scenario run examples/scenarios/channel-exposure.yaml --json   #
 uv run mesocosm chain examples/chains/smoke.yaml --json                        # several worlds in sequence, with retries
 uv run mesocosm flags list runs/<run_id> --json                                # the judge's candidate incidents
 uv run mesocosm report runs/<run_id> --gpu-hour-cost 0.8 --json                # agent-hours, tokens, cost per agent-hour
-#   add --summarizer-url http://127.0.0.1:8000/v1 --summarizer-model mesocosm-3b --summarizer-key mesocosm-local for model-written status lines
+#   add --summarizer-url http://127.0.0.1:8000/v1 --summarizer-model qwen3-4b --summarizer-key mesocosm-local for model-written status lines
 ```
 
 ## What the platform does (target)

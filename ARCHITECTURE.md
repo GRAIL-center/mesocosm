@@ -41,9 +41,9 @@ This document describes the target architecture. Items marked *(M-n)* name the m
 
 An OpenAI-compatible reverse proxy in front of vLLM.
 
-- Tags each request with `X-Mesocosm-Request-Id` and reads `X-Mesocosm-Agent` / `X-Mesocosm-Run` headers that the harness config sets per agent.
+- Identifies each agent by the gateway key in its harness config (one key per agent and run label, ADR-0019), or by `X-Mesocosm-Agent` / `X-Mesocosm-Run` headers for harnesses the control plane drives directly; tags each upstream request with `X-Mesocosm-Request-Id` and forwards neither the key nor the headers.
 - Logs the full request (messages, tools, sampling parameters) and the full response (text, tool calls, usage, and, when vLLM supports it, prompt and completion token ids). This is the *actual information exposure* record: evidence of what the model was given.
-- Enforces per-agent token and request budgets; exceeding a budget returns an explicit error, which is itself a recorded event.
+- Enforces per-agent token and request budgets; exceeding a budget returns the API's ordinary quota error (nothing about the run in it), which is itself a recorded event. Its control endpoints (`/admin/*`: budgets, pause, resume, stop, records) answer the control key only.
 - Routes to the inference server; for commercial baselines, a separate gateway instance outside the sandbox routes to fixed API endpoints.
 
 ### Inference and observation — `mesocosm.observe` *(M5)*

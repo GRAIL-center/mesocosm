@@ -135,7 +135,9 @@ async def test_budget_exhaustion_is_explicit_and_recorded(gw):
     r3 = await client.post("/v1/chat/completions", headers=hdr, json=body)
     assert (r1.status_code, r2.status_code, r3.status_code) == (200, 200, 429)
     err = r3.json()["error"]
-    assert err["type"] == "mesocosm_budget_exhausted" and err["param"] == "completion_tokens"
+    assert err == {"message": "You exceeded your current quota, please check your plan and billing details.",
+                   "type": "insufficient_quota", "code": "insufficient_quota", "param": "completion_tokens"}, \
+        "the refusal looks like any OpenAI-compatible quota error; the log says what it was"
     assert len(up.state.requests) == 2, "the refused request never reached the upstream"
     last = _records(tmp_path)[-1]
     assert last["event"] == "budget_exhausted" and last["dimension"] == "completion_tokens"
@@ -190,7 +192,8 @@ async def test_pause_holds_requests_until_resume_and_stop_refuses_them(gw):
     stopped = await admin.stop("lbl", run_id="run_p")
     assert stopped.op == "run.stop" and stopped.result == "applied"
     refused = await client.post("/v1/chat/completions", headers=hdr, json=body)
-    assert refused.status_code == 409 and refused.json()["error"]["type"] == "mesocosm_run_stopped"
+    assert refused.status_code == 403 and refused.json()["error"]["code"] == "account_deactivated"
+    assert "mesocosm" not in refused.text.lower()
     assert _records(tmp_path)[-1]["event"] == "run_stopped" and (await admin.health())["stopped"] == ["lbl"]
     assert [r["op"] for r in _records(tmp_path) if r["event"] == "receipt"] == ["run.pause", "run.resume", "run.stop"]
 
@@ -205,7 +208,9 @@ async def test_a_hold_that_outlives_the_limit_is_released_with_an_explicit_error
     hdr = {"X-Mesocosm-Agent": "agent-1", "X-Mesocosm-Run": "lbl"}
     body = {"model": "m", "messages": [{"role": "user", "content": "x"}]}
     r = await client.post("/v1/chat/completions", headers=hdr, json=body)
-    assert r.status_code == 503 and r.json()["error"]["type"] == "mesocosm_paused"
+    assert r.status_code == 503 and r.json()["error"] == {"message": "The server is temporarily unable to handle "
+                                                          "the request. Please try again later.",
+                                                          "type": "server_error", "code": "service_unavailable"}
     assert _records(tmp_path)[-1]["event"] == "hold_expired"
     peer = await client.post("/v1/chat/completions", headers={"X-Mesocosm-Agent": "agent-2", "X-Mesocosm-Run": "lbl"},
                              json=body)
@@ -226,5 +231,46 @@ async def test_records_are_streamed_per_run_and_since(gw):
     later = [rec async for rec in admin.records("r1", since=r1[-1]["ts"])]
     assert later == [r1[-1]], "`since` keeps only this run's records when a label is reused"
     assert [rec async for rec in admin.records("nope")] == []
-    raw = await client.get("/mesocosm/records", params={"run": "r1"})
+    raw = await client.get("/admin/records", params={"run": "r1"}, headers={"Authorization": "Bearer mesocosm-local"})
     assert raw.headers["content-type"].startswith("application/x-ndjson") and raw.text.count("\n") == 2
+
+
+async def test_agents_are_identified_by_their_own_key_and_the_admin_api_does_not_exist_for_them(tmp_path):
+    up = fake_upstream()
+    keys = {"sk-one": {"agent": "agent-1", "run": "lbl"}, "sk-two": {"agent": "agent-2", "run": "lbl"}}
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path, control_key="ctl", agent_keys=keys,
+                              budgets={"agent-2": {"requests": 1}}),
+                     transport=httpx.ASGITransport(app=up))
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway")
+    body = {"model": "m", "messages": [{"role": "user", "content": "x"}]}
+    r = await client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-one"}, json=body)
+    assert r.status_code == 200
+    rec = _records(tmp_path)[-1]
+    assert rec["agent"] == "agent-1" and rec["run"] == "lbl" and rec["identified_by"] == "key"
+    sent = up.state.requests[-1]["headers"]
+    assert "authorization" not in sent and "x-mesocosm-agent" not in sent, "the agent's key stays at the gateway"
+    # a key cannot be overridden by headers, and the budget follows the key's agent
+    r = await client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-two", "X-Mesocosm-Agent": "agent-1"},
+                          json=body)
+    assert r.status_code == 200 and _records(tmp_path)[-1]["agent"] == "agent-2"
+    r = await client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-two"}, json=body)
+    assert r.status_code == 429 and _records(tmp_path)[-1]["agent"] == "agent-2"
+    # an unknown key is still proxied (the upstream decides) but recorded as nobody
+    r = await client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-nope"}, json=body)
+    assert _records(tmp_path)[-1]["agent"] == "unknown" and _records(tmp_path)[-1]["identified_by"] == "none"
+    # the control surface: liveness says nothing, /admin needs the control key, probes are logged by identity
+    assert (await client.get("/health")).json() == {"ok": True}
+    for path in ("/admin/health", "/admin/usage", "/admin/records?run=lbl"):
+        r = await client.get(path, headers={"Authorization": "Bearer sk-one"})
+        assert r.status_code == 404 and r.json() == {"detail": "Not Found"}
+    r = await client.post("/admin/budget", headers={"Authorization": "Bearer sk-one"},
+                          json={"agent_id": "agent-1", "budget": {"requests": 10**6}})
+    assert r.status_code == 404 and app.state.gateway.budgets.get("agent-1") is None, "an agent cannot raise its budget"
+    denied = [r for r in _records(tmp_path) if r["event"] == "admin_denied"]
+    assert len(denied) == 4 and all(d["agent"] == "agent-1" and d["identified_by"] == "key" for d in denied)
+    assert denied[-1]["path"] == "/admin/budget"
+    admin = GatewayAdmin("http://gateway", transport=httpx.ASGITransport(app=app), api_key="ctl")
+    assert (await admin.health())["agents"] == ["agent-1", "agent-2"]
+    wrong = GatewayAdmin("http://gateway", transport=httpx.ASGITransport(app=app), api_key="mesocosm-local")
+    with pytest.raises(httpx.HTTPStatusError):
+        await wrong.health()

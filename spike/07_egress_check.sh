@@ -1,6 +1,7 @@
 #!/bin/sh
 # Spike step 7: prove the agent container cannot reach the outside world.
-# Run INSIDE an agent container:  docker compose -f spike/docker/compose.yml exec agent-1 egress-check
+# Piped into an agent container by the run manager (mesocosm.env.egress), never installed in the image:
+#   docker compose -f <compose> exec -T -e MESOCOSM_SERVICES=... agent-1 sh -s < spike/07_egress_check.sh
 #
 # Exit 0 only if the gateway is reachable AND every outbound path fails.
 # DNS resolution is reported separately: Docker's embedded DNS may still resolve
@@ -14,7 +15,7 @@ warn=0
 
 say() { printf '%-5s %s\n' "$1" "$2"; }
 
-if curl -fsS --max-time 5 "$GW/mesocosm/health" >/dev/null 2>&1; then
+if curl -fsS --max-time 5 "$GW/health" >/dev/null 2>&1; then
   say OK "gateway reachable at $GW"
 else
   say FAIL "gateway NOT reachable at $GW"; fail=1

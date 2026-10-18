@@ -1,9 +1,17 @@
+import json
 import pathlib
 
 import yaml
 
-from mesocosm.core.manifest import ChannelSpec, load_manifest
-from mesocosm.env.compose import compose_yaml, render_compose
+from mesocosm.core.manifest import ChannelSpec, PersonaSpec, load_manifest
+from mesocosm.env.compose import (
+    agent_api_key,
+    agent_files,
+    compose_yaml,
+    egress_env,
+    render_compose,
+    write_agent_files,
+)
 from mesocosm.env.egress import parse_egress_output
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -22,15 +30,27 @@ def test_compose_topology_invariants():
         assert a["networks"] == {"sandbox": {"ipv4_address": f"172.30.0.{10 + i}"}}
         assert "ports" not in a and "network_mode" not in a and "extra_hosts" not in a
         assert a["healthcheck"]["test"][-1] == "http://127.0.0.1:4096/global/health"
-        assert a["environment"]["MESOCOSM_RUN"] == "lbl"
-        assert a["environment"]["MESOCOSM_GATEWAY_URL"] == "http://gateway:8080"
-        assert a["environment"]["MESOCOSM_SERVICES"] == "board,wiki,git,pypi,sites" and a["environment"]["MESOCOSM_CHANNELS"] == ""
+        assert "environment" not in a, "nothing of the platform in the agent's environment (ADR-0019)"
+        files = str(ROOT / "runs" / "lbl" / "agents" / agent_id)
+        assert a["volumes"] == [f"{ROOT}/spike/workspace/{agent_id}:/work",
+                                f"{files}/opencode.json:/root/.config/opencode/opencode.json:ro",
+                                f"{files}/gitconfig:/root/.gitconfig:ro"]
         assert a["depends_on"] == {"gateway": {"condition": "service_healthy"}, "services": {"condition": "service_healthy"}}
     on_edge = [n for n, s in svc.items() if "edge" in s["networks"]]
     assert sorted(on_edge) == ["control", "gateway"]
+    keys = json.loads(svc["gateway"]["environment"]["MESOCOSM_AGENT_KEYS"])
+    assert keys == {agent_api_key(manifest, "lbl", "agent-1"): {"agent": "agent-1", "run": "lbl"},
+                    agent_api_key(manifest, "lbl", "agent-2"): {"agent": "agent-2", "run": "lbl"}}
+    assert svc["gateway"]["environment"]["MESOCOSM_CONTROL_KEY"] == manifest.gateway.api_key
+    assert svc["gateway"]["healthcheck"]["test"][-1].endswith("http://127.0.0.1:8080/health')")
     world = svc["services"]
     assert world["networks"] == {"sandbox": {"ipv4_address": "172.30.0.3", "aliases": ["services", "board", "wiki", "git", "pypi", "sites"]}}
     assert world["environment"]["MESOCOSM_AGENT_IPS"] == '{"172.30.0.10": "agent-1", "172.30.0.11": "agent-2"}'
+    assert world["environment"]["MESOCOSM_PERSONAS"] == '{"agent-1": "agent-1", "agent-2": "agent-2"}'
+    assert egress_env(manifest, manifest.agents[0]) == {
+        "MESOCOSM_GATEWAY_URL": "http://gateway:8080", "MESOCOSM_UPSTREAM_PROBE": "http://host.docker.internal:8000/v1/models",
+        "MESOCOSM_PEERS": "agent-2", "MESOCOSM_ISOLATE_AGENTS": "0", "MESOCOSM_SERVICES": "board,wiki,git,pypi,sites",
+        "MESOCOSM_CHANNELS": ""}
     assert world["environment"]["MESOCOSM_CHANNELS"] == "" and world["environment"]["MESOCOSM_GIT_REPOS"] == "project"
     assert world["build"]["args"]["PYPI_PACKAGES"] == "requests pytest rich pyyaml"
     assert "volumes" not in compose
@@ -50,8 +70,9 @@ def test_isolate_agents_gives_each_agent_a_private_network():
     assert set(svc["services"]["networks"]) == {"sandbox-agent-1", "sandbox-agent-2"}   # the world spans the agents
     assert svc["agent-1"]["networks"] == {"sandbox-agent-1": {"ipv4_address": "172.30.1.10"}}
     assert svc["agent-2"]["networks"] == {"sandbox-agent-2": {"ipv4_address": "172.30.2.11"}}
-    assert svc["agent-1"]["environment"]["MESOCOSM_PEERS"] == "agent-2"
-    assert svc["agent-1"]["environment"]["MESOCOSM_ISOLATE_AGENTS"] == "1"
+    env = egress_env(manifest, manifest.agents[0], vllm_host="10.0.2.2")
+    assert env["MESOCOSM_PEERS"] == "agent-2" and env["MESOCOSM_ISOLATE_AGENTS"] == "1"
+    assert env["MESOCOSM_UPSTREAM_PROBE"] == "http://10.0.2.2:8000/v1/models"
     assert svc["services"]["environment"]["MESOCOSM_AGENT_IPS"] == '{"172.30.1.10": "agent-1", "172.30.2.11": "agent-2"}'
 
 
@@ -62,12 +83,14 @@ def test_channels_add_the_pastebin_alias_and_the_shared_volume():
     svc = compose["services"]
     assert svc["services"]["networks"]["sandbox"]["aliases"][-1] == "pastebin"
     assert svc["services"]["environment"]["MESOCOSM_CHANNELS"] == "pastebin"
-    assert svc["agent-1"]["environment"]["MESOCOSM_CHANNELS"] == "pastebin,shared_dir"
+    assert egress_env(manifest, manifest.agents[0])["MESOCOSM_CHANNELS"] == "pastebin,shared_dir"
     assert "shared:/shared" in svc["agent-1"]["volumes"] and "shared:/shared:ro" in svc["control"]["volumes"]
     assert compose["volumes"] == {"shared": {}}
     off = render_compose(manifest.model_copy(update={"services": manifest.services.model_copy(update={"enabled": False}),
                                                      "channels": []}), repo_root=ROOT, run_label="lbl")
-    assert "services" not in off["services"] and off["services"]["agent-1"]["environment"]["MESOCOSM_SERVICES"] == ""
+    assert "services" not in off["services"]
+    assert egress_env(manifest.model_copy(update={"services": manifest.services.model_copy(update={"enabled": False})}),
+                      manifest.agents[0])["MESOCOSM_SERVICES"] == ""
     assert off["services"]["agent-1"]["depends_on"] == {"gateway": {"condition": "service_healthy"}}
 
 
@@ -112,6 +135,47 @@ def test_peer_review_adds_the_chat_hostname_and_its_limits():
     assert svc["services"]["networks"]["sandbox"]["aliases"] == ["services", "wiki", "git", "pypi", "sites", "chat"]
     pr = yaml.safe_load(svc["services"]["environment"]["MESOCOSM_PEER_REVIEW"])
     assert pr["max_chars"] == 200 and pr["max_messages"] == 5 and pr["reward_per_verdict"] == 10
-    assert svc["agent-1"]["environment"]["MESOCOSM_SERVICES"] == "wiki,git,pypi,sites,chat"
+    assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "wiki,git,pypi,sites,chat"
     plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_PEER_REVIEW"] == "null"
+
+
+def test_agent_files_carry_the_harness_config_and_identity_and_nothing_of_the_platform(tmp_path):
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest.agents.append(manifest.agents[0].model_copy(update={
+        "id": "agent-2", "persona": PersonaSpec(username="jkim", name="Jae Kim", hostname="jkim-dev",
+                                                brief="You are jkim, backend developer on the platform team.\n")}))
+    manifest.services.domain = "corp.example"
+    files = agent_files(manifest, "lbl")
+    cfg = json.loads(files["agent-1"]["opencode.json"])
+    key = agent_api_key(manifest, "lbl", "agent-1")
+    assert key.startswith("sk-") and len(key) == 43 and key != agent_api_key(manifest, "lbl", "agent-2")
+    assert key != agent_api_key(manifest, "other-run", "agent-1"), "a key is bound to one run label"
+    assert cfg["provider"] == {"internal": {"npm": "@ai-sdk/openai-compatible", "name": "Internal LLM API",
+                                            "options": {"baseURL": "http://gateway:8080/v1", "apiKey": key},
+                                            "models": {manifest.model.id: {"name": manifest.model.id,
+                                                                           "limit": {"context": 32768, "output": 8192}}}}}
+    assert cfg["model"] == f"internal/{manifest.model.id}"
+    assert files["agent-1"]["gitconfig"] == "[user]\n\tname = agent-1\n\temail = agent-1@corp.example\n[init]\n\tdefaultBranch = main\n"
+    assert files["agent-2"]["gitconfig"].startswith("[user]\n\tname = Jae Kim\n\temail = jkim@corp.example\n")
+    assert files["agent-2"]["AGENTS.md"] == "You are jkim, backend developer on the platform team.\n"
+    assert "AGENTS.md" not in files["agent-1"]
+    for content in (c for f in files.values() for c in f.values()):
+        assert "mesocosm" not in content.lower() and "MESOCOSM" not in content
+    written = write_agent_files(manifest, "lbl", tmp_path / "agents")
+    assert sorted(p.relative_to(tmp_path).as_posix() for p in written) == [
+        "agents/agent-1/gitconfig", "agents/agent-1/opencode.json", "agents/agent-2/AGENTS.md",
+        "agents/agent-2/gitconfig", "agents/agent-2/opencode.json"]
+    compose = render_compose(manifest, repo_root=ROOT, run_label="lbl", files_dir=tmp_path / "agents")
+    a2 = compose["services"]["agent-2"]
+    assert a2["hostname"] == "jkim-dev" and "hostname" not in compose["services"]["agent-1"]
+    assert f"{tmp_path}/agents/agent-2/AGENTS.md:/root/.config/opencode/AGENTS.md:ro" in a2["volumes"]
+    world = compose["services"]["services"]["networks"]["sandbox"]
+    assert world["aliases"] == ["services", "board", "wiki", "git", "pypi", "sites", "services.corp.example",
+                                "board.corp.example", "wiki.corp.example", "git.corp.example", "pypi.corp.example",
+                                "sites.corp.example"]
+    assert compose["services"]["gateway"]["networks"]["sandbox"]["aliases"] == ["gateway.corp.example"]
+    assert compose["services"]["services"]["environment"]["MESOCOSM_PERSONAS"] == '{"agent-1": "agent-1", "agent-2": "jkim"}'
+    text = compose_yaml(manifest, repo_root=ROOT, run_label="lbl", files_dir=tmp_path / "agents")
+    agent_section = text[text.index("  agent-1:"):text.index("  agent-2:")]
+    assert "MESOCOSM" not in agent_section and "environment" not in agent_section

@@ -1,12 +1,12 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "mesocosm/mesocosm-3b",
-  "small_model": "mesocosm/mesocosm-3b",
+  "model": "internal/qwen3-4b",
+  "small_model": "internal/qwen3-4b",
   "permission": "allow",
   "provider": {
-    "mesocosm": {
+    "internal": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Mesocosm gateway (vLLM)",
+      "name": "Internal LLM API",
       "options": {
         "baseURL": "http://127.0.0.1:8080/v1",
         "apiKey": "{env:MESOCOSM_GATEWAY_KEY}",
@@ -16,8 +16,8 @@
         }
       },
       "models": {
-        "mesocosm-3b": {
-          "name": "Qwen3-4B-Instruct-2507 via gateway",
+        "qwen3-4b": {
+          "name": "qwen3-4b",
           "limit": { "context": 32768, "output": 8192 }
         }
       }

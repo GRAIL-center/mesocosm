@@ -1,10 +1,11 @@
 """Model gateway (ADR-0003): OpenAI-compatible reverse proxy between harnesses and vLLM.
 
-* stamps every request with X-Mesocosm-Request-Id; reads X-Mesocosm-Agent / X-Mesocosm-Run;
+* identifies the agent by its own bearer key (or by X-Mesocosm-Agent / X-Mesocosm-Run headers from a
+  control-plane harness) and stamps every upstream request with X-Mesocosm-Request-Id;
 * logs full request and response to <log_dir>/gateway.jsonl (actual information exposure);
 * pauses, resumes and stops runs: a paused run's requests wait here, a stopped run's are refused;
 * enforces per-agent budgets and answers an explicit 429 when one is exhausted;
-* `POST /mesocosm/budget` sets a budget and returns a receipt (the enforcement point for
+* `POST /admin/budget` (control key only) sets a budget and returns a receipt (the enforcement point for
   the `budget` condition);
 * optionally asks vLLM for prompt/completion token ids.
 
@@ -31,7 +32,7 @@ from pydantic import BaseModel
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 
 HOP_BY_HOP = {"content-length", "transfer-encoding", "connection", "keep-alive", "host"}
-RECORDS_CHUNK = 1 << 20   # bytes of NDJSON per streamed chunk of /mesocosm/records
+RECORDS_CHUNK = 1 << 20   # bytes of NDJSON per streamed chunk of /admin/records
 BUDGET_KEYS = ("requests", "prompt_tokens", "completion_tokens")
 
 
@@ -42,6 +43,8 @@ class Settings:
     budgets: dict[str, dict[str, int]] = field(default_factory=dict)
     return_token_ids: bool = False
     max_hold_seconds: float = 600.0   # a paused run's requests wait this long at most, then get 503
+    control_key: str = "mesocosm-local"                    # bearer key of the /admin endpoints (the control plane)
+    agent_keys: dict[str, dict[str, str]] = field(default_factory=dict)   # bearer key -> {agent, run} (ADR-0019)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -51,7 +54,33 @@ class Settings:
             budgets=json.loads(os.environ.get("MESOCOSM_BUDGET_JSON", "{}") or "{}"),
             return_token_ids=os.environ.get("MESOCOSM_RETURN_TOKEN_IDS", "0") == "1",
             max_hold_seconds=float(os.environ.get("MESOCOSM_MAX_HOLD_SECONDS", "600")),
+            control_key=os.environ.get("MESOCOSM_CONTROL_KEY", cls.control_key),
+            agent_keys=json.loads(os.environ.get("MESOCOSM_AGENT_KEYS", "{}") or "{}"),
         )
+
+
+# What a refused request looks like to the harness: the shapes an OpenAI-compatible API returns for
+# the same situations, with nothing about the run in them (ADR-0019). The gateway log says why.
+REFUSALS = {
+    "paused": (503, {"message": "The server is temporarily unable to handle the request. Please try again later.",
+                     "type": "server_error", "code": "service_unavailable"}),
+    "stopped": (403, {"message": "Your account has been deactivated.", "type": "invalid_request_error",
+                      "code": "account_deactivated"}),
+    "budget": (429, {"message": "You exceeded your current quota, please check your plan and billing details.",
+                     "type": "insufficient_quota", "code": "insufficient_quota"}),
+    "upstream": (502, {"message": "The server had an error while processing your request.",
+                       "type": "server_error", "code": "upstream_error"}),
+}
+
+
+def refusal(kind: str, **extra: Any) -> JSONResponse:
+    status, body = REFUSALS[kind]
+    return JSONResponse(status_code=status, content={"error": {**body, **extra}})
+
+
+def bearer(request: Request) -> str | None:
+    header = request.headers.get("authorization") or ""
+    return header[7:].strip() if header.lower().startswith("bearer ") else None
 
 
 @dataclass
@@ -300,7 +329,7 @@ class BudgetRequest(BaseModel):
 
 
 class ControlRequest(BaseModel):
-    run: str                       # the X-Mesocosm-Run label the agents send
+    run: str                       # the run label the agents' keys are bound to
     agent_id: str | None = None    # pause one agent only; stop ignores it
     reason: str | None = None
     run_id: str | None = None
@@ -308,35 +337,63 @@ class ControlRequest(BaseModel):
 
 def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTransport | None = None) -> FastAPI:
     gw = Gateway(settings or Settings.from_env(), transport)
-    app = FastAPI(title="mesocosm-gateway")
+    app = FastAPI(title="gateway", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.gateway = gw
 
-    @app.get("/mesocosm/health")
-    async def health() -> dict[str, Any]:
-        return {"ok": True, "upstream": gw.settings.upstream, "return_token_ids": gw.settings.return_token_ids,
-                "budget": gw.budgets, **gw.control_state()}
+    def identity(request: Request) -> tuple[str, str, str]:
+        """(agent, run, how): by the agent's own key, else by the identity headers a control-plane
+        harness sends, else unknown."""
+        known = gw.settings.agent_keys.get(bearer(request) or "")
+        if known:
+            return known["agent"], known["run"], "key"
+        if "x-mesocosm-agent" in request.headers or "x-mesocosm-run" in request.headers:
+            return request.headers.get("x-mesocosm-agent", "unknown"), request.headers.get("x-mesocosm-run",
+                                                                                            "unknown"), "header"
+        return "unknown", "unknown", "none"
 
-    @app.get("/mesocosm/usage")
+    @app.middleware("http")
+    async def admin_only(request: Request, call_next):
+        """The control endpoints answer the control plane only; to anyone else they do not exist, and
+        the attempt is logged with whatever identity the caller has."""
+        if request.url.path.startswith("/admin/") and bearer(request) != gw.settings.control_key:
+            agent, run, how = identity(request)
+            gw.log({"ts": time.time(), "request_id": str(uuid.uuid4()), "run": run, "agent": agent,
+                    "path": request.url.path, "method": request.method, "event": "admin_denied", "identified_by": how})
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
+        return await call_next(request)
+
+    @app.get("/health")
+    async def health() -> dict[str, Any]:
+        """Liveness, for the agents' egress check and Compose; says nothing about the run."""
+        return {"ok": True}
+
+    @app.get("/admin/health")
+    async def admin_health() -> dict[str, Any]:
+        return {"ok": True, "upstream": gw.settings.upstream, "return_token_ids": gw.settings.return_token_ids,
+                "budget": gw.budgets, "agents": sorted(v["agent"] for v in gw.settings.agent_keys.values()),
+                **gw.control_state()}
+
+    @app.get("/admin/usage")
     async def usage() -> dict[str, Any]:
         return {"usage": gw.usage, "budget": gw.budgets}
 
-    @app.post("/mesocosm/budget")
+    @app.post("/admin/budget")
     async def set_budget(req: BudgetRequest) -> dict[str, Any]:
         return gw.set_budget(req.agent_id, req.budget, req.run_id).model_dump(mode="json")
 
-    @app.post("/mesocosm/pause")
+    @app.post("/admin/pause")
     async def pause(req: ControlRequest) -> dict[str, Any]:
         return gw.pause(req.run, req.agent_id, req.reason, req.run_id).model_dump(mode="json")
 
-    @app.post("/mesocosm/resume")
+    @app.post("/admin/resume")
     async def resume(req: ControlRequest) -> dict[str, Any]:
         return gw.resume(req.run, req.agent_id, req.run_id).model_dump(mode="json")
 
-    @app.post("/mesocosm/stop")
+    @app.post("/admin/stop")
     async def stop(req: ControlRequest) -> dict[str, Any]:
         return gw.stop(req.run, req.run_id).model_dump(mode="json")
 
-    @app.get("/mesocosm/records")
+    @app.get("/admin/records")
     async def records(run: str, since: float | None = None) -> StreamingResponse:
         """Exposure records for one run label as NDJSON, so the control plane can copy them into the
         bundle without either side holding the whole log in memory."""
@@ -362,8 +419,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
     async def proxy(path: str, request: Request):
         t0 = time.time()
         request_id = str(uuid.uuid4())
-        agent = request.headers.get("x-mesocosm-agent", "unknown")
-        run = request.headers.get("x-mesocosm-run", "unknown")
+        agent, run, identified_by = identity(request)
         body_bytes = await request.body()
         body: dict[str, Any] | None = None
         if body_bytes:
@@ -372,7 +428,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
             except json.JSONDecodeError:
                 body = None
         is_chat = path.rstrip("/").endswith("chat/completions") and isinstance(body, dict)
-        base = {"ts": t0, "request_id": request_id, "run": run, "agent": agent,
+        base = {"ts": t0, "request_id": request_id, "run": run, "agent": agent, "identified_by": identified_by,
                 "path": "/" + path, "method": request.method}
 
         if is_chat:
@@ -382,29 +438,25 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 gw.log({**base, "event": "held" if released else "hold_expired", "held_ms": round(waited * 1000),
                         "reason": hold.reason})
                 if not released:
-                    return JSONResponse(status_code=503, content={"error": {
-                        "message": f"mesocosm: run {run} paused longer than {gw.settings.max_hold_seconds:.0f}s",
-                        "type": "mesocosm_paused", "code": "paused"}})
+                    return refusal("paused")
             if run in gw.stopped:
                 gw.log({**base, "event": "run_stopped", "request_summary": request_summary(body)})
-                return JSONResponse(status_code=409, content={"error": {
-                    "message": f"mesocosm: run {run} was stopped", "type": "mesocosm_run_stopped",
-                    "code": "run_stopped"}})
+                return refusal("stopped")
             exhausted = gw.budget_exhausted(agent)
             if exhausted:
                 gw.log({**base, "event": "budget_exhausted", "dimension": exhausted,
                         "usage": gw.usage_for(agent), "budget": gw.budgets.get(agent),
                         "request": body, "request_summary": request_summary(body)})
-                return JSONResponse(status_code=429, content={"error": {
-                    "message": f"mesocosm: {exhausted} budget exhausted for agent {agent}",
-                    "type": "mesocosm_budget_exhausted", "code": "budget_exhausted", "param": exhausted}})
+                return refusal("budget", param=exhausted)
             if body.get("stream"):
                 body.setdefault("stream_options", {})["include_usage"] = True
             if gw.settings.return_token_ids:
                 body["return_token_ids"] = True
             body_bytes = json.dumps(body).encode("utf-8")
 
-        headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_BY_HOP}
+        headers = {k: v for k, v in request.headers.items()
+                   if k.lower() not in HOP_BY_HOP and k.lower() not in ("authorization", "x-mesocosm-agent",
+                                                                          "x-mesocosm-run")}
         headers["x-mesocosm-request-id"] = request_id
         if is_chat:
             headers["content-length"] = str(len(body_bytes))
@@ -415,8 +467,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
             upstream = await gw.client.send(upstream_req, stream=True)
         except httpx.HTTPError as e:
             gw.log({**base, "event": "upstream_error", "error": repr(e), "request": body})
-            return JSONResponse(status_code=502, content={"error": {
-                "message": f"mesocosm: upstream error {e!r}", "type": "mesocosm_upstream_error"}})
+            return refusal("upstream")
 
         resp_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP}
 

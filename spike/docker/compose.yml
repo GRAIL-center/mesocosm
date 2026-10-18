@@ -7,7 +7,7 @@
 # host.docker.internal; agents reach only the gateway.
 #
 #   docker compose -f spike/docker/compose.yml up -d --build
-#   docker compose -f spike/docker/compose.yml exec agent-1 egress-check
+#   docker compose -f spike/docker/compose.yml exec -T agent-1 sh -s < spike/07_egress_check.sh
 #   docker compose -f spike/docker/compose.yml exec control \
 #       python 04_drive_opencode.py --url http://agent-1:4096 --out /runs/spike --run spike-docker
 #   docker compose -f spike/docker/compose.yml down
@@ -28,10 +28,11 @@ services:
       MESOCOSM_BUDGET_JSON: ${MESOCOSM_BUDGET_JSON:-{}}
       MESOCOSM_RETURN_TOKEN_IDS: ${MESOCOSM_RETURN_TOKEN_IDS:-0}
       MESOCOSM_GATEWAY_HOST: 0.0.0.0
+      MESOCOSM_CONTROL_KEY: ${MESOCOSM_CONTROL_KEY:-mesocosm-local}
     volumes:
       - ../../runs:/runs
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/mesocosm/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -41,16 +42,11 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.agent
     networks: [sandbox]
-    environment:
-      MESOCOSM_AGENT: agent-1
-      MESOCOSM_RUN: ${MESOCOSM_RUN:-spike-docker}
-      MESOCOSM_GATEWAY_URL: http://gateway:8080
-      MESOCOSM_GATEWAY_KEY: ${VLLM_API_KEY:-mesocosm-local}
-      MESOCOSM_MODEL_ID: ${MESOCOSM_MODEL_ID:-mesocosm-3b}
-      MESOCOSM_CONTEXT_LIMIT: ${MESOCOSM_CONTEXT_LIMIT:-32768}
-      MESOCOSM_UPSTREAM_PROBE: http://host.docker.internal:${MESOCOSM_VLLM_PORT:-8000}/v1/models
+    # The agent's harness config is a mounted file; the agent is named to the gateway by the identity
+    # headers in it (the spike has one agent). No environment of ours reaches the container.
     volumes:
       - ../workspace/agent-1:/work
+      - ./agent-1.opencode.json:/root/.config/opencode/opencode.json:ro
     depends_on:
       gateway:
         condition: service_healthy

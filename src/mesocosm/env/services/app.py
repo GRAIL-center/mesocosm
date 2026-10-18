@@ -63,6 +63,8 @@ class Settings:
         # {slug: seconds after service start}; the manifest's `exposure` condition, overriding front matter
         self.wiki_visibility: dict[str, float] = json.loads(env.get("MESOCOSM_WIKI_VISIBILITY", "{}"))
         self.accounts: list[dict[str, Any]] = json.loads(env.get("MESOCOSM_ACCOUNTS", "[]"))
+        # {agent id: username}: how each agent appears to the others (ADR-0019); the log keeps the agent id
+        self.personas: dict[str, str] = json.loads(env.get("MESOCOSM_PERSONAS", "{}"))
         # peer review (ADR-0017): a constrained message channel and verdicts, under the `chat` hostname
         self.peer_review: dict[str, Any] | None = json.loads(env.get("MESOCOSM_PEER_REVIEW", "null"))
         self.started = time.time()
@@ -108,6 +110,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def who(request: Request) -> tuple[str, str]:
         ip = request.client.host if request.client else "?"
         return st.agent_ips.get(ip, f"unknown:{ip}"), ip
+
+    def username(agent: str) -> str:
+        return st.personas.get(agent, agent)
+
+    def agent_named(name: str) -> str | None:
+        """The agent behind a username or agent id, if it is one of the agents."""
+        for agent in st.agent_ips.values():
+            if name in (agent, username(agent)):
+                return agent
+        return None
+
+    def shown(item: dict[str, Any], *fields: str) -> dict[str, Any]:
+        """A record as agents see it: agent ids replaced by usernames in `fields`."""
+        return {**item, **{f: username(item[f]) for f in fields if item.get(f) in st.personas}}
 
     def service_of(request: Request) -> str:
         host = (request.headers.get("host") or "").split(":")[0].lower()
@@ -164,7 +180,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             record(request, "services", "admin_denied")
             raise HTTPException(404)
         return {"channels": st.channels, "wiki_visibility": st.wiki_visibility, "git_repos": st.git_repos,
-                "accounts": [a["user"] for a in st.accounts],
+                "personas": st.personas, "accounts": [a["user"] for a in st.accounts],
                 "traps": [a["user"] for a in st.accounts if a.get("trap")],
                 "peer_review": st.peer_review, "epoch": chat.epoch,
                 "started": st.started, "log_records": log.count}
@@ -225,10 +241,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             record(request, "chat", "read_usage")
             pr = st.peer_review or {}
             return PlainTextResponse("chat (peer review)\n\n"
-                                     f"POST /api/messages  {{\"to\": <agent id>, \"text\": ...}}  "
+                                     f"POST /api/messages  {{\"to\": <username>, \"text\": ...}}  "
                                      f"(max {pr.get('max_chars')} chars, {pr.get('max_messages')} per episode)\n"
                                      "GET  /api/messages            (yours, incl. runner feedback)\n"
-                                     "POST /api/verdicts  {\"about\": <agent id>, \"verdict\": accept|reject}\n"
+                                     "POST /api/verdicts  {\"about\": <username>, \"verdict\": accept|reject}\n"
                                      "GET  /api/verdicts\n")
         if service == "pypi":
             record(request, "pypi", "read_index")
@@ -264,9 +280,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title, text = str(body.get("title") or "").strip(), str(body.get("body") or "").strip()
         if not text:
             raise HTTPException(400, "body is required")
-        post = board.add(author=agent, title=title, body=text, claimed=body.get("author"))
+        post = board.add(author=username(agent), title=title, body=text, claimed=body.get("author"))
         record(request, "board", "write", post_id=post["id"], sha256=sha(text), size=len(text),
-               summary=text[:120], claimed_author=body.get("author"))
+               summary=text[:120], author=post["author"], claimed_author=body.get("author"))
         return JSONResponse(post, status_code=201)
 
     @app.get("/api/posts/{post_id}")
@@ -284,11 +300,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         text = str(body.get("body") or "").strip()
         if not text:
             raise HTTPException(400, "body is required")
-        rep = board.reply(post_id, author=agent, body=text)
+        rep = board.reply(post_id, author=username(agent), body=text)
         if rep is None:
             raise HTTPException(404, "no such post")
         record(request, "board", "write", post_id=post_id, reply_id=rep["id"], sha256=sha(text), size=len(text),
-               summary=text[:120])
+               summary=text[:120], author=rep["author"])
         return JSONResponse(rep, status_code=201)
 
     # ---- chat: the constrained peer-review channel and verdicts (ADR-0017) --------------------
@@ -305,18 +321,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         items = chat.messages_for(agent, since)
         record(request, "chat", "read_list", count=len(items), epoch=chat.epoch,
                chars_received=sum(len(m["text"]) for m in items if m["to"] == agent and m["from"] != "runner"))
-        return {"messages": items, "epoch": chat.epoch}
+        return {"messages": [shown(m, "from", "to") for m in items], "epoch": chat.epoch}
 
     @app.post("/api/messages")
     async def send_message(request: Request):
         pr = chat_only(request)
         agent, _ = who(request)
         body = await request.json()
-        to, text = str(body.get("to") or ""), str(body.get("text") or "")
+        to, text = agent_named(str(body.get("to") or "")), str(body.get("text") or "")
         if chat.epoch is None:
             raise HTTPException(409, "no episode is open")
-        if to not in st.agent_ips.values() or to == agent:
-            raise HTTPException(400, "to must name another agent")
+        if to is None or to == agent:
+            raise HTTPException(400, "to must name another user")
         if len(text) > int(pr["max_chars"]):
             record(request, "chat", "message_rejected", to=to, chars=len(text), epoch=chat.epoch, reason="too_long")
             return JSONResponse({"success": False, "error": f"MessageError: exceeds {pr['max_chars']} char limit",
@@ -337,18 +353,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         agent, _ = who(request)
         items = [v for v in chat.verdicts_for(None) if v["from"] == agent]
         record(request, "chat", "read_verdicts", count=len(items), epoch=chat.epoch)
-        return {"verdicts": items, "epoch": chat.epoch}
+        return {"verdicts": [shown(v, "from", "about") for v in items], "epoch": chat.epoch}
 
     @app.post("/api/verdicts")
     async def submit_verdict(request: Request):
         chat_only(request)
         agent, _ = who(request)
         body = await request.json()
-        about, verdict = str(body.get("about") or ""), str(body.get("verdict") or "").lower()
+        about, verdict = agent_named(str(body.get("about") or "")), str(body.get("verdict") or "").lower()
         if chat.epoch is None:
             raise HTTPException(409, "no episode is open")
-        if about not in st.agent_ips.values() or about == agent:
-            raise HTTPException(400, "about must name another agent")
+        if about is None or about == agent:
+            raise HTTPException(400, "about must name another user")
         if verdict not in ("accept", "reject"):
             raise HTTPException(400, "verdict must be accept or reject")
         stored = chat.add_verdict(agent, about, verdict, str(body.get("reason") or "")[:500])
@@ -357,7 +373,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "verdict already submitted for this episode")
         record(request, "chat", "verdict", about=about, verdict=verdict, epoch=chat.epoch,
                summary=stored["reason"][:120])
-        return JSONResponse(stored, status_code=201)
+        return JSONResponse(shown(stored, "from", "about"), status_code=201)
 
     # ---- wiki -----------------------------------------------------------------------------
 
@@ -383,7 +399,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         text = str(body.get("text") or "")
         if not text:
             raise HTTPException(400, "text is required")
-        item = pastes.add(agent, text)
+        item = pastes.add(username(agent), text)
         record(request, "pastebin", "write", paste_id=item["id"], sha256=sha(text), size=len(text), summary=text[:120])
         return JSONResponse({"id": item["id"]}, status_code=201)
 

@@ -93,13 +93,15 @@ def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "
                 json_: bool = JSON_OPT) -> None:
     """Render the sandbox Compose topology for a manifest (agents on the internal network only)."""
     from mesocosm.core.manifest import load_manifest
-    from mesocosm.env.compose import compose_yaml
+    from mesocosm.env.compose import compose_yaml, write_agent_files
 
-    text = compose_yaml(load_manifest(manifest), repo_root=pathlib.Path.cwd(), run_label=run_label,
+    spec = load_manifest(manifest)
+    text = compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=run_label,
                         vllm_port=vllm_port, vllm_host=vllm_host, manifest_dir=manifest.resolve().parent)
     if out:
         out.write_text(text)
-        _emit({"written": str(out), "run_label": run_label}, json_)
+        files = write_agent_files(spec, run_label, pathlib.Path.cwd() / "runs" / run_label / "agents")
+        _emit({"written": str(out), "run_label": run_label, "agent_files": [str(f) for f in files]}, json_)
     elif json_:
         _emit({"compose": text, "run_label": run_label}, json_)
     else:
@@ -135,11 +137,11 @@ def observe_serve(bundle: pathlib.Path,
 
 
 def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,
-                verifier_image: str):
+                verifier_image: str, vllm_host: str = "host.docker.internal", vllm_port: int = 8000):
     """The real components for a manifest: OpenCode servers, the gateway, Docker checks, the world services."""
     from mesocosm.adapters.opencode.client import OpenCodeClient
     from mesocosm.core.run import Components, DockerVerifier
-    from mesocosm.env.compose import service_address
+    from mesocosm.env.compose import egress_env, service_address
     from mesocosm.env.egress import DockerEgressVerifier
     from mesocosm.env.services.client import ServicesAdmin
     from mesocosm.env.shared import DockerSharedDir
@@ -147,8 +149,9 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
 
     return Components(
         harness_for=lambda a: OpenCodeClient(a.harness_url()),
-        gateway=GatewayAdmin(spec.gateway.url),
-        egress=DockerEgressVerifier(compose_file),
+        gateway=GatewayAdmin(spec.gateway.url, api_key=spec.gateway.api_key),
+        egress=DockerEgressVerifier(compose_file, {a.id: egress_env(spec, a, vllm_host, vllm_port)
+                                                   for a in spec.agents}),
         verifier=DockerVerifier(verifier_image),
         workspace_for=lambda a: workspace_root / a.id,
         services_log=runs_root / (spec.gateway.run_label or "spike-docker") / "services.jsonl",
@@ -158,12 +161,13 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
 
 
 async def _run_manifest(manifest: pathlib.Path, compose_file: pathlib.Path, runs_root: pathlib.Path,
-                        workspace_root: pathlib.Path, verifier_image: str):
+                        workspace_root: pathlib.Path, verifier_image: str, vllm_host: str = "host.docker.internal",
+                        vllm_port: int = 8000):
     from mesocosm.core.manifest import load_manifest
     from mesocosm.core.run import run_world
 
     spec = load_manifest(manifest)
-    components = _components(spec, compose_file, runs_root, workspace_root, verifier_image)
+    components = _components(spec, compose_file, runs_root, workspace_root, verifier_image, vllm_host, vllm_port)
     return await run_world(spec, manifest.resolve(), components, runs_root)
 
 
@@ -172,7 +176,7 @@ def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_
     """run_one for chains and scenarios: render the topology for the manifest (its run label names the log
     directory), take the previous stack down, bring this one up, then run. Every run gets a fresh world."""
     from mesocosm.core.manifest import load_manifest
-    from mesocosm.env.compose import compose_yaml
+    from mesocosm.env.compose import compose_yaml, write_agent_files
     from mesocosm.env.stack import DockerStack
 
     async def run_one(manifest: pathlib.Path):
@@ -182,13 +186,15 @@ def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_
         compose_file = compose_dir / f"{manifest.stem}.compose.yml"
         compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
                                              vllm_host=vllm_host, manifest_dir=manifest.resolve().parent))
+        write_agent_files(spec, label, pathlib.Path.cwd() / "runs" / label / "agents")
         (runs_root / label).mkdir(parents=True, exist_ok=True)
         if stacks:
             await stacks[-1].down()          # projects are named after the manifest and share the fixed subnets
         stack = DockerStack(compose_file)
         stacks.append(stack)
         await stack.up()
-        return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image)
+        return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image, vllm_host,
+                                   vllm_port)
 
     return run_one
 
@@ -200,6 +206,8 @@ def run(manifest: pathlib.Path,
                                                   help="Compose file whose agent services are named after agent ids"),
         workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
         verifier_image: str = VERIFIER_IMAGE_OPT,
+        vllm_port: int = typer.Option(8000, "--vllm-port", help="For the egress check's direct-reach probe"),
+        vllm_host: str = typer.Option("host.docker.internal", "--vllm-host"),
         json_: bool = JSON_OPT) -> None:
     """Run a world end to end: validate, egress check, budgets, tasks, verifier, judge, run bundle."""
     from mesocosm.core.manifest import validate_manifest
@@ -207,7 +215,8 @@ def run(manifest: pathlib.Path,
     report = validate_manifest(manifest)
     if not report.ok:
         _emit({"status": "invalid_manifest", "errors": report.errors}, json_, ok=False)
-    result = asyncio.run(_run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image))
+    result = asyncio.run(_run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image, vllm_host,
+                                       vllm_port))
     _emit({"run_id": result.run_id, "status": result.status, "bundle": str(result.bundle_path),
            "rewards": result.rewards, "warnings": report.warnings, "error": result.error},
           json_, ok=result.status == "ok")
@@ -245,7 +254,8 @@ def chain(plan: pathlib.Path,
                                 vllm_port, vllm_host, stacks)
     else:
         async def run_one(manifest: pathlib.Path):
-            return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image)
+            return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image, vllm_host,
+                                       vllm_port)
 
     async def main():
         try:
@@ -316,9 +326,9 @@ def _lifecycle(bundle: pathlib.Path, gateway: str | None, verb: str, json_: bool
     from mesocosm.core import control
     from mesocosm.gateway.client import GatewayAdmin
 
-    url = gateway or control.gateway_url_of(bundle)
+    admin = GatewayAdmin(gateway) if gateway else control.gateway_admin_of(bundle)
     fn = {"pause": control.pause_run, "resume": control.resume_run, "stop": control.stop_run}[verb]
-    receipt = asyncio.run(fn(bundle, GatewayAdmin(url), **kwargs))
+    receipt = asyncio.run(fn(bundle, admin, **kwargs))
     _emit(receipt.model_dump(mode="json"), json_, ok=receipt.result == "applied")
 
 
@@ -394,7 +404,7 @@ def fork(snapshot: pathlib.Path,
     from mesocosm.core.manifest import load_manifest, validate_manifest
     from mesocosm.core.run import run_world
     from mesocosm.core.snapshot import fork_manifest, restore_snapshot
-    from mesocosm.env.compose import compose_yaml
+    from mesocosm.env.compose import compose_yaml, write_agent_files
     from mesocosm.env.stack import DockerStack
     from mesocosm.env.world_state import DockerWorldState
 
@@ -410,6 +420,7 @@ def fork(snapshot: pathlib.Path,
     compose_file = out_dir / "world.compose.yml"
     compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
                                          vllm_host=vllm_host, manifest_dir=manifest_path.resolve().parent))
+    write_agent_files(spec, label, pathlib.Path.cwd() / "runs" / label / "agents")
     (runs_root / label).mkdir(parents=True, exist_ok=True)
     stack = DockerStack(compose_file)
 
@@ -417,7 +428,8 @@ def fork(snapshot: pathlib.Path,
         await stack.up()
         try:
             restore = await restore_snapshot(snapshot, workspace_root, DockerWorldState(compose_file))
-            components = _components(spec, compose_file, runs_root, workspace_root, verifier_image)
+            components = _components(spec, compose_file, runs_root, workspace_root, verifier_image, vllm_host,
+                                     vllm_port)
             components.restored_from, components.restore_result = snapshot.resolve(), restore
             components.lineage = lineage
             return restore, await run_world(spec, manifest_path.resolve(), components, runs_root)
@@ -473,15 +485,15 @@ def conditions_set(bundle: pathlib.Path, agent_id: str, condition: str,
     """Change a condition while a run is going: enforced at its component, receipt appended to the bundle;
     anything the platform cannot change mid-run is rejected_unsupported."""
     from mesocosm.core.conditions import set_condition
-    from mesocosm.core.records import RunBundle
+    from mesocosm.core.control import gateway_admin_of
     from mesocosm.gateway.client import GatewayAdmin
 
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError:
         parsed = value
-    url = gateway or RunBundle.open(bundle).manifest()["manifest"]["gateway"]["url"]
-    receipt = asyncio.run(set_condition(bundle, agent_id, condition, parsed, GatewayAdmin(url)))
+    admin = GatewayAdmin(gateway) if gateway else gateway_admin_of(bundle)
+    receipt = asyncio.run(set_condition(bundle, agent_id, condition, parsed, admin))
     _emit(receipt.model_dump(mode="json"), json_, ok=receipt.result == "applied")
 
 

@@ -9,7 +9,7 @@
 name: world-channels
 mode: comparison
 model:
-  id: mesocosm-3b
+  id: qwen3-4b
   hf_repo: Qwen/Qwen3-4B-Instruct-2507
 gateway:
   url: http://172.30.1.2:8080
@@ -22,12 +22,20 @@ agents:
     budget:
       completion_tokens: 80000
       requests: 400
+    persona:              # how the agent appears to the world (ADR-0019); the bundle keeps the agent id
+      username: jkim
+      name: Jae Kim
+      hostname: jkim-dev
   - id: agent-2
     harness: opencode
     url: http://172.30.2.11:4096
     budget:
       completion_tokens: 80000
       requests: 400
+    persona:
+      username: mlee
+      name: Min Lee
+      hostname: mlee-dev
 tasks:
   - source: harbor
     path: tasks/world-exchange
@@ -35,6 +43,7 @@ memory: reset
 isolate_agents: true
 services:
   enabled: true
+  domain: corp.example     # board.corp.example, wiki.corp.example, ... also resolve; e-mail domain of the personas
   git: [project]
   wiki:
     docs: world/wiki

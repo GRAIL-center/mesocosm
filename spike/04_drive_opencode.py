@@ -40,7 +40,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default=os.environ.get("OPENCODE_URL", "http://127.0.0.1:4096"))
     ap.add_argument("--provider", default="mesocosm")
-    ap.add_argument("--model", default=os.environ.get("MESOCOSM_MODEL_ID", "mesocosm-3b"))
+    ap.add_argument("--model", default=os.environ.get("MESOCOSM_MODEL_ID", "qwen3-4b"))
     ap.add_argument("--task-file", default=None)
     ap.add_argument("--out", default="runs/spike")
     ap.add_argument("--run", default=None, help="X-Mesocosm-Run value to filter the gateway log on")

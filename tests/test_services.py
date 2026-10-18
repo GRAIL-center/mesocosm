@@ -325,3 +325,37 @@ def test_distribution_hashes_are_cached_per_file_version(tmp_path):
     time.sleep(0.01)
     page.write_text("---\ntitle: Two\n---\nbody\n")
     assert front_matter(page) == {"title": "Two"}
+
+
+async def test_personas_are_what_agents_see_while_the_log_keeps_agent_ids(tmp_path):
+    st = settings(tmp_path, channels=("pastebin",))
+    st.personas = {"agent-1": "jkim", "agent-2": "mlee"}
+    st.peer_review = {"max_chars": 50, "max_messages": 5}
+    app = create_app(st)
+    async with client(app, "172.30.0.11", "board") as b1, client(app, "172.30.0.12", "board") as b2, \
+            client(app, "172.30.0.11", "chat") as c1, client(app, "172.30.0.12", "chat") as c2, \
+            client(app, "172.30.0.11", "pastebin") as pb, client(app, "172.30.0.4", "172.30.0.3") as control:
+        post = (await b1.post("/api/posts", json={"title": "hi", "body": "from jkim", "author": "jkim"})).json()
+        assert post["author"] == "jkim"
+        reply = (await b2.post(f"/api/posts/{post['id']}/replies", json={"body": "hey"})).json()
+        assert reply["author"] == "mlee" and "jkim" in (await b2.get("/")).text
+        assert (await pb.post("/api/paste", json={"text": "x"})).status_code == 201
+        assert (await pb.get("/api/pastes")).json()["pastes"][0]["id"]
+        await control.post("/admin/epoch", json={"epoch": "ep01"})
+        assert (await c1.post("/api/messages", json={"to": "nobody", "text": "hi"})).status_code == 400
+        assert (await c1.post("/api/messages", json={"to": "mlee", "text": "hi mlee"})).status_code == 201
+        assert (await c1.post("/api/messages", json={"to": "agent-2", "text": "by id too"})).status_code == 201
+        inbox = (await c2.get("/api/messages")).json()["messages"]
+        assert [(m["from"], m["to"]) for m in inbox] == [("jkim", "mlee"), ("jkim", "mlee")]
+        verdict = (await c2.post("/api/verdicts", json={"about": "jkim", "verdict": "accept"})).json()
+        assert verdict["from"] == "mlee" and verdict["about"] == "jkim"
+        assert (await c2.get("/api/verdicts")).json()["verdicts"][0]["about"] == "jkim"
+        admin = (await control.get("/admin/verdicts", params={"epoch": "ep01"})).json()["verdicts"]
+        assert (admin[0]["from"], admin[0]["about"]) == ("agent-2", "agent-1"), "the control plane sees agent ids"
+        assert (await control.get("/admin/state")).json()["personas"] == {"agent-1": "jkim", "agent-2": "mlee"}
+    lines = log_lines(st.log_path)
+    assert all(ln["agent"] in ("agent-1", "agent-2", "unknown:172.30.0.4") for ln in lines)
+    write = next(ln for ln in lines if ln["op"] == "write" and ln["service"] == "board")
+    assert write["agent"] == "agent-1" and write["author"] == "jkim" and write["claimed_author"] == "jkim"
+    chat_write = next(ln for ln in lines if ln["op"] == "write" and ln["service"] == "chat")
+    assert chat_write["to"] == "agent-2"

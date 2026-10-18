@@ -287,7 +287,7 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
         bundle.record("task.protected", agent_id=agent.id, task=task.name, files=protected)
     bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
                   session_id=ctx.session_id, task=task.name)
-    reply = await ctx.harness.send_message(ctx.session_id, task.instruction, provider_id="mesocosm",
+    reply = await ctx.harness.send_message(ctx.session_id, task.instruction, provider_id=manifest.gateway.provider_id,
                                            model_id=manifest.model.id)
     bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
                   session_id=ctx.session_id, parts=_parts_summary(reply))

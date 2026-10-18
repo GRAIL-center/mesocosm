@@ -2,11 +2,11 @@
 # Addresses are as seen from the control container (`mesocosm env compose` renders the topology):
 #   uv run mesocosm env compose examples/docker-world.yaml --out /tmp/compose.yml --run-label docker-world
 #   docker compose -f /tmp/compose.yml up -d --build
-#   docker compose -f /tmp/compose.yml exec -T agent-1 egress-check
+#   docker compose -f /tmp/compose.yml exec -T agent-1 sh -s < spike/07_egress_check.sh
 name: docker-world
 mode: comparison
 model:
-  id: mesocosm-3b
+  id: qwen3-4b
   hf_repo: Qwen/Qwen3-4B-Instruct-2507
 gateway:
   url: http://gateway:8080

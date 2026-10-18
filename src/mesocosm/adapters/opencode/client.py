@@ -113,26 +113,27 @@ def normalize_event(raw: dict[str, Any], *, run_id: str, session_to_agent: dict[
                  step=step, data={"session_id": sid, "summary": summary, "raw": raw})
 
 
-def render_opencode_config(*, agent_id: str, run_id: str, gateway_url: str, model_id: str, api_key: str,
-                           context_limit: int = 32768, output_limit: int = 8192) -> dict[str, Any]:
-    """The opencode.json an agent container runs with: all model traffic goes to the gateway,
-    tagged with the agent's identity (ADR-0003). spike/docker/agent-entrypoint.sh renders the same."""
+def render_opencode_config(*, gateway_url: str, model_id: str, api_key: str, provider_id: str = "internal",
+                           provider_name: str = "Internal LLM API", agent_id: str | None = None,
+                           run_id: str | None = None, context_limit: int = 32768,
+                           output_limit: int = 8192) -> dict[str, Any]:
+    """The opencode.json an agent runs with: all model traffic goes to the gateway (ADR-0003). A sandbox agent
+    is identified by its own `api_key` (ADR-0019); a harness the control plane drives directly may instead
+    name itself with `agent_id` / `run_id`, which become identity headers."""
+    options: dict[str, Any] = {"baseURL": gateway_url.rstrip("/") + "/v1", "apiKey": api_key}
+    if agent_id or run_id:
+        options["headers"] = {"X-Mesocosm-Agent": agent_id or "unknown", "X-Mesocosm-Run": run_id or "unknown"}
     return {
         "$schema": "https://opencode.ai/config.json",
-        "model": f"mesocosm/{model_id}",
-        "small_model": f"mesocosm/{model_id}",
+        "model": f"{provider_id}/{model_id}",
+        "small_model": f"{provider_id}/{model_id}",
         "permission": "allow",
         "provider": {
-            "mesocosm": {
+            provider_id: {
                 "npm": "@ai-sdk/openai-compatible",
-                "name": "Mesocosm gateway",
-                "options": {
-                    "baseURL": gateway_url.rstrip("/") + "/v1",
-                    "apiKey": api_key,
-                    "headers": {"X-Mesocosm-Agent": agent_id, "X-Mesocosm-Run": run_id},
-                },
-                "models": {model_id: {"name": f"{model_id} via gateway",
-                                      "limit": {"context": context_limit, "output": output_limit}}},
+                "name": provider_name,
+                "options": options,
+                "models": {model_id: {"name": model_id, "limit": {"context": context_limit, "output": output_limit}}},
             }
         },
     }

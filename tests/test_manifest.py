@@ -160,3 +160,28 @@ def test_peer_review_needs_two_agents_comparison_mode_and_no_board(tmp_path):
     data["mode"] = "persistent"
     report = validate_manifest(_write(tmp_path, data))
     assert any("lockstep" in e for e in report.errors) and any("services.board: false" in e for e in report.errors)
+
+
+def test_personas_and_domain_are_validated(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("say hello\n")
+    data["agents"] = [{"id": "agent-1", "persona": {"username": "jkim", "name": "Jae Kim"}},
+                      {"id": "agent-2", "persona": {"username": "jkim"}}]
+    report = validate_manifest(_write(tmp_path, data))
+    assert not report.ok and any("persona usernames must be unique" in e for e in report.errors)
+    data["agents"] = [{"id": "agent-1", "persona": {"username": "agent-2"}}, {"id": "agent-2"}]
+    report = validate_manifest(_write(tmp_path, data))
+    assert not report.ok and any("agent-2" in e for e in report.errors), "a username may not be another agent's id"
+    data["agents"] = [{"id": "agent-1", "persona": {"username": "jkim", "hostname": "jkim-dev"}}, {"id": "agent-2"}]
+    data["services"] = {"domain": "corp.example"}
+    assert validate_manifest(_write(tmp_path, data)).ok
+    manifest = load_manifest(_write(tmp_path, data))
+    assert manifest.agents[0].username == "jkim" and manifest.agents[1].username == "agent-2"
+    assert manifest.agents[0].email("corp.example") == "jkim@corp.example"
+    assert manifest.agents[1].display_name() == "agent-2"
+    data["services"] = {"domain": "not a domain"}
+    assert not validate_manifest(_write(tmp_path, data)).ok
+    data["services"] = {}
+    data["gateway"]["provider_id"] = "Bad Provider"
+    assert not validate_manifest(_write(tmp_path, data)).ok
