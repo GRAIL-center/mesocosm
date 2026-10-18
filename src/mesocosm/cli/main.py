@@ -70,13 +70,17 @@ def world_validate(manifest: pathlib.Path, json_: bool = JSON_OPT) -> None:
 @env_app.command("compose")
 def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "--out"),
                 run_label: str = typer.Option("spike-docker", "--run-label"),
-                vllm_port: int = typer.Option(8000, "--vllm-port"), json_: bool = JSON_OPT) -> None:
+                vllm_port: int = typer.Option(8000, "--vllm-port"),
+                vllm_host: str = typer.Option("host.docker.internal", "--vllm-host",
+                                              help="Inference host as seen from the gateway container "
+                                                   "(10.0.2.2 under rootless Docker)"),
+                json_: bool = JSON_OPT) -> None:
     """Render the sandbox Compose topology for a manifest (agents on the internal network only)."""
     from mesocosm.core.manifest import load_manifest
     from mesocosm.env.compose import compose_yaml
 
     text = compose_yaml(load_manifest(manifest), repo_root=pathlib.Path.cwd(), run_label=run_label,
-                        vllm_port=vllm_port)
+                        vllm_port=vllm_port, vllm_host=vllm_host)
     if out:
         out.write_text(text)
         _emit({"written": str(out), "run_label": run_label}, json_)

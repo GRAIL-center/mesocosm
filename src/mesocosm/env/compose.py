@@ -16,7 +16,10 @@ from mesocosm.core.manifest import WorldManifest
 
 
 def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_label: str,
-                   vllm_port: int = 8000, runs_dir: str = "runs", opencode_version: str = "latest") -> dict:
+                   vllm_port: int = 8000, vllm_host: str = "host.docker.internal", runs_dir: str = "runs",
+                   opencode_version: str = "1.19.3") -> dict:
+    """`vllm_host` is how the gateway container reaches the inference server on the host; rootless Docker
+    maps `host-gateway` to the bridge, so there the slirp4netns host address 10.0.2.2 is needed."""
     spike = str((repo_root / "spike").resolve())
     runs = str((repo_root / runs_dir).resolve())
     network_of = {a.id: f"sandbox-{a.id}" if manifest.isolate_agents else "sandbox" for a in manifest.agents}
@@ -27,7 +30,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
             "networks": [*sandboxes, "edge"],
             "extra_hosts": ["host.docker.internal:host-gateway"],
             "environment": {
-                "MESOCOSM_UPSTREAM": f"http://host.docker.internal:{vllm_port}",
+                "MESOCOSM_UPSTREAM": f"http://{vllm_host}:{vllm_port}",
                 "MESOCOSM_LOG_DIR": f"/runs/{run_label}",
                 "MESOCOSM_RETURN_TOKEN_IDS": "1" if manifest.observe.activations else "0",
                 "MESOCOSM_GATEWAY_HOST": "0.0.0.0",
@@ -60,7 +63,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_GATEWAY_URL": "http://gateway:8080",
                 "MESOCOSM_GATEWAY_KEY": manifest.gateway.api_key,
                 "MESOCOSM_MODEL_ID": manifest.model.id,
-                "MESOCOSM_UPSTREAM_PROBE": f"http://host.docker.internal:{vllm_port}/v1/models",
+                "MESOCOSM_UPSTREAM_PROBE": f"http://{vllm_host}:{vllm_port}/v1/models",
             },
             "volumes": [f"{spike}/workspace/{agent.id}:/work"],
             "depends_on": {"gateway": {"condition": "service_healthy"}},
