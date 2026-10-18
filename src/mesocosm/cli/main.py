@@ -163,6 +163,30 @@ async def _run_manifest(manifest: pathlib.Path, compose_file: pathlib.Path, runs
     return await run_world(spec, manifest.resolve(), components, runs_root)
 
 
+def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,
+                  verifier_image: str, vllm_port: int, vllm_host: str, stacks: list):
+    """run_one for chains and scenarios: render the topology for the manifest (its run label names the log
+    directory), bring the stack up or reconcile what changed, then run."""
+    from mesocosm.core.manifest import load_manifest
+    from mesocosm.env.compose import compose_yaml
+    from mesocosm.env.stack import DockerStack
+
+    async def run_one(manifest: pathlib.Path):
+        spec = load_manifest(manifest)
+        label = spec.gateway.run_label or "spike-docker"
+        compose_dir.mkdir(parents=True, exist_ok=True)
+        compose_file = compose_dir / f"{manifest.stem}.compose.yml"
+        compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
+                                             vllm_host=vllm_host, manifest_dir=manifest.resolve().parent))
+        (runs_root / label).mkdir(parents=True, exist_ok=True)
+        stack = DockerStack(compose_file)
+        stacks.append(stack)
+        await stack.up()
+        return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image)
+
+    return run_one
+
+
 @app.command()
 def run(manifest: pathlib.Path,
         runs_root: pathlib.Path = RUNS_ROOT_OPT,
@@ -186,15 +210,20 @@ def run(manifest: pathlib.Path,
 @app.command()
 def chain(plan: pathlib.Path,
           runs_root: pathlib.Path = RUNS_ROOT_OPT,
-          compose_file: pathlib.Path = typer.Option(pathlib.Path("spike/docker/compose.yml"), "--compose-file"),
+          compose_file: pathlib.Path = typer.Option(None, "--compose-file",
+                                                    help="Use this running stack for every run; default: render "
+                                                         "and reconcile the stack per manifest"),
           workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
           verifier_image: str = VERIFIER_IMAGE_OPT,
+          vllm_port: int = typer.Option(8000, "--vllm-port"),
+          vllm_host: str = typer.Option("host.docker.internal", "--vllm-host"),
+          keep_up: bool = typer.Option(False, "--keep-up", help="Leave the sandbox running afterwards"),
           chain_id: str = typer.Option(None, "--chain-id",
                                        help="Name of the chain log; with --resume, the one to continue"),
           resume: bool = typer.Option(False, "--resume", help="Skip runs the chain log already records as finished"),
           json_: bool = JSON_OPT) -> None:
     """Run the manifests of a plan in sequence; retry infrastructure failures; resume an interrupted chain."""
-    from mesocosm.core.chain import expand, load_plan, run_chain
+    from mesocosm.core.chain import expand, load_plan, new_chain_id, run_chain
     from mesocosm.core.manifest import validate_manifest
 
     spec = load_plan(plan)
@@ -203,11 +232,23 @@ def chain(plan: pathlib.Path,
     invalid = {m: errs for m, errs in checked.items() if errs}
     if invalid:
         _emit({"status": "invalid_manifest", "errors": invalid}, json_, ok=False)
+    chain_id = chain_id or new_chain_id()
+    stacks: list = []
+    if compose_file is None:
+        run_one = _stack_runner(runs_root / "chains" / chain_id, runs_root, workspace_root, verifier_image,
+                                vllm_port, vllm_host, stacks)
+    else:
+        async def run_one(manifest: pathlib.Path):
+            return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image)
 
-    async def run_one(manifest: pathlib.Path):
-        return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image)
+    async def main():
+        try:
+            return await run_chain(spec, plan.resolve(), run_one, runs_root / "chains", chain_id, resume)
+        finally:
+            if stacks and not keep_up:
+                await stacks[-1].down()
 
-    summary = asyncio.run(run_chain(spec, plan.resolve(), run_one, runs_root / "chains", chain_id, resume))
+    summary = asyncio.run(main())
     _emit(summary, json_, ok=summary["failed"] == 0)
 
 
@@ -224,25 +265,12 @@ def scenario_run(scenario: pathlib.Path,
                  keep_up: bool = typer.Option(False, "--keep-up", help="Leave the sandbox running afterwards"),
                  json_: bool = JSON_OPT) -> None:
     """Run a staged scenario: per stage, render and reconcile the sandbox, run, collect the judge's flags."""
-    from mesocosm.core.manifest import load_manifest
     from mesocosm.core.scenario import load_scenario, run_scenario
-    from mesocosm.env.compose import compose_yaml
-    from mesocosm.env.stack import DockerStack
 
     spec = load_scenario(scenario)
     out_dir = out or runs_root / "scenarios" / spec.name
-    stacks: list[DockerStack] = []
-
-    async def run_one(manifest: pathlib.Path):
-        compose_file = manifest.with_suffix(".compose.yml")
-        compose_file.write_text(compose_yaml(load_manifest(manifest), repo_root=pathlib.Path.cwd(),
-                                             run_label=spec.name, vllm_port=vllm_port, vllm_host=vllm_host,
-                                             manifest_dir=manifest.parent))
-        (runs_root / spec.name).mkdir(parents=True, exist_ok=True)
-        stack = DockerStack(compose_file)
-        stacks.append(stack)
-        await stack.up()
-        return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image)
+    stacks: list = []
+    run_one = _stack_runner(out_dir, runs_root, workspace_root, verifier_image, vllm_port, vllm_host, stacks)
 
     async def main():
         try:

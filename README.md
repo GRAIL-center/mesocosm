@@ -8,13 +8,17 @@ Project proposal: see the Mesocosm proposal (Google Doc, GRAIL Slack channel). T
 
 ## Status
 
-Pre-alpha. The M1 vertical slice is implemented and tested against fakes (manifest validation, gateway with budgets and receipts, OpenCode and Harbor adapters, run bundle, run manager, Compose topology). Nothing has run on real hardware yet: **M0 (spike)** validates the riskiest assumptions on a single workstation, and every capability stays `unverified` until it does. See [`spike/SPIKE.md`](spike/SPIKE.md), [`docs/milestones.md`](docs/milestones.md) and [`docs/capability-matrix.md`](docs/capability-matrix.md).
+Pre-alpha. M0–M2 are done and M3–M4 machinery is in place: isolated sandboxes, the gateway with budgets and receipts, the world services (board, wiki, git, pypi, sites, hidden channels, accounts and traps), concurrent agents, memory policy, chaining, the judge's flags with a review queue, staged scenarios and live observation. Everything hardware-bound was verified in Docker on a Colab L4; see [`spike/SPIKE.md`](spike/SPIKE.md), [`docs/milestones.md`](docs/milestones.md) and [`docs/capability-matrix.md`](docs/capability-matrix.md).
 
 ```bash
 uv run mesocosm world validate examples/spike-world.yaml --json   # check a manifest
 uv run mesocosm env compose examples/spike-world.yaml              # render the sandbox topology
 uv run mesocosm run examples/spike-world.yaml --json               # needs vLLM, the gateway and the Compose sandbox up
 uv run mesocosm observe serve runs/<run_id> --gateway-log runs/spike/gateway.jsonl   # live view at http://127.0.0.1:8090
+uv run mesocosm scenario run examples/scenarios/channel-exposure.yaml --json   # stages over one world; flags per stage
+uv run mesocosm chain examples/chains/smoke.yaml --json                        # several worlds in sequence, with retries
+uv run mesocosm flags list runs/<run_id> --json                                # the judge's candidate incidents
+uv run mesocosm report runs/<run_id> --gpu-hour-cost 0.8 --json                # agent-hours, tokens, cost per agent-hour
 #   add --summarizer-url http://127.0.0.1:8000/v1 --summarizer-model mesocosm-3b --summarizer-key mesocosm-local for model-written status lines
 ```
 

@@ -15,3 +15,5 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0009](0009-model-written-status-lines.md) | Model-written status lines are derived artifacts kept beside the bundle | accepted |
 | [0010](0010-world-services.md) | The world is a set of ordinary services that identify callers by address | accepted (accounts clause superseded by ADR-0011) |
 | [0011](0011-conditions-enforced-by-the-world.md) | Exposure timing, accounts and traps are conditions enforced by the world services | accepted |
+| [0012](0012-memory-chaining-mid-run-conditions.md) | Memory policy, run chaining and mid-run condition changes are control-plane operations with receipts | accepted |
+| [0013](0013-flags-verdicts-staged-scenarios.md) | Candidate incidents are flags from traps and state checks; people give verdicts; scenarios escalate what the world offers | accepted |

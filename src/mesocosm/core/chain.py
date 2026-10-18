@@ -83,9 +83,13 @@ def _append(path: pathlib.Path, record: dict[str, Any]) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def new_chain_id() -> str:
+    return f"chain_{int(time.time() * 1000):013d}_{secrets.token_hex(3)}"
+
+
 async def run_chain(plan: ChainPlan, plan_path: pathlib.Path, run_one: RunOne, chains_root: pathlib.Path,
                     chain_id: str | None = None, resume: bool = False) -> dict[str, Any]:
-    chain_id = chain_id or f"chain_{int(time.time() * 1000):013d}_{secrets.token_hex(3)}"
+    chain_id = chain_id or new_chain_id()
     log_path = chains_root / f"{chain_id}.jsonl"
     done: dict[int, dict[str, Any]] = {}
     if resume and log_path.exists():
