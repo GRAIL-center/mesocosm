@@ -13,11 +13,17 @@ Every request is logged with the agent's identity, derived from the container's 
 (MESOCOSM_AGENT_IPS), so an agent cannot claim to be another one. The log is the environment-level
 exposure record (ARCHITECTURE.md): what each agent read and wrote, when. Nothing here reaches the
 internet; the services are the internet the agents get.
+
+Fictional accounts (MESOCOSM_ACCOUNTS) are accepted as HTTP basic auth and recorded as *claimed*
+next to the address-based identity; a trap account, one nobody was given, writes a
+`trap_triggered` line the moment it is used. The control plane reads /admin/state (denied to
+agent addresses) to verify that the conditions it asked for are the ones in force.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as dt
 import hashlib
 import html
@@ -51,6 +57,9 @@ class Settings:
         self.wiki_dir = pathlib.Path(env.get("MESOCOSM_WIKI_DIR", str(self.data / "wiki")))
         self.sites_dir = pathlib.Path(env.get("MESOCOSM_SITES_DIR", str(self.data / "sites")))
         self.pypi_dir = pathlib.Path(env.get("MESOCOSM_PYPI_DIR", str(self.data / "pypi")))
+        # {slug: seconds after service start}; the manifest's `exposure` condition, overriding front matter
+        self.wiki_visibility: dict[str, float] = json.loads(env.get("MESOCOSM_WIKI_VISIBILITY", "{}"))
+        self.accounts: list[dict[str, Any]] = json.loads(env.get("MESOCOSM_ACCOUNTS", "[]"))
         self.started = time.time()
 
 
@@ -95,10 +104,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         host = (request.headers.get("host") or "").split(":")[0].lower()
         return host if host in OFFICIAL + ("pastebin", "services") else "services"
 
+    def account_of(request: Request) -> dict[str, Any]:
+        """The account claimed with HTTP basic auth, if any. Identity stays address-based."""
+        header = request.headers.get("authorization") or ""
+        if not header.lower().startswith("basic "):
+            return {}
+        try:
+            user, _, password = base64.b64decode(header[6:].strip()).decode("utf-8").partition(":")
+        except (ValueError, UnicodeDecodeError):
+            return {"account": "?", "account_valid": False}
+        match = next((a for a in st.accounts if a["user"] == user and a["password"] == password), None)
+        fields: dict[str, Any] = {"account": user, "account_valid": match is not None}
+        if match and match.get("trap"):
+            fields["trap"] = True
+        return fields
+
     def record(request: Request, service: str, op: str, **fields: Any) -> None:
         agent, ip = who(request)
-        log.write({"ts": time.time(), "service": service, "op": op, "agent": agent, "ip": ip,
-                   "method": request.method, "path": request.url.path, **fields})
+        account = account_of(request)
+        base = {"ts": time.time(), "service": service, "agent": agent, "ip": ip,
+                "method": request.method, "path": request.url.path, **account}
+        if account.get("trap") and not getattr(request.state, "trap_logged", False):
+            request.state.trap_logged = True
+            note = next((a.get("note") for a in st.accounts if a["user"] == account["account"]), None)
+            log.write({**base, "op": "trap_triggered", "note": note})
+        log.write({**base, "op": op, **fields})
 
     # ---- dispatch by hostname -------------------------------------------------------------
 
@@ -113,6 +143,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/health")
     async def health(request: Request):
         return {"ok": True, "services": list(OFFICIAL), "channels": st.channels, "log_records": log.count}
+
+    @app.get("/admin/state")
+    async def admin_state(request: Request):
+        """What is in force, for the control plane's receipts. Agents get the same 404 as any
+        unknown page, and the attempt is logged."""
+        agent, ip = who(request)
+        if ip in st.agent_ips:
+            record(request, "services", "admin_denied")
+            raise HTTPException(404)
+        return {"channels": st.channels, "wiki_visibility": st.wiki_visibility, "git_repos": st.git_repos,
+                "accounts": [a["user"] for a in st.accounts],
+                "traps": [a["user"] for a in st.accounts if a.get("trap")],
+                "started": st.started, "log_records": log.count}
 
     @app.get("/")
     async def index(request: Request):
@@ -393,7 +436,9 @@ def wiki_docs(st: Settings) -> list[dict[str, Any]]:
                     k, v = line.split(":", 1)
                     meta[k.strip()] = v.strip().strip('"')
         visible_at = None
-        if meta.get("visible_after_seconds"):
+        if path.stem in st.wiki_visibility:
+            visible_at = st.started + float(st.wiki_visibility[path.stem])
+        elif meta.get("visible_after_seconds"):
             visible_at = st.started + float(meta["visible_after_seconds"])
         elif meta.get("visible_from"):
             visible_at = dt.datetime.fromisoformat(meta["visible_from"]).timestamp()

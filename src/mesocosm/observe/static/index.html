@@ -41,6 +41,7 @@
   .n circle.ring { fill: var(--panel); stroke-width: 4; stroke: var(--idle); transition: stroke .3s; }
   .n.busy circle.ring { stroke: var(--busy); } .n.tool circle.ring { stroke: var(--tool); }
   .n.blocked circle.ring, .n.error circle.ring { stroke: var(--error); } .n.done circle.ring { stroke: var(--done); }
+  .n .flag circle { fill: var(--error); stroke: var(--bg); stroke-width: 2; } .n .flag text { fill: #fff; font-weight: 700; font-size: 12px; text-anchor: middle; dominant-baseline: middle; }
   .n.busy circle.ring, .n.tool circle.ring { animation: pulse 1.6s ease-in-out infinite; }
   .n.selected circle.ring { stroke-width: 7; }
   .n circle.halo { fill: none; stroke: var(--accent); stroke-opacity: 0; stroke-width: 2; }
@@ -177,7 +178,7 @@
       tops.forEach(measure);
       const w = Math.max(SLOT, tops.reduce((acc, k) => acc + S[k]._w, 0) + Math.max(0, tops.length - 1) * 10);
       const agent = { id: a.agent_id, kind: 'agent', x: LEFT + SLOT / 2, y, status: a.status, label: a.agent_id, task: a.task,
-                      summary: a.summary, source: a.summary_source, r: R_AGENT,
+                      summary: a.summary, source: a.summary_source, r: R_AGENT, flags: a.flags || [],
                       sub: `${a.requests} calls${a.rewards.length ? ' · reward ' + a.rewards.map(r => r.reward ?? 'not measured').join(',') : ''}` };
       nodes.push(agent); let cx = LEFT, depth = 1;
       tops.forEach(k => { depth = Math.max(depth, 1 + place(k, cx, y + ROW, agent)); cx += S[k]._w + 10; });
@@ -195,9 +196,11 @@
     const y0 = n.r + 31, lines = wrap(n.summary, 30, 2), ai = n.source === 'model' ? '<tspan class="ai">✦ </tspan>' : '';
     const sum = lines.map((l, i) => `<text class="sum now" y="${y0 + i * 14}">${i === 0 ? ai : ''}${esc(l)}</text>`).join('');
     const sub = n.sub ? `<text class="sum" y="${y0 + lines.length * 14}">${esc(n.sub)}</text>` : '';
+    const flag = n.flags && n.flags.length ? `<g class="flag" transform="translate(${n.r * 0.72},${-n.r * 0.72})"><title>${esc(flagText(n.flags))}</title><circle r="9"></circle><text y="1">!</text></g>` : '';
     return `<g class="n ${n.status}${sel}" transform="translate(${n.x},${n.y})" ${data}><title>${esc(n.label)} — ${esc(n.summary)}</title>
-      <circle class="halo" r="${n.r + 6}"></circle><circle class="ring" r="${n.r}"></circle>${inner}${label}${sum}${sub}</g>`;
+      <circle class="halo" r="${n.r + 6}"></circle><circle class="ring" r="${n.r}"></circle>${inner}${label}${sum}${sub}${flag}</g>`;
   }
+  const flagText = flags => flags.map(f => `${f.kind === 'trap' ? 'used trap credential' : f.kind} ${f.account || ''} on ${f.service || '?'}${f.note ? ' (' + f.note + ')' : ''}`).join('\n');
 
   const edgeSvg = n => { const p = n.parent, y0 = p.y + p.r + (p.kind === 'agent' ? 54 : 52), y1 = n.y - n.r - 6, my = (y0 + y1) / 2;
     return `<path class="edge${n.status === 'busy' || n.status === 'tool' ? ' live' : ''}" d="M${p.x},${y0} C${p.x},${my} ${n.x},${my} ${n.x},${y1}"></path>`; };
@@ -308,6 +311,7 @@
         <dt>last call</dt><dd>${fmtTime(agent.last_request_ts)} ${agent.last_request_ts ? '(' + ago(agent.last_request_ts) + ')' : ''}</dd>
         <dt>rewards</dt><dd>${agent.rewards.length ? agent.rewards.map(r => `${esc(r.task)} → ${esc(r.reward)}`).join('<br>') : '–'}</dd>
         <dt>last error</dt><dd>${esc(agent.last_error || '–')}</dd>
+        <dt>flags</dt><dd>${(agent.flags || []).length ? agent.flags.map(f => `<span class="badge error">${esc(f.kind)}</span> ${esc(fmtTime(f.ts))} ${esc(f.account || '')} on ${esc(f.service || '?')}${f.note ? ' · ' + esc(f.note) : ''}`).join('<br>') : '–'}</dd>
         <dt>sessions</dt><dd>${agent.root_sessions.map(s => `<span class="clickable" data-session="${esc(s)}">${esc(s)}</span>`).join('<br>') || '–'}</dd></dl>`;
     }
     const tk = d.tokens || {};
@@ -333,7 +337,7 @@
     return items.map(i => {
       let text = i.kind === 'tool' ? `<b>${esc(i.tool)}</b> ${esc(i.input_summary || '')} · ${esc(i.status)}`
         : i.kind === 'file' ? `edited <b>${esc(i.path)}</b>` : i.kind === 'reasoning' ? `<i>thinking:</i> ${esc(i.text)}`
-        : i.kind === 'service' ? `<b>${esc(i.service)}</b> ${esc(i.op)}${i.key != null ? ' #' + esc(i.key) : ''}${i.summary ? ' · ' + esc(i.summary) : ''}` : esc(i.text);
+        : i.kind === 'service' ? `<b>${esc(i.service)}</b> ${esc(i.op)}${i.key != null ? ' #' + esc(i.key) : ''}${i.account ? ' as ' + esc(i.account) : ''}${i.summary ? ' · ' + esc(i.summary) : ''}` : esc(i.text);
       return `<div class="row"><span class="when">${fmtTime(i.ts)}</span> <span class="badge ${i.kind === 'error' ? 'error' : i.kind === 'tool' ? 'tool' : 'idle'}">${esc(i.kind)}</span> ${text}</div>`;
     }).join('');
   }

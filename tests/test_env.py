@@ -81,3 +81,21 @@ def test_egress_parser_blocks_on_fail_and_records_warn():
     empty = parse_egress_output("", 0)
     assert not empty.ok, "no OK lines at all is not a pass"
     assert parse_egress_output("OK fine\n", 0).to_dict()["lines"] == [["OK", "fine"]]
+
+
+def test_exposure_schedule_and_accounts_reach_the_services_container():
+    from mesocosm.core.manifest import AccountSpec
+    from mesocosm.env.compose import service_address
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest.conditions["exposure"] = {"wiki": {"secret": 30}}
+    manifest.services.accounts = [AccountSpec(user="deploy", password="pw"),
+                                  AccountSpec(user="root-backup", password="h", trap=True, note="wiki/old-ops")]
+    env = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]["services"]["environment"]
+    assert env["MESOCOSM_WIKI_VISIBILITY"] == '{"secret": 30}'
+    accounts = yaml.safe_load(env["MESOCOSM_ACCOUNTS"])
+    assert [a["user"] for a in accounts] == ["deploy", "root-backup"] and accounts[1]["trap"] is True
+    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    assert plain["services"]["services"]["environment"]["MESOCOSM_WIKI_VISIBILITY"] == "{}"
+    assert service_address(manifest, "services") == "172.30.0.3" and service_address(manifest, "gateway") == "172.30.0.2"
+    manifest.isolate_agents = True
+    assert service_address(manifest, "services") == "172.30.1.3" and service_address(manifest, "control") == "172.30.1.4"

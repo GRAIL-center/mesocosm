@@ -2,6 +2,7 @@
 calls the real gateway app (which proxies to a fake vLLM), a fake egress verifier, and a verifier
 that writes Harbor's reward file. Exercises the M1 exit criterion with the real control plane."""
 
+import asyncio
 import json
 import pathlib
 import time
@@ -56,6 +57,7 @@ def fake_opencode(gateway: httpx.AsyncClient, agent_id: str, run_label: str) -> 
     @app.post("/session/{sid}/message")
     async def message(sid: str, request: Request):
         body = await request.json()
+        await asyncio.sleep(0.05)                       # a model turn takes time; lets the other agents interleave
         hdr = {"X-Mesocosm-Agent": agent_id, "X-Mesocosm-Run": run_label}
         for i in range(2):
             r = await gateway.post("/v1/chat/completions", headers=hdr,
@@ -218,3 +220,59 @@ async def test_unconfirmed_channel_aborts_the_run(world):
     receipt = next(r for r in bundle.receipts() if r["op"] == "channels.set" and r["requested"]["channel"] == "pastebin")
     assert receipt["result"] == "failed" and receipt["requested"]["enabled"] is True
     assert json.loads((result.bundle_path / "summary.json").read_text())["status"] == "failed_channel_verification"
+
+
+async def test_agents_work_on_the_task_at_the_same_time(world, tmp_path):
+    manifest, components, root = world
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "url": "http://127.0.0.1:4097"}))
+    (root / "ws" / "agent-2").mkdir()
+    (root / "ws" / "agent-2" / "hello.txt").write_text("Hello, Mesocosm!\n")
+    result = await run_world(manifest, MANIFEST, components(), root / "runs")
+    assert result.status == "ok" and result.rewards == {"agent-1/hello-world": 1.0, "agent-2/hello-world": 1.0}
+    bundle = RunBundle.open(result.bundle_path)
+    order = [(e.kind, e.agent_id) for e in bundle.events() if e.kind in ("harness.session", "harness.reply")]
+    # both sessions open before either reply arrives: the agents ran concurrently, not one after the other
+    assert order[:2] == [("harness.session", "agent-1"), ("harness.session", "agent-2")]
+    assert {k for k, _ in order[2:]} == {"harness.reply"}
+    steps = {(e.agent_id, e.step) for e in bundle.events() if e.kind == "harness.session"}
+    assert steps == {("agent-1", 1), ("agent-2", 1)}, "steps are counted per agent"
+    assert (result.bundle_path / "native" / "agent-2" / "hello-world" / "messages.json").exists()
+
+
+class FakeServices:
+    def __init__(self, wiki_visibility):
+        self.wiki_visibility = wiki_visibility
+
+    async def state(self):
+        return {"channels": [], "wiki_visibility": self.wiki_visibility, "traps": []}
+
+
+async def test_exposure_condition_is_verified_against_the_services(world):
+    manifest, components, tmp_path = world
+    manifest.conditions["exposure"] = {"wiki": {"secret": 30}}
+    comps = components()
+    comps.services = FakeServices({"secret": 30})
+    result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs")
+    assert result.status == "ok"
+    bundle = RunBundle.open(result.bundle_path)
+    receipt = next(r for r in bundle.receipts() if r["requested"].get("condition") == "exposure")
+    assert receipt["result"] == "applied" and receipt["enforced_at"]["component"] == "services"
+    assert receipt["requested"]["wiki"] == {"secret": 30} and receipt["verification"]["method"] == "services /admin/state"
+    assert bundle_conditions(bundle)["exposure"] == {"wiki": {"secret": 30}, "result": "applied"}
+
+    comps = components()
+    comps.services = FakeServices({})                      # the services run with no schedule: contradiction
+    result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs")
+    assert result.status == "failed_exposure_verification"
+    bundle = RunBundle.open(result.bundle_path)
+    assert next(r for r in bundle.receipts() if r["requested"].get("condition") == "exposure")["result"] == "failed"
+    assert not (result.bundle_path / "native" / "agent-1").exists(), "no agent ran under the wrong condition"
+    assert json.loads((result.bundle_path / "summary.json").read_text())["applied"] == {}
+
+
+def bundle_conditions(bundle):
+    out = {}
+    for e in bundle.events():
+        if e.kind == "conditions.set" and e.agent_id is None:
+            out[e.data["condition"]] = {k: v for k, v in e.data.items() if k not in ("condition", "event_id")}
+    return out

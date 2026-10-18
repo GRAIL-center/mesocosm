@@ -132,7 +132,9 @@ def run(manifest: pathlib.Path,
     from mesocosm.adapters.opencode.client import OpenCodeClient
     from mesocosm.core.manifest import load_manifest, validate_manifest
     from mesocosm.core.run import Components, DockerVerifier, run_world
+    from mesocosm.env.compose import service_address
     from mesocosm.env.egress import DockerEgressVerifier
+    from mesocosm.env.services.client import ServicesAdmin
     from mesocosm.gateway.client import GatewayAdmin
 
     report = validate_manifest(manifest)
@@ -146,6 +148,7 @@ def run(manifest: pathlib.Path,
         verifier=DockerVerifier(verifier_image),
         workspace_for=lambda a: workspace_root / a.id,
         services_log=runs_root / (spec.gateway.run_label or "spike-docker") / "services.jsonl",
+        services=ServicesAdmin(f"http://{service_address(spec, 'services')}") if spec.services.enabled else None,
     )
     result = asyncio.run(run_world(spec, manifest.resolve(), components, runs_root))
     _emit({"run_id": result.run_id, "status": result.status, "bundle": str(result.bundle_path),

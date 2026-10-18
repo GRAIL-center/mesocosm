@@ -28,6 +28,7 @@ from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, WorldManifest
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.core.records import RunBundle
 from mesocosm.env.egress import EgressResult
+from mesocosm.env.services.client import ServicesAdmin
 from mesocosm.gateway.client import GatewayAdmin
 
 
@@ -59,6 +60,7 @@ class Components:
     verifier: Verifier
     workspace_for: Callable[[AgentSpec], pathlib.Path]
     services_log: pathlib.Path | None = None   # the world services' services.jsonl for this run (host path)
+    services: ServicesAdmin | None = None      # admin view of the world services (exposure schedule, channels)
 
 
 @dataclass
@@ -114,6 +116,39 @@ async def run_world(manifest: WorldManifest, manifest_path: pathlib.Path, compon
         return RunResult(bundle.run_id, bundle.root, "failed", {}, repr(e))
 
 
+async def _run_agent_task(manifest: WorldManifest, components: Components, bundle: RunBundle,
+                          agent: AgentSpec, task: HarborTask) -> float | None:
+    marks = adaptation(mode=manifest.mode, memory=manifest.memory,
+                       budget=agent.budget.model_dump(exclude_none=True) or None)
+    harness = components.harness_for(agent)
+    session_to_agent: dict[str, str] = {}
+    collector: asyncio.Task | None = None
+    try:
+        session_id = await harness.create_session(f"{bundle.run_id}/{agent.id}/{task.name}")
+        session_to_agent[session_id] = agent.id
+        collector = asyncio.create_task(_collect_events(harness, bundle, session_to_agent))
+        bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
+                      session_id=session_id, task=task.name)
+        reply = await harness.send_message(session_id, task.instruction, provider_id="mesocosm",
+                                           model_id=manifest.model.id)
+        bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
+                      session_id=session_id, parts=_parts_summary(reply))
+        messages = await harness.list_messages(session_id)
+        bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
+        await _stop_collector(collector)
+        collector = None
+        logs_dir = bundle.root / "verifier" / agent.id / task.name
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        reward = await components.verifier.verify(task, components.workspace_for(agent), logs_dir)
+        bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
+                      task=task.name, reward=reward.value, source=reward.source, labels=reward.labels, **marks)
+        return reward.value
+    finally:
+        if collector is not None:
+            collector.cancel()
+        await harness.aclose()
+
+
 async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components: Components,
                bundle: RunBundle) -> RunResult:
     run_label = manifest.gateway.run_label or bundle.run_id
@@ -156,6 +191,27 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             return RunResult(bundle.run_id, bundle.root, "failed_channel_verification", rewards,
                              f"channel {channel}: enabled={wanted} not confirmed by every agent")
 
+    exposure = manifest.conditions.get("exposure")
+    if exposure is not None:
+        wanted = exposure.get("wiki", {}) if isinstance(exposure, dict) else {}
+        state = await components.services.state() if components.services else None
+        applied = state.get("wiki_visibility") if state else None
+        ok = applied == wanted
+        detail = {"applied": applied, "channels": (state or {}).get("channels")}
+        receipt = Receipt(op="conditions.set", run_id=bundle.run_id,
+                          requested={"condition": "exposure", "wiki": wanted},
+                          enforced_at=EnforcedAt(component="services"), result="applied" if ok else "failed",
+                          verification=Verification(method="services /admin/state", ok=ok, detail=detail))
+        bundle.record_receipt(receipt.model_dump(mode="json"))
+        bundle.record("conditions.set", condition="exposure", wiki=wanted, result=receipt.result,
+                      event_id=receipt.enforced_at.event_id)
+        if not ok:
+            bundle.record("run.aborted", reason="failed_exposure_verification")
+            bundle.write_summary({"status": "failed_exposure_verification", "run_label": run_label,
+                                  "wanted": wanted, "applied": applied})
+            return RunResult(bundle.run_id, bundle.root, "failed_exposure_verification", rewards,
+                             "exposure schedule not confirmed by the services")
+
     for agent in manifest.agents:
         budget = agent.budget.model_dump(exclude_none=True)
         if budget:
@@ -168,37 +224,11 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     for task in tasks:
         marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
         bundle.record("task.loaded", task=task.name, provenance=task.provenance(), **marks)
-        for agent in manifest.agents:
-            marks = adaptation(mode=manifest.mode, memory=manifest.memory,
-                               budget=agent.budget.model_dump(exclude_none=True) or None)
-            harness = components.harness_for(agent)
-            session_to_agent: dict[str, str] = {}
-            collector: asyncio.Task | None = None
-            try:
-                session_id = await harness.create_session(f"{bundle.run_id}/{agent.id}/{task.name}")
-                session_to_agent[session_id] = agent.id
-                collector = asyncio.create_task(_collect_events(harness, bundle, session_to_agent))
-                bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
-                              session_id=session_id, task=task.name)
-                reply = await harness.send_message(session_id, task.instruction, provider_id="mesocosm",
-                                                   model_id=manifest.model.id)
-                bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
-                              session_id=session_id, parts=_parts_summary(reply))
-                messages = await harness.list_messages(session_id)
-                bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
-                await _stop_collector(collector)
-                collector = None
-                logs_dir = bundle.root / "verifier" / agent.id / task.name
-                logs_dir.mkdir(parents=True, exist_ok=True)
-                reward = await components.verifier.verify(task, components.workspace_for(agent), logs_dir)
-                rewards[f"{agent.id}/{task.name}"] = reward.value
-                bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
-                              task=task.name, reward=reward.value, source=reward.source, labels=reward.labels,
-                              **marks)
-            finally:
-                if collector is not None:
-                    collector.cancel()
-                await harness.aclose()
+        # Agents work on the task at the same time; each has its own harness, session and collector.
+        results = await asyncio.gather(*(_run_agent_task(manifest, components, bundle, agent, task)
+                                         for agent in manifest.agents))
+        for agent, value in zip(manifest.agents, results, strict=True):
+            rewards[f"{agent.id}/{task.name}"] = value
 
     usage = await components.gateway.usage()
     bundle.record("gateway.usage", **usage)

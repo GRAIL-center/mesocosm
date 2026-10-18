@@ -87,6 +87,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_AGENT_IPS": json.dumps(dict(sorted((ip, a) for a, ip in agent_ip.items()))),
                 "MESOCOSM_CHANNELS": ",".join(c for c in channels if c == "pastebin"),
                 "MESOCOSM_GIT_REPOS": ",".join(manifest.services.git),
+                "MESOCOSM_WIKI_VISIBILITY": json.dumps((manifest.conditions.get("exposure") or {}).get("wiki", {})),
+                "MESOCOSM_ACCOUNTS": json.dumps([a.model_dump() for a in manifest.services.accounts]),
             },
             "volumes": volumes,
         }
@@ -124,6 +126,12 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
     if "shared_dir" in channels:
         out["volumes"] = {"shared": {}}
     return out
+
+
+def service_address(manifest: WorldManifest, service: str) -> str:
+    """The fixed address of gateway/services/control on the first sandbox network, as the renderer assigns it."""
+    index = {"gateway": 2, "services": 3, "control": 4}[service]
+    return f"172.30.{1 if manifest.isolate_agents else 0}.{index}"
 
 
 def compose_yaml(manifest: WorldManifest, **kwargs) -> str:

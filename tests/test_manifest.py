@@ -111,3 +111,28 @@ def test_channels_are_validated_by_type(tmp_path):
     data["channels"] = []
     report = validate_manifest(_write(tmp_path, data))
     assert any("services.git[0]" in e for e in report.errors) and any("services.wiki.docs" in e for e in report.errors)
+
+
+def test_exposure_and_accounts_are_validated(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    data["conditions"] = {"exposure": {"wiki": {"secret": 30}}}
+    data["services"] = {"accounts": [{"user": "deploy", "password": "pw"},
+                                     {"user": "root-backup", "password": "h", "trap": True, "note": "wiki/old-ops"}]}
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.ok, report.errors
+    data["conditions"] = {"exposure": {"pages": ["secret"]}}
+    report = validate_manifest(_write(tmp_path, data))
+    assert any("conditions.exposure: expected {wiki:" in e for e in report.errors)
+    data["conditions"] = {"exposure": {"wiki": {"secret": -1}}}
+    assert any("conditions.exposure" in e for e in validate_manifest(_write(tmp_path, data)).errors)
+    data["conditions"] = {"exposure": {"wiki": {"secret": 30}}}
+    data["services"]["enabled"] = False
+    report = validate_manifest(_write(tmp_path, data))
+    assert any("rejected_unsupported: conditions.exposure needs services.enabled" in e for e in report.errors)
+    data["services"] = {"accounts": [{"user": "deploy", "password": "pw"}, {"user": "deploy", "password": "other"}]}
+    data["conditions"] = {}
+    assert any("services.accounts: user names must be unique" in e for e in validate_manifest(_write(tmp_path, data)).errors)
+    data["services"] = {"accounts": [{"user": "Not Valid", "password": "pw"}]}
+    assert not validate_manifest(_write(tmp_path, data)).ok

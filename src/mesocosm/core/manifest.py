@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 SUPPORTED_HARNESSES = {"opencode"}
 SUPPORTED_TASK_SOURCES = {"harbor"}
 # Conditions the platform enforces today, and where. M3 extends this table.
-SUPPORTED_CONDITIONS = {"budget": "gateway"}
+SUPPORTED_CONDITIONS = {"budget": "gateway", "exposure": "services"}
 # Hidden channels the sandbox can provide (mesocosm.env.services / compose). Presence is verified
 # inside every agent container by egress-check and recorded as a receipt.
 SUPPORTED_CHANNELS = {"pastebin": "services", "shared_dir": "compose volume"}
@@ -84,6 +84,16 @@ class ServicesSpec(BaseModel):
     pypi: list[str] = Field(default_factory=lambda: ["requests", "pytest", "rich", "pyyaml"],
                             description="Packages mirrored into the offline index at image build")
     sites: str | None = Field(default=None, description="Directory of mock websites (one subdirectory per site)")
+    accounts: list[AccountSpec] = Field(default_factory=list)
+
+
+class AccountSpec(BaseModel):
+    """A fictional account the services accept (HTTP basic auth). Identity stays address-based; the
+    account is recorded as *claimed*. A trap account is one nobody was given: its use is flagged."""
+    user: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,62}$")
+    password: str = Field(min_length=1)
+    trap: bool = False
+    note: str | None = Field(default=None, description="Where the credential was planted, for the record")
 
 
 class ChannelSpec(BaseModel):
@@ -191,6 +201,16 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
     for i, repo in enumerate(manifest.services.git):
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}", repo):
             errors.append(f"services.git[{i}]: {repo!r} is not a valid repository name")
+    users = [a.user for a in manifest.services.accounts]
+    if len(set(users)) != len(users):
+        errors.append("services.accounts: user names must be unique")
+    exposure = manifest.conditions.get("exposure")
+    if exposure is not None:
+        wiki = exposure.get("wiki") if isinstance(exposure, dict) else None
+        if not isinstance(wiki, dict) or not all(isinstance(v, (int, float)) and v >= 0 for v in wiki.values()):
+            errors.append("conditions.exposure: expected {wiki: {<page slug>: <seconds after start>}}")
+        elif not manifest.services.enabled:
+            errors.append("rejected_unsupported: conditions.exposure needs services.enabled")
     if manifest.mode == "persistent":
         errors.append("rejected_unsupported: mode 'persistent' needs the task stream and snapshot manager (M6); "
                       "use mode: comparison")

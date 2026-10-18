@@ -20,6 +20,7 @@ TIMELINE_MAX = 2000      # text/status/file items kept per session
 TOOLS_MAX = 500          # tool calls kept per session (latest state per call id)
 REQUESTS_MAX = 1000      # model-request summaries kept per agent
 INTERACTIONS_MAX = 500   # read-after-write pairs between agents kept per run
+FLAGS_MAX = 50           # flagged events (trap credential use) kept per agent
 RUN_START_SLACK = 5.0    # seconds of clock skew allowed between the control plane and the gateway/services hosts
 WRITERS_MAX = 5000       # (service, key) -> writer entries kept for joining reads to writes
 REQUEST_BODIES_MAX = 50  # full request/response records kept per agent
@@ -161,6 +162,7 @@ class AgentState:
     completion_tokens_total: int = 0
     last_request_ts: float | None = None
     last_error: str | None = None
+    flags: deque = field(default_factory=lambda: deque(maxlen=FLAGS_MAX))   # trap credentials used, etc.
 
 
 class Observer:
@@ -245,7 +247,10 @@ class Observer:
             return
         agent = self._agent(agent_id)
         item = {"ts": ts, "kind": "service", "service": service, "op": op, "key": key,
-                "summary": rec.get("summary"), "sha256": rec.get("sha256")}
+                "summary": rec.get("summary"), "sha256": rec.get("sha256"), "account": rec.get("account")}
+        if op == "trap_triggered":
+            agent.flags.append({"ts": ts, "kind": "trap", "service": service, "account": rec.get("account"),
+                                "note": rec.get("note")})
         session = self._active_session(agent)
         node = self.sessions.get(session) if session else None
         if node is not None:
@@ -377,6 +382,7 @@ class Observer:
                 "requests": agent.requests_total, "completion_tokens": agent.completion_tokens_total,
                 "rewards": agent.rewards, "root_sessions": list(agent.root_sessions),
                 "last_request_ts": agent.last_request_ts, "last_error": agent.last_error,
+                "flags": list(agent.flags),
             })
         return {
             "run_id": self.run_id, "status": self.status, "started_ts": self.started_ts,
