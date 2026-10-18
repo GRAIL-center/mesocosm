@@ -20,6 +20,7 @@ TIMELINE_MAX = 2000      # text/status/file items kept per session
 TOOLS_MAX = 500          # tool calls kept per session (latest state per call id)
 REQUESTS_MAX = 1000      # model-request summaries kept per agent
 INTERACTIONS_MAX = 500   # read-after-write pairs between agents kept per run
+RUN_START_SLACK = 5.0    # seconds of clock skew allowed between the control plane and the gateway/services hosts
 WRITERS_MAX = 5000       # (service, key) -> writer entries kept for joining reads to writes
 REQUEST_BODIES_MAX = 50  # full request/response records kept per agent
 SESSIONS_MAX = 5000      # sessions kept per run; finished ones are evicted first
@@ -179,6 +180,7 @@ class Observer:
         self.service_records = 0
         self._live_services = False              # set by the server when it tails services.jsonl directly
         self.run_conditions: dict[str, Any] = {} # conditions enforced at run level (channels), not per agent
+        self.run_started: float | None = None    # first bundle event; older shared-log records are earlier runs
 
     # -- ingestion ------------------------------------------------------------------------
 
@@ -189,6 +191,8 @@ class Observer:
         self._tick(ts)
         if self.run_id is None:
             self.run_id = ev.get("run_id")
+        if self.run_started is None and ts is not None:
+            self.run_started = ts - RUN_START_SLACK
         kind = ev.get("kind") or ""
         data = ev.get("data") or {}
         agent_id = ev.get("agent_id")
@@ -227,8 +231,10 @@ class Observer:
     def apply_service_record(self, rec: dict[str, Any]) -> None:
         """One line of the world services' services.jsonl (or a `service.*` bundle event)."""
         self.ingested += 1
-        self.service_records += 1
         ts = rec.get("ts")
+        if self._before_run(ts):
+            return
+        self.service_records += 1
         self._tick(ts)
         agent_id = rec.get("agent") or "unknown"
         service, op = rec.get("service") or "?", rec.get("op") or "?"
@@ -278,6 +284,8 @@ class Observer:
         """One line of the gateway's gateway.jsonl."""
         self.ingested += 1
         ts = rec.get("ts")
+        if self._before_run(ts):
+            return
         self._tick(ts)
         event = rec.get("event")
         if event == "receipt":
@@ -347,7 +355,9 @@ class Observer:
         pick = max(busy or nodes, key=lambda n: n.updated_ts or 0)
         line = pick.summary()
         if not busy and agent.rewards and not line.lower().startswith(("done", "stopped", "finished")):
-            return _clip("Done: " + line[0].lower() + line[1:], 90)
+            head = line.split(" ", 1)[0]
+            body = line if head == "I" or head.isupper() else line[0].lower() + line[1:]
+            return _clip("Done: " + body, 90)
         return _clip(("Subagent: " if pick.parent_id else "") + line, 90)
 
     def agent_summary_source(self, agent: AgentState) -> str:
@@ -396,6 +406,13 @@ class Observer:
         return agent.request_bodies.get(request_id) if agent else None
 
     # -- internals ------------------------------------------------------------------------
+
+    def _before_run(self, ts: float | None) -> bool:
+        """Shared gateway/services logs carry earlier runs; drop what predates this bundle's first event."""
+        if self.run_started is not None and ts is not None and ts < self.run_started:
+            self.ignored_records += 1
+            return True
+        return False
 
     def _tick(self, ts: float | None) -> None:
         if ts is None:

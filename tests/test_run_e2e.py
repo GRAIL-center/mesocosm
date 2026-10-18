@@ -4,6 +4,7 @@ that writes Harbor's reward file. Exercises the M1 exit criterion with the real 
 
 import json
 import pathlib
+import time
 
 import httpx
 import pytest
@@ -118,9 +119,10 @@ def world(tmp_path):
         return OpenCodeClient(agent.harness_url(), transport=httpx.ASGITransport(app=oc_app))
 
     services_log = tmp_path / "services.jsonl"
-    services_log.write_text(json.dumps({"ts": 1.0, "service": "board", "op": "write", "agent": "agent-1", "ip": "172.30.0.10",
-                                        "method": "POST", "path": "/api/posts", "post_id": 1, "sha256": "abc",
-                                        "size": 5, "summary": "hello"}) + "\n")
+    stale = {"ts": 1.0, "service": "board", "op": "write", "agent": "agent-1", "post_id": 0}      # an earlier run's record
+    fresh = {"ts": time.time(), "service": "board", "op": "write", "agent": "agent-1", "ip": "172.30.0.10",
+             "method": "POST", "path": "/api/posts", "post_id": 1, "sha256": "abc", "size": 5, "summary": "hello"}
+    services_log.write_text(json.dumps(stale) + "\n" + json.dumps(fresh) + "\n")
 
     def components(egress_ok=True):
         return Components(harness_for=harness_for, gateway=GatewayAdmin("http://gateway", transport=gw_transport),

@@ -224,3 +224,14 @@ def test_run_level_conditions_do_not_create_an_agent():
     snap = obs.snapshot()
     assert [a["agent_id"] for a in snap["agents"]] == ["agent-1"]
     assert snap["run_conditions"] == {"channel:pastebin": {"enabled": False, "result": "applied"}}
+
+
+def test_records_from_before_this_run_are_ignored():
+    obs = Observer()
+    obs.apply_bundle_event(ev("gateway.health", 1000.0, None, ok=True))
+    obs.apply_gateway_record(gateway_record(900.0, "agent-1", "old", 1))      # an earlier run under the same label
+    obs.apply_gateway_record(gateway_record(1001.0, "agent-1", "new", 1))
+    obs.apply_service_record({"ts": 901.0, "service": "board", "op": "write", "agent": "agent-1", "post_id": 1})
+    obs.apply_service_record({"ts": 1002.0, "service": "board", "op": "write", "agent": "agent-1", "post_id": 2})
+    snap = obs.snapshot()
+    assert snap["agents"][0]["requests"] == 1 and snap["service_records"] == 1 and snap["ignored_records"] == 2

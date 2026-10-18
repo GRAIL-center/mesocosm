@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -39,6 +40,7 @@ class Harness(Protocol):
 
 
 EVENT_GRACE_SECONDS = 0.5  # time the event collector gets to drain after the task's last message
+RECORD_SLACK_SECONDS = 5.0  # clock skew allowed between the control plane and the gateway/services hosts
 
 
 class Verifier(Protocol):
@@ -116,6 +118,8 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                bundle: RunBundle) -> RunResult:
     run_label = manifest.gateway.run_label or bundle.run_id
     rewards: dict[str, float | None] = {}
+    # A fixed run label is shared by successive runs: keep only this run's gateway and services records.
+    started = time.time() - RECORD_SLACK_SECONDS
 
     health = await components.gateway.health()
     bundle.record("gateway.health", **health)
@@ -198,7 +202,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
 
     usage = await components.gateway.usage()
     bundle.record("gateway.usage", **usage)
-    exposure = await components.gateway.records(run_label)
+    exposure = [r for r in await components.gateway.records(run_label) if float(r.get("ts") or 0) >= started]
     bundle.write_native("gateway/records.jsonl", "".join(_json(r) + "\n" for r in exposure))
     for rec in exposure:
         if rec.get("event") in ("chat_completion", "budget_exhausted"):
@@ -208,12 +212,11 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
 
     service_records = 0
     if components.services_log and components.services_log.exists():
-        text = components.services_log.read_text(encoding="utf-8")
-        bundle.write_native("services/services.jsonl", text)
-        for line in text.splitlines():
-            if not line.strip():
-                continue
-            rec = json.loads(line)
+        lines = [ln for ln in components.services_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        records = [json.loads(ln) for ln in lines]
+        records = [r for r in records if float(r.get("ts") or 0) >= started]
+        bundle.write_native("services/services.jsonl", "".join(_json(r) + "\n" for r in records))
+        for rec in records:
             service_records += 1
             bundle.record(f"service.{rec.get('op', 'event')}", agent_id=rec.get("agent"), service=rec.get("service"),
                           **{k: v for k, v in rec.items() if k not in ("ts", "service", "op", "agent", "method")})

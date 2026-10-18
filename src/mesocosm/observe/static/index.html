@@ -207,9 +207,11 @@
     const pos = Object.fromEntries(g.nodes.filter(n => n.kind === 'agent').map(n => [n.id, n]));
     const pairs = new Map();
     (state.interactions || []).forEach(i => { const k = `${i.from}|${i.to}|${i.service}`; const e = pairs.get(k) || { ...i, n: 0 }; e.n++; e.ts = i.ts; pairs.set(k, e); });
+    const seen = new Map();   // arcs between the same two agents fan out so their labels stay apart
     return [...pairs.values()].map(e => {
       const a = pos[e.from], b = pos[e.to]; if (!a || !b) return '';
-      const x = a.x - a.r - 8, bulge = Math.max(50, Math.abs(b.y - a.y) / 3), my = (a.y + b.y) / 2;
+      const pk = `${e.from}|${e.to}`, idx = seen.get(pk) || 0; seen.set(pk, idx + 1);
+      const x = a.x - a.r - 8, bulge = Math.max(50, Math.abs(b.y - a.y) / 3) + idx * 34, my = (a.y + b.y) / 2;
       const recent = state.last_ts && e.ts && state.last_ts - e.ts < 30 ? ' recent' : '';
       return `<path class="flow${recent}" d="M${x},${a.y} C${x - bulge},${a.y} ${x - bulge},${b.y} ${x},${b.y}" marker-end="url(#arrow)"></path>
         <text class="flowlabel" x="${x - bulge - 4}" y="${my}" text-anchor="end">${esc(e.service)} ×${e.n}</text>`;
