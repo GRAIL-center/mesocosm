@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir ".[gateway]"
 # Pure-python wheels for the agents' Python (Debian bookworm: 3.11). A package without such a wheel fails the build.
 ARG PYPI_PACKAGES="requests pytest rich pyyaml"
 RUN mkdir -p /data/pypi/files && pip download --no-cache-dir -d /data/pypi/files \
-      --python-version 3.11 --only-binary=:all: --platform manylinux2014_x86_64 --platform any ${PYPI_PACKAGES}
+      --python-version 3.11 --only-binary=:all: --platform manylinux2014_x86_64 ${PYPI_PACKAGES}
 COPY spike/world/wiki /data/wiki
 ENV MESOCOSM_SERVICES_DATA=/data MESOCOSM_SERVICES_PORT=80
 EXPOSE 80

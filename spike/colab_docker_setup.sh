@@ -28,6 +28,10 @@ grep -q '^dock:' /etc/subgid || echo 'dock:100000:65536' >> /etc/subgid
 U=$(id -u dock)
 mkdir -p /run/user/$U && chown dock:dock /run/user/$U && chmod 700 /run/user/$U
 mkdir -p /dev/net; [ -e /dev/net/tun ] || mknod /dev/net/tun c 10 200; chmod 666 /dev/net/tun
+# The Colab runtime masks parts of /proc (read-only /proc/sys, tmpfs over kcore etc.). libnetwork
+# writes /proc/sys/net/* when it wires a container, and runc treats a /proc with locked
+# submounts as unsafe, so the masks come off before the daemon starts (disposable VM only).
+for m in $(awk '$5 ~ "^/proc/." {print $5}' /proc/self/mountinfo | sort -r); do umount "$m" && echo "unmasked $m"; done
 # runc wrapper first on the daemon's PATH: containerd shims and BuildKit both look up `runc` there.
 HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p /home/dock/bin && install -m 755 "$HERE/colab_runc_wrapper.py" /home/dock/bin/runc && chown -R dock:dock /home/dock/bin

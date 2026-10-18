@@ -33,6 +33,11 @@ if "create" in args or "run" in args:
     spec["mounts"] = mounts
     linux = spec.setdefault("linux", {})
     linux["namespaces"] = [n for n in linux.get("namespaces", []) if n.get("type") != "pid"]
+    # runc refuses to touch /proc/sys or mask /proc paths when /proc is not a fresh procfs
+    # ("unsafe procfs detected"); with the VM's /proc bound in, drop those steps.
+    linux.pop("sysctl", None)
+    linux["maskedPaths"] = []
+    linux["readonlyPaths"] = []
     with open(cfg, "w") as f:
         json.dump(spec, f)
 os.execv(RUNC, [RUNC] + args)
