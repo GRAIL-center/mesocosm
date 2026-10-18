@@ -218,3 +218,48 @@ def test_world_events_and_roles_are_validated(tmp_path):
     data["services"]["git"] = []
     data["services"]["protected_repos"] = []
     assert "world.events need services.enabled" in "\n".join(validate_manifest(_write(tmp_path, data)).errors)
+
+
+def test_mcp_servers_and_skills_are_validated(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("say hello\n")
+    good = tmp_path / "skills" / "team-board"
+    good.mkdir(parents=True)
+    (good / "SKILL.md").write_text("---\nname: team-board\ndescription: Board conventions\n---\n# Board\n")
+    bad_name = tmp_path / "skills" / "Bad_Name"
+    bad_name.mkdir()
+    (bad_name / "SKILL.md").write_text("---\nname: Bad_Name\ndescription: x\n---\n")
+    mismatch = tmp_path / "skills" / "other"
+    mismatch.mkdir()
+    (mismatch / "SKILL.md").write_text("---\nname: team-board\ndescription: x\n---\n")
+    no_desc = tmp_path / "skills" / "quiet"
+    no_desc.mkdir()
+    (no_desc / "SKILL.md").write_text("---\nname: quiet\n---\n")
+    (tmp_path / "skills" / "empty").mkdir()
+    data["agents"] = [{"id": "agent-1", "skills": ["skills/team-board", "skills/Bad_Name", "skills/other",
+                                                   "skills/quiet", "skills/empty", "skills/team-board"],
+                       "mcp": {"Bad Name": {"type": "local", "command": ["x"]},
+                               "team": {"type": "remote", "url": "http://mcp/"},
+                               "fs": {"type": "local", "command": ["python3", "-m", "fs_mcp"], "environment": {"A": "1"}}}}]
+    data["services"] = {"mcp": True}
+    report = validate_manifest(_write(tmp_path, data))
+    errors = "\n".join(report.errors)
+    assert "name 'Bad_Name' must be 1-64 lowercase" in errors
+    assert "name 'team-board' must match the directory name 'other'" in errors
+    assert "skill 'skills/quiet': description must be 1-1024 characters" in errors
+    assert "has no SKILL.md" in errors and "skill 'team-board' listed twice" in errors
+    assert "mcp server name 'Bad Name' must match" in errors and "'team' is the world's own" in errors
+    data["agents"][0]["skills"] = ["skills/team-board"]
+    del data["agents"][0]["mcp"]["Bad Name"]
+    del data["agents"][0]["mcp"]["team"]
+    assert validate_manifest(_write(tmp_path, data)).ok
+    manifest = load_manifest(_write(tmp_path, data))
+    assert manifest.agents[0].mcp["fs"].command == ["python3", "-m", "fs_mcp"] and manifest.services.mcp
+    data["agents"][0]["mcp"]["fs"] = {"type": "local", "command": []}
+    assert not validate_manifest(_write(tmp_path, data)).ok, "a local server needs a command"
+    data["agents"][0]["mcp"]["fs"] = {"type": "stdio", "command": ["x"]}
+    assert not validate_manifest(_write(tmp_path, data)).ok, "type is local or remote"
+    data["agents"][0]["mcp"] = {}
+    data["services"] = {"enabled": False, "mcp": True, "git": []}
+    assert "services.mcp needs services.enabled" in "\n".join(validate_manifest(_write(tmp_path, data)).errors)

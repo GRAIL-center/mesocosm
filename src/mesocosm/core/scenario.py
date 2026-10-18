@@ -83,6 +83,9 @@ def _absolutize(manifest: dict[str, Any], base_dir: pathlib.Path) -> None:
     for event in (manifest.get("world") or {}).get("events") or []:
         if isinstance(event, dict) and event.get("file"):
             event["file"] = str((base_dir / event["file"]).resolve())
+    for agent in manifest.get("agents") or []:
+        if isinstance(agent, dict) and agent.get("skills"):
+            agent["skills"] = [str((base_dir / s).resolve()) for s in agent["skills"]]
 
 
 def stage_manifests(scenario: Scenario, scenario_path: pathlib.Path, out_dir: pathlib.Path) -> list[pathlib.Path]:

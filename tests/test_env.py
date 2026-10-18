@@ -180,3 +180,38 @@ def test_agent_files_carry_the_harness_config_and_identity_and_nothing_of_the_pl
     text = compose_yaml(manifest, repo_root=ROOT, run_label="lbl", files_dir=tmp_path / "agents")
     agent_section = text[text.index("  agent-1:"):text.index("  agent-2:")]
     assert "MESOCOSM" not in agent_section and "environment" not in agent_section
+
+
+def test_mcp_servers_and_skills_reach_the_agent_through_its_config_and_mounts(tmp_path):
+    from mesocosm.core.manifest import McpLocal
+
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    skill = tmp_path / "skills" / "team-board"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: team-board\ndescription: Board conventions\n---\n# Board\n")
+    (skill / "notes.md").write_text("extra\n")
+    manifest.services.mcp = True
+    manifest.agents[0].skills = ["skills/team-board"]
+    manifest.agents[0].mcp = {"fs": McpLocal(type="local", command=["python3", "-m", "fs_mcp"], environment={"A": "1"})}
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "skills": [], "mcp": {}}))
+    cfg = json.loads(agent_files(manifest, "lbl")["agent-1"]["opencode.json"])
+    assert cfg["mcp"] == {"team": {"type": "remote", "url": "http://mcp/", "enabled": True},
+                          "fs": {"type": "local", "command": ["python3", "-m", "fs_mcp"], "environment": {"A": "1"},
+                                 "enabled": True}}
+    assert json.loads(agent_files(manifest, "lbl")["agent-2"]["opencode.json"])["mcp"] == {
+        "team": {"type": "remote", "url": "http://mcp/", "enabled": True}}
+    written = write_agent_files(manifest, "lbl", tmp_path / "agents", manifest_dir=tmp_path)
+    assert (tmp_path / "agents" / "agent-1" / "skills" / "team-board" / "SKILL.md").read_text().startswith("---")
+    assert (tmp_path / "agents" / "agent-1" / "skills" / "team-board" / "notes.md").exists()
+    assert not (tmp_path / "agents" / "agent-2" / "skills").exists()
+    assert any(p.name == "SKILL.md" for p in written)
+    compose = render_compose(manifest, repo_root=ROOT, run_label="lbl", files_dir=tmp_path / "agents")
+    a1, a2 = compose["services"]["agent-1"], compose["services"]["agent-2"]
+    assert f"{tmp_path}/agents/agent-1/skills:/root/.config/opencode/skills:ro" in a1["volumes"]
+    assert not any(v.endswith(":/root/.config/opencode/skills:ro") for v in a2["volumes"])
+    assert "mcp" in compose["services"]["services"]["networks"]["sandbox"]["aliases"]
+    assert compose["services"]["services"]["environment"]["MESOCOSM_MCP"] == "1"
+    assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "board,wiki,git,pypi,sites,mcp"
+    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    assert plain["services"]["services"]["environment"]["MESOCOSM_MCP"] == "0"
+    assert "mcp" not in json.loads(agent_files(load_manifest(ROOT / "examples" / "spike-world.yaml"), "lbl")["agent-1"]["opencode.json"])

@@ -219,6 +219,9 @@ def fork_manifest(snapshot_root: str | pathlib.Path, patch: dict[str, Any], out_
         for event in (manifest.get("world") or {}).get("events") or []:
             if event.get("file") and not pathlib.Path(event["file"]).is_absolute():
                 event["file"] = str((base_dir / event["file"]).resolve())
+        for agent in manifest.get("agents") or []:
+            agent["skills"] = [s if pathlib.Path(s).is_absolute() else str((base_dir / s).resolve())
+                               for s in agent.get("skills") or []]
     manifest["name"] = f"{manifest['name']}-{name_suffix}"[:63]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(yaml.safe_dump(manifest, sort_keys=False))

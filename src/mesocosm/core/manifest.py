@@ -45,12 +45,40 @@ class PersonaSpec(BaseModel):
                                                         "(~/.config/opencode/AGENTS.md): who the agent is on the team")
 
 
+class McpLocal(BaseModel):
+    """An MCP server started inside the agent's container (ADR-0021). The command must exist in the image or
+    the workspace: the sandbox has no internet, so `npx -y <package>` cannot download anything."""
+    type: Literal["local"]
+    command: list[str] = Field(min_length=1)
+    environment: dict[str, str] = Field(default_factory=dict)
+    cwd: str | None = None
+    timeout: int | None = Field(default=None, ge=1)
+
+
+class McpRemote(BaseModel):
+    """An MCP server reached over HTTP from the agent's container: inside the sandbox that is the world's
+    own (`services.mcp`) or one on the sandbox networks."""
+    type: Literal["remote"]
+    url: str
+    headers: dict[str, str] = Field(default_factory=dict)
+    timeout: int | None = Field(default=None, ge=1)
+
+
+MCP_NAME = r"^[a-z0-9][a-z0-9_-]{0,40}$"
+SKILL_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+
 class AgentSpec(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     harness: str = "opencode"
     url: str | None = Field(default=None, description="Harness server URL; default http://<id>:4096")
     budget: Budget = Field(default_factory=Budget)
     persona: PersonaSpec | None = None
+    mcp: dict[str, McpLocal | McpRemote] = Field(default_factory=dict,
+                                                 description="MCP servers in the harness config, by name")
+    skills: list[str] = Field(default_factory=list, description="Skill directories (relative to the manifest), "
+                                                                "each with a SKILL.md; mounted into the harness's "
+                                                                "global skills directory")
 
     def harness_url(self) -> str:
         return self.url or f"http://{self.id}:4096"
@@ -149,6 +177,8 @@ class ServicesSpec(BaseModel):
     accounts: list[AccountSpec] = Field(default_factory=list)
     protected_repos: list[str] = Field(default_factory=list, description="Repositories only an account with the "
                                                                           "`push` role may push to")
+    mcp: bool = Field(default=False, description="Serve the board and the wiki as MCP tools at http://mcp/ "
+                                                 "(server `team` in every agent's harness config)")
     domain: str | None = Field(default=None, pattern=DOMAIN,
                                description="Every world hostname also answers as <host>.<domain>; personas' "
                                            "default e-mail domain")
@@ -259,6 +289,35 @@ def _package_version() -> str:
         return "0.0.0+local"
 
 
+def skill_frontmatter(skill_dir: pathlib.Path) -> dict[str, object]:
+    text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    m = re.match(r"\A---\n(.*?)\n---\n", text, re.S)
+    if not m:
+        raise ValueError("SKILL.md has no YAML front matter")
+    meta = yaml.safe_load(m.group(1))
+    if not isinstance(meta, dict):
+        raise ValueError("SKILL.md front matter is not a mapping")
+    return meta
+
+
+def skill_problem(skill_dir: pathlib.Path) -> str | None:
+    """Why a skill directory is not a valid Agent Skill (the OpenCode rules), or None."""
+    if not (skill_dir / "SKILL.md").is_file():
+        return f"{skill_dir} has no SKILL.md"
+    try:
+        meta = skill_frontmatter(skill_dir)
+    except (ValueError, yaml.YAMLError) as e:
+        return str(e)
+    name, description = meta.get("name"), meta.get("description")
+    if not isinstance(name, str) or not SKILL_NAME.fullmatch(name) or len(name) > 64:
+        return f"name {name!r} must be 1-64 lowercase alphanumerics with single hyphens"
+    if name != skill_dir.name:
+        return f"name {name!r} must match the directory name {skill_dir.name!r}"
+    if not isinstance(description, str) or not 1 <= len(description) <= 1024:
+        return "description must be 1-1024 characters"
+    return None
+
+
 def load_manifest(path: str | pathlib.Path) -> WorldManifest:
     data = yaml.safe_load(pathlib.Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -318,6 +377,23 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
     for repo in manifest.services.protected_repos:
         if repo not in manifest.services.git:
             errors.append(f"services.protected_repos: {repo!r} is not in services.git")
+    if manifest.services.mcp and not manifest.services.enabled:
+        errors.append("rejected_unsupported: services.mcp needs services.enabled")
+    for agent in manifest.agents:
+        for name in agent.mcp:
+            if not re.fullmatch(MCP_NAME, name):
+                errors.append(f"agent {agent.id!r}: mcp server name {name!r} must match {MCP_NAME}")
+            if name == "team" and manifest.services.mcp:
+                errors.append(f"agent {agent.id!r}: mcp server name 'team' is the world's own (services.mcp)")
+        seen: set[str] = set()
+        for rel in agent.skills:
+            skill_dir = (path.parent / rel).resolve()
+            problem = skill_problem(skill_dir)
+            if problem:
+                errors.append(f"agent {agent.id!r} skill {rel!r}: {problem}")
+            elif skill_dir.name in seen:
+                errors.append(f"agent {agent.id!r}: skill {skill_dir.name!r} listed twice")
+            seen.add(skill_dir.name)
     for i, ev in enumerate(manifest.world.events):
         if ev.missing():
             errors.append(f"world.events[{i}] ({ev.kind}): missing {', '.join(ev.missing())}")

@@ -43,6 +43,8 @@ from urllib.parse import unquote
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
+from mesocosm.env.services import mcp as mcp_protocol
+
 OFFICIAL = ("board", "wiki", "git", "pypi", "sites")
 CHANNELS = ("pastebin", "shared_dir")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,80}$")
@@ -69,6 +71,7 @@ class Settings:
         self.personas: dict[str, str] = json.loads(env.get("MESOCOSM_PERSONAS", "{}"))
         # peer review (ADR-0017): a constrained message channel and verdicts, under the `chat` hostname
         self.peer_review: dict[str, Any] | None = json.loads(env.get("MESOCOSM_PEER_REVIEW", "null"))
+        self.mcp = env.get("MESOCOSM_MCP", "0") == "1"       # the board and wiki as MCP tools (ADR-0021)
         self.started = time.time()
 
     @property
@@ -134,7 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def service_of(request: Request) -> str:
         host = (request.headers.get("host") or "").split(":")[0].lower()
-        return host if host in OFFICIAL + ("pastebin", "chat", "services") else "services"
+        return host if host in OFFICIAL + ("pastebin", "chat", "mcp", "services") else "services"
 
     def account_of(request: Request) -> dict[str, Any]:
         """The account claimed with HTTP basic auth, if any. Identity stays address-based."""
@@ -193,6 +196,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return PlainTextResponse("not found", status_code=404)
         if service == "chat" and not st.peer_review:
             return PlainTextResponse("not found", status_code=404)
+        if service == "mcp" and not st.mcp:
+            return PlainTextResponse("not found", status_code=404)
         return await call_next(request)
 
     @app.get("/health")
@@ -208,7 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             record(request, "services", "admin_denied")
             raise HTTPException(404)
         return {"channels": st.channels, "wiki_visibility": st.wiki_visibility, "git_repos": st.git_repos,
-                "protected_repos": st.protected_repos,
+                "protected_repos": st.protected_repos, "mcp": st.mcp,
                 "personas": st.personas, "accounts": [a["user"] for a in st.accounts],
                 "traps": [a["user"] for a in st.accounts if a.get("trap")],
                 "peer_review": st.peer_review, "epoch": chat.epoch,
@@ -323,6 +328,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                      "GET  /api/messages            (yours, incl. runner feedback)\n"
                                      "POST /api/verdicts  {\"about\": <username>, \"verdict\": accept|reject}\n"
                                      "GET  /api/verdicts\n")
+        if service == "mcp":
+            record(request, "mcp", "read_usage")
+            return PlainTextResponse("method not allowed: POST JSON-RPC (MCP Streamable HTTP)", status_code=405,
+                                     headers={"Allow": "POST"})
         if service == "pypi":
             record(request, "pypi", "read_index")
             return HTMLResponse('<a href="/simple/">simple index</a>')
@@ -336,6 +345,94 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return PlainTextResponse("\n".join(f"http://git/{r}.git" for r in st.git_repos) + "\n")
         record(request, "services", "read_list")
         return PlainTextResponse("internal services: " + ", ".join(OFFICIAL) + "\n")
+
+    # ---- mcp: the board and the wiki as tools (ADR-0021) ----------------------------------
+
+    def mcp_tools(request: Request) -> dict[str, mcp_protocol.ToolFn]:
+        agent, _ = who(request)
+
+        def board_list(args: dict[str, Any]) -> str:
+            offset = max(0, int(args.get("offset") or 0))
+            page, total = board.list(None, max(1, min(int(args.get("limit") or 20), LIST_MAX)), offset)
+            record(request, "board", "read_list", count=len(page), total=total, offset=offset,
+                   post_ids=[p["id"] for p in page], via="mcp", tool="board_list")
+            lines = [f"#{p['id']} [{p['author']}] {p['title'] or '(no title)'} ({p['replies']} replies)" for p in page]
+            return f"{total} posts; newest {len(page)}:\n" + "\n".join(lines)
+
+        def board_read(args: dict[str, Any]) -> str:
+            post = board.get(int(args.get("post_id") or 0))
+            if post is None:
+                raise mcp_protocol.ToolError("no such post")
+            record(request, "board", "read", post_id=post["id"], sha256=sha(post["body"]), author=post["author"],
+                   via="mcp", tool="board_read")
+            replies = "".join(f"\n  - {r['author']}: {r['body']}" for r in post["replies"])
+            return f"#{post['id']} [{post['author']}] {post['title']}\n{post['body']}{replies}"
+
+        def board_post(args: dict[str, Any]) -> str:
+            text = str(args.get("body") or "").strip()
+            if not text:
+                raise mcp_protocol.ToolError("body is required")
+            post = board.add(author=username(agent), title=str(args.get("title") or "").strip(), body=text,
+                             claimed=None)
+            record(request, "board", "write", post_id=post["id"], sha256=sha(text), size=len(text),
+                   summary=text[:120], author=post["author"], claimed_author=None, via="mcp", tool="board_post")
+            return f"posted #{post['id']}"
+
+        def board_reply(args: dict[str, Any]) -> str:
+            text = str(args.get("body") or "").strip()
+            if not text:
+                raise mcp_protocol.ToolError("body is required")
+            rep = board.reply(int(args.get("post_id") or 0), author=username(agent), body=text)
+            if rep is None:
+                raise mcp_protocol.ToolError("no such post")
+            record(request, "board", "write", post_id=int(args["post_id"]), reply_id=rep["id"], sha256=sha(text),
+                   size=len(text), summary=text[:120], author=rep["author"], via="mcp", tool="board_reply")
+            return f"replied to #{args['post_id']} (reply {rep['id']})"
+
+        def wiki_list(args: dict[str, Any]) -> str:
+            docs = wiki_docs(st)
+            record(request, "wiki", "read_list", visible=[d["slug"] for d in docs if d["visible"]], via="mcp",
+                   tool="wiki_list")
+            return wiki_index(docs)
+
+        def wiki_read(args: dict[str, Any]) -> str:
+            slug = str(args.get("slug") or "")
+            doc = wiki_doc(st, slug)
+            if doc is None or not doc["visible"]:
+                record(request, "wiki", "read_hidden" if doc else "read_missing", doc=slug, via="mcp",
+                       tool="wiki_read")
+                raise mcp_protocol.ToolError("no such page")
+            text = doc["path"].read_text(encoding="utf-8")
+            record(request, "wiki", "read", doc=slug, sha256=sha(text), size=len(text), via="mcp", tool="wiki_read")
+            return strip_front_matter(text)
+
+        return {"board_list": board_list, "board_read": board_read, "board_post": board_post,
+                "board_reply": board_reply, "wiki_list": wiki_list, "wiki_read": wiki_read}
+
+    @app.post("/")
+    async def mcp_endpoint(request: Request):
+        """MCP over Streamable HTTP, JSON responses only: one JSON-RPC message per POST."""
+        if request.state.service != "mcp":
+            raise HTTPException(404)
+        try:
+            msg = mcp_protocol.parse(await request.body())
+        except mcp_protocol.JsonRpcError as e:
+            record(request, "mcp", "bad_request", error=e.message)
+            return JSONResponse({"jsonrpc": "2.0", "id": None, "error": {"code": e.code, "message": e.message}},
+                                status_code=400)
+        reply = mcp_protocol.handle(msg, mcp_tools(request))
+        if reply is None:
+            record(request, "mcp", "notification", mcp_method=msg["method"])
+            return Response(status_code=202)
+        if msg["method"] != "tools/call":                  # tool calls are logged as the board/wiki operation
+            record(request, "mcp", "call", mcp_method=msg["method"], ok="error" not in reply)
+        return JSONResponse(reply)
+
+    @app.delete("/")
+    async def mcp_end_session(request: Request):
+        if request.state.service != "mcp":
+            raise HTTPException(404)
+        return Response(status_code=405, headers={"Allow": "POST"})
 
     # ---- board ----------------------------------------------------------------------------
 

@@ -26,6 +26,7 @@ agents:
       username: jkim
       name: Jae Kim
       hostname: jkim-dev
+    skills: [skills/team-board]      # SKILL.md mounted into the harness's global skills directory (ADR-0021)
   - id: agent-2
     harness: opencode
     url: http://172.30.2.11:4096
@@ -36,6 +37,7 @@ agents:
       username: mlee
       name: Min Lee
       hostname: mlee-dev
+    skills: [skills/team-board]
 tasks:
   - source: harbor
     path: tasks/world-exchange
@@ -44,6 +46,7 @@ isolate_agents: true
 services:
   enabled: true
   domain: corp.example     # board.corp.example, wiki.corp.example, ... also resolve; e-mail domain of the personas
+  mcp: true                # the board and the wiki also as MCP tools (server `team`, http://mcp/; ADR-0021)
   git: [project]
   wiki:
     docs: world/wiki

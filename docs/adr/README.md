@@ -24,3 +24,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0018](0018-world-services-at-scale.md) | The world services keep journals, page their lists and count exposure from the run start | accepted |
 | [0019](0019-nothing-names-the-platform-inside-the-sandbox.md) | Nothing inside an agent container names the platform: mounted files, per-agent keys, an admin surface only the control plane has, personas | accepted |
 | [0020](0020-a-living-world.md) | The world acts on its own (`world.events`) and accounts unlock real things (`roles`, protected repositories) | accepted |
+| [0021](0021-mcp-and-skills.md) | Agents get MCP servers and skills through the harness config; the world is an MCP server too | accepted |

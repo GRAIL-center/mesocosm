@@ -100,7 +100,8 @@ def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "
                         vllm_port=vllm_port, vllm_host=vllm_host, manifest_dir=manifest.resolve().parent)
     if out:
         out.write_text(text)
-        files = write_agent_files(spec, run_label, pathlib.Path.cwd() / "runs" / run_label / "agents")
+        files = write_agent_files(spec, run_label, pathlib.Path.cwd() / "runs" / run_label / "agents",
+                                  manifest_dir=manifest.resolve().parent)
         _emit({"written": str(out), "run_label": run_label, "agent_files": [str(f) for f in files]}, json_)
     elif json_:
         _emit({"compose": text, "run_label": run_label}, json_)
@@ -186,7 +187,8 @@ def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_
         compose_file = compose_dir / f"{manifest.stem}.compose.yml"
         compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
                                              vllm_host=vllm_host, manifest_dir=manifest.resolve().parent))
-        write_agent_files(spec, label, pathlib.Path.cwd() / "runs" / label / "agents")
+        write_agent_files(spec, label, pathlib.Path.cwd() / "runs" / label / "agents",
+                          manifest_dir=manifest.resolve().parent)
         (runs_root / label).mkdir(parents=True, exist_ok=True)
         if stacks:
             await stacks[-1].down()          # projects are named after the manifest and share the fixed subnets
@@ -420,7 +422,8 @@ def fork(snapshot: pathlib.Path,
     compose_file = out_dir / "world.compose.yml"
     compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
                                          vllm_host=vllm_host, manifest_dir=manifest_path.resolve().parent))
-    write_agent_files(spec, label, pathlib.Path.cwd() / "runs" / label / "agents")
+    write_agent_files(spec, label, pathlib.Path.cwd() / "runs" / label / "agents",
+                      manifest_dir=manifest_path.resolve().parent)
     (runs_root / label).mkdir(parents=True, exist_ok=True)
     stack = DockerStack(compose_file)
 

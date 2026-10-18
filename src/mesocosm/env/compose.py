@@ -18,6 +18,7 @@ import hashlib
 import hmac
 import json
 import pathlib
+import shutil
 
 import yaml
 
@@ -25,6 +26,7 @@ from mesocosm.adapters.opencode.client import render_opencode_config
 from mesocosm.core.manifest import AgentSpec, WorldManifest
 
 GATEWAY_URL = "http://gateway:8080"          # as agents reach it, on every sandbox network
+MCP_URL = "http://mcp/"                       # the world's own MCP server (services.mcp), server name `team`
 
 
 def agent_api_key(manifest: WorldManifest, run_label: str, agent_id: str) -> str:
@@ -46,8 +48,20 @@ def world_hostnames(manifest: WorldManifest) -> list[str]:
     channels = manifest.channel_types()
     offered = (("board", manifest.services.board), ("wiki", True), ("git", bool(manifest.services.git)),
                ("pypi", bool(manifest.services.pypi)), ("sites", True),
-               ("pastebin", "pastebin" in channels), ("chat", manifest.services.peer_review.enabled))
+               ("pastebin", "pastebin" in channels), ("chat", manifest.services.peer_review.enabled),
+               ("mcp", manifest.services.mcp))
     return [n for n, on in offered if on]
+
+
+def mcp_config(manifest: WorldManifest, agent: AgentSpec) -> dict[str, dict]:
+    """The `mcp` section of an agent's harness config: the world's `team` server when enabled, then the
+    agent's own servers, every one enabled."""
+    out: dict[str, dict] = {}
+    if manifest.services.mcp:
+        out["team"] = {"type": "remote", "url": MCP_URL, "enabled": True}
+    for name, spec in agent.mcp.items():
+        out[name] = spec.model_dump(exclude_none=True) | {"enabled": True}
+    return out
 
 
 def _with_domain(names: list[str], domain: str | None) -> list[str]:
@@ -65,6 +79,9 @@ def agent_files(manifest: WorldManifest, run_label: str, gateway_url: str = GATE
                                         api_key=agent_api_key(manifest, run_label, agent.id),
                                         provider_id=manifest.gateway.provider_id,
                                         provider_name=manifest.gateway.provider_name, context_limit=context_limit)
+        mcp = mcp_config(manifest, agent)
+        if mcp:
+            config["mcp"] = mcp
         files = {"opencode.json": json.dumps(config, indent=2) + "\n",
                  "gitconfig": (f"[user]\n\tname = {agent.display_name()}\n\temail = {agent.email(domain)}\n"
                                "[init]\n\tdefaultBranch = main\n")}
@@ -74,15 +91,24 @@ def agent_files(manifest: WorldManifest, run_label: str, gateway_url: str = GATE
     return out
 
 
-def write_agent_files(manifest: WorldManifest, run_label: str, files_dir: pathlib.Path, **kwargs) -> list[pathlib.Path]:
-    """Write `agent_files` under files_dir/<agent_id>/; returns the paths written."""
+def write_agent_files(manifest: WorldManifest, run_label: str, files_dir: pathlib.Path,
+                      manifest_dir: pathlib.Path | None = None, **kwargs) -> list[pathlib.Path]:
+    """Write `agent_files` under files_dir/<agent_id>/ and copy the agent's skill directories to
+    files_dir/<agent_id>/skills/<name>/ (manifest_dir resolves them); returns the paths written."""
     written = []
-    for agent_id, files in agent_files(manifest, run_label, **kwargs).items():
-        (files_dir / agent_id).mkdir(parents=True, exist_ok=True)
-        for name, content in files.items():
-            path = files_dir / agent_id / name
+    for agent in manifest.agents:
+        (files_dir / agent.id).mkdir(parents=True, exist_ok=True)
+        for name, content in agent_files(manifest, run_label, **kwargs)[agent.id].items():
+            path = files_dir / agent.id / name
             path.write_text(content, encoding="utf-8")
             written.append(path)
+        if agent.skills:
+            skills_root = files_dir / agent.id / "skills"
+            shutil.rmtree(skills_root, ignore_errors=True)
+            for rel in agent.skills:
+                src = ((manifest_dir or pathlib.Path.cwd()) / rel).resolve()
+                shutil.copytree(src, skills_root / src.name)
+                written += sorted(p for p in (skills_root / src.name).rglob("*") if p.is_file())
     return written
 
 
@@ -178,6 +204,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_CHANNELS": ",".join(c for c in channels if c == "pastebin"),
                 "MESOCOSM_GIT_REPOS": ",".join(manifest.services.git),
                 "MESOCOSM_PROTECTED_REPOS": ",".join(manifest.services.protected_repos),
+                "MESOCOSM_MCP": "1" if manifest.services.mcp else "0",
                 "MESOCOSM_WIKI_VISIBILITY": json.dumps((manifest.conditions.get("exposure") or {}).get("wiki", {})),
                 "MESOCOSM_ACCOUNTS": json.dumps([a.model_dump() for a in manifest.services.accounts]),
                 "MESOCOSM_PEER_REVIEW": json.dumps(manifest.services.peer_review.model_dump()
@@ -194,6 +221,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                   f"{files}/gitconfig:/root/.gitconfig:ro"]
         if agent.persona and agent.persona.brief:
             mounts.append(f"{files}/AGENTS.md:/root/.config/opencode/AGENTS.md:ro")
+        if agent.skills:
+            mounts.append(f"{files}/skills:/root/.config/opencode/skills:ro")
         services[agent.id] = {
             "build": {"context": spike, "dockerfile": "docker/Dockerfile.agent",
                       "args": {"OPENCODE_VERSION": opencode_version}},

@@ -477,3 +477,77 @@ async def test_the_world_acts_through_the_control_endpoint_and_is_logged_as_the_
         ("wiki", "write", "world:docs"), ("chat", "write", "world:lead")]
     assert world[0]["author"] == "ops-bot" and world[0]["post_id"] == 1 and world[-1]["to"] == "agent-2"
     assert all(ln["agent"] in ("agent-1", "agent-2") for ln in log_lines(st.log_path) if ln["op"] == "admin_denied")
+
+
+async def test_the_world_is_an_mcp_server_whose_tool_calls_are_logged_like_any_request(tmp_path):
+    st = settings(tmp_path)
+    st.wiki_dir.mkdir()
+    (st.wiki_dir / "getting-started.md").write_text("---\ntitle: Start\n---\n# Hello\n")
+    (st.wiki_dir / "later.md").write_text("---\nvisible_after_seconds: 3600\n---\nnot yet\n")
+    st.personas = {"agent-1": "jkim", "agent-2": "mlee"}
+    off = create_app(st)
+    async with client(off, "172.30.0.11", "mcp") as c:
+        assert (await c.post("/", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"})).status_code == 404
+    st.mcp = True
+    app = create_app(st)
+
+    def rpc(c, method, params=None, id_=1):
+        msg = {"jsonrpc": "2.0", "method": method}
+        if id_ is not None:
+            msg["id"] = id_
+        if params is not None:
+            msg["params"] = params
+        return c.post("/", json=msg, headers={"Accept": "application/json, text/event-stream"})
+
+    async with client(app, "172.30.0.11", "mcp") as a1, client(app, "172.30.0.12", "mcp") as a2, \
+            client(app, "172.30.0.12", "board") as b2:
+        init = await rpc(a1, "initialize", {"protocolVersion": "2025-03-26", "capabilities": {},
+                                            "clientInfo": {"name": "opencode", "version": "1.19.3"}})
+        assert init.status_code == 200 and init.headers["content-type"].startswith("application/json")
+        assert init.json()["result"]["protocolVersion"] == "2025-03-26"
+        assert init.json()["result"]["capabilities"] == {"tools": {"listChanged": False}}
+        assert (await rpc(a1, "initialize", {"protocolVersion": "1999-01-01"})).json()["result"]["protocolVersion"] == "2025-06-18"
+        assert (await rpc(a1, "notifications/initialized", id_=None)).status_code == 202
+        tools = (await rpc(a1, "tools/list", id_=2)).json()["result"]["tools"]
+        assert [t["name"] for t in tools] == ["board_list", "board_read", "board_post", "board_reply", "wiki_list",
+                                              "wiki_read"]
+        assert all("inputSchema" in t and t["description"] for t in tools)
+        posted = (await rpc(a1, "tools/call", {"name": "board_post", "arguments": {"title": "status", "body": "done"}},
+                            id_=3)).json()["result"]
+        assert posted == {"content": [{"type": "text", "text": "posted #1"}], "isError": False}
+        assert (await b2.get("/api/posts/1")).json()["author"] == "jkim", "the persona, by the caller's address"
+        read = (await rpc(a2, "tools/call", {"name": "board_read", "arguments": {"post_id": 1}}, id_=4)).json()["result"]
+        assert read["content"][0]["text"].startswith("#1 [jkim] status\ndone")
+        replied = (await rpc(a2, "tools/call", {"name": "board_reply", "arguments": {"post_id": 1, "body": "thanks"}},
+                             id_=5)).json()["result"]
+        assert replied["content"][0]["text"] == "replied to #1 (reply 1)"
+        listing = (await rpc(a2, "tools/call", {"name": "board_list", "arguments": {}}, id_=6)).json()["result"]
+        assert listing["content"][0]["text"] == "1 posts; newest 1:\n#1 [jkim] status (1 replies)"
+        missing = (await rpc(a2, "tools/call", {"name": "board_read", "arguments": {"post_id": 9}}, id_=7)).json()
+        assert missing["result"]["isError"] and missing["result"]["content"][0]["text"] == "no such post"
+        wiki = (await rpc(a2, "tools/call", {"name": "wiki_list", "arguments": {}}, id_=8)).json()["result"]
+        assert "- getting-started: Start" in wiki["content"][0]["text"] and "later" not in wiki["content"][0]["text"]
+        page = (await rpc(a2, "tools/call", {"name": "wiki_read", "arguments": {"slug": "getting-started"}}, id_=9)).json()
+        assert page["result"]["content"][0]["text"] == "# Hello\n"
+        hidden = (await rpc(a2, "tools/call", {"name": "wiki_read", "arguments": {"slug": "later"}}, id_=10)).json()
+        assert hidden["result"]["isError"]
+        unknown_tool = (await rpc(a2, "tools/call", {"name": "rm_rf", "arguments": {}}, id_=11)).json()
+        assert unknown_tool["error"]["code"] == -32602
+        assert (await rpc(a2, "prompts/list", id_=12)).json()["result"] == {"prompts": []}
+        assert (await rpc(a2, "resources/list", id_=13)).json()["result"] == {"resources": []}
+        assert (await rpc(a2, "nope/method", id_=14)).json()["error"]["code"] == -32601
+        bad = await a2.post("/", content=b"not json")
+        assert bad.status_code == 400 and bad.json()["error"]["code"] == -32700
+        assert (await a2.get("/")).status_code == 405 and (await a2.delete("/")).status_code == 405
+    lines = log_lines(st.log_path)
+    mcp_ops = [(ln["service"], ln["op"], ln["agent"], ln.get("via"), ln.get("tool")) for ln in lines
+               if ln.get("via") == "mcp" or ln["service"] == "mcp"]
+    assert ("mcp", "call", "agent-1", None, None) in mcp_ops and ("mcp", "notification", "agent-1", None, None) in mcp_ops
+    assert ("board", "write", "agent-1", "mcp", "board_post") in mcp_ops
+    assert ("board", "read", "agent-2", "mcp", "board_read") in mcp_ops
+    assert ("board", "write", "agent-2", "mcp", "board_reply") in mcp_ops
+    assert ("wiki", "read", "agent-2", "mcp", "wiki_read") in mcp_ops and ("wiki", "read_hidden", "agent-2", "mcp", "wiki_read") in mcp_ops
+    write = next(ln for ln in lines if ln.get("tool") == "board_post")
+    read = next(ln for ln in lines if ln.get("tool") == "board_read")
+    assert write["sha256"] == read["sha256"] and write["author"] == "jkim", "the same join as the REST path"
+    assert all(ln["agent"] in ("agent-1", "agent-2") for ln in lines)
