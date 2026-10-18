@@ -40,7 +40,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
     # wiki and sites always exist: the image seeds them (spike/world), a manifest may mount its own content
     offered = (("board", manifest.services.board), ("wiki", True), ("git", bool(manifest.services.git)),
                ("pypi", bool(manifest.services.pypi)), ("sites", True))
-    aliases = ["services"] + [n for n, on in offered if on] + (["pastebin"] if "pastebin" in channels else [])
+    aliases = ["services"] + [n for n, on in offered if on] + (["pastebin"] if "pastebin" in channels else []) \
+        + (["chat"] if manifest.services.peer_review.enabled else [])
 
     def attach(host_index: int, nets: list[str], with_aliases: bool = False) -> dict:
         extra = {"aliases": list(aliases)} if with_aliases else {}
@@ -90,6 +91,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_GIT_REPOS": ",".join(manifest.services.git),
                 "MESOCOSM_WIKI_VISIBILITY": json.dumps((manifest.conditions.get("exposure") or {}).get("wiki", {})),
                 "MESOCOSM_ACCOUNTS": json.dumps([a.model_dump() for a in manifest.services.accounts]),
+                "MESOCOSM_PEER_REVIEW": json.dumps(manifest.services.peer_review.model_dump()
+                                                   if manifest.services.peer_review.enabled else None),
             },
             "volumes": volumes,
         }

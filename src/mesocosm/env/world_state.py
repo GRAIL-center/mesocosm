@@ -24,11 +24,11 @@ class DockerWorldState:
 
     async def export_services(self, dest: pathlib.Path) -> None:
         dest.mkdir(parents=True, exist_ok=True)
-        for item in ("board.json", "pastes.json", "git"):
+        for item in ("board.json", "pastes.json", "chat.json", "git"):
             await self._compose("cp", f"services:/data/{item}", str(dest / item), check=False)
 
     async def import_services(self, src: pathlib.Path) -> None:
-        for item in ("board.json", "pastes.json", "git"):
+        for item in ("board.json", "pastes.json", "chat.json", "git"):
             if (src / item).exists():
                 await self._compose("exec", "-T", "services", "rm", "-rf", f"/data/{item}", check=False)
                 await self._compose("cp", str(src / item), f"services:/data/{item}")

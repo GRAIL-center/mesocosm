@@ -60,6 +60,8 @@ class Settings:
         # {slug: seconds after service start}; the manifest's `exposure` condition, overriding front matter
         self.wiki_visibility: dict[str, float] = json.loads(env.get("MESOCOSM_WIKI_VISIBILITY", "{}"))
         self.accounts: list[dict[str, Any]] = json.loads(env.get("MESOCOSM_ACCOUNTS", "[]"))
+        # peer review (ADR-0017): a constrained message channel and verdicts, under the `chat` hostname
+        self.peer_review: dict[str, Any] | None = json.loads(env.get("MESOCOSM_PEER_REVIEW", "null"))
         self.started = time.time()
 
 
@@ -93,6 +95,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.log = log
     board = Board(st.data / "board.json")
     pastes = Pastes(st.data / "pastes.json")
+    chat = Chat(st.data / "chat.json")
     for repo in st.git_repos:
         ensure_bare_repo(st.data / "git" / f"{repo}.git")
 
@@ -102,7 +105,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def service_of(request: Request) -> str:
         host = (request.headers.get("host") or "").split(":")[0].lower()
-        return host if host in OFFICIAL + ("pastebin", "services") else "services"
+        return host if host in OFFICIAL + ("pastebin", "chat", "services") else "services"
 
     def account_of(request: Request) -> dict[str, Any]:
         """The account claimed with HTTP basic auth, if any. Identity stays address-based."""
@@ -138,6 +141,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.state.service = service
         if service == "pastebin" and "pastebin" not in st.channels:
             return PlainTextResponse("not found", status_code=404)
+        if service == "chat" and not st.peer_review:
+            return PlainTextResponse("not found", status_code=404)
         return await call_next(request)
 
     @app.get("/health")
@@ -155,7 +160,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"channels": st.channels, "wiki_visibility": st.wiki_visibility, "git_repos": st.git_repos,
                 "accounts": [a["user"] for a in st.accounts],
                 "traps": [a["user"] for a in st.accounts if a.get("trap")],
+                "peer_review": st.peer_review, "epoch": chat.epoch,
                 "started": st.started, "log_records": log.count}
+
+    def control_only(request: Request) -> None:
+        agent, ip = who(request)
+        if ip in st.agent_ips:
+            record(request, "services", "admin_denied")
+            raise HTTPException(404)
+
+    @app.post("/admin/epoch")
+    async def admin_epoch(request: Request):
+        """The control plane opens an episode: message counts and verdicts are per episode."""
+        control_only(request)
+        body = await request.json()
+        chat.set_epoch(str(body["epoch"]))
+        return {"epoch": chat.epoch}
+
+    @app.post("/admin/feedback")
+    async def admin_feedback(request: Request):
+        """Episode feedback for one agent, delivered as a message from the runner."""
+        control_only(request)
+        body = await request.json()
+        msg = chat.add_feedback(str(body["to"]), str(body.get("epoch") or chat.epoch), str(body["text"]))
+        return JSONResponse(msg, status_code=201)
+
+    @app.get("/admin/verdicts")
+    async def admin_verdicts(request: Request, epoch: str | None = None):
+        control_only(request)
+        return {"verdicts": chat.verdicts_for(epoch), "epoch": chat.epoch}
 
     @app.get("/")
     async def index(request: Request):
@@ -171,6 +204,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             record(request, "pastebin", "read_usage")
             return PlainTextResponse("pastebin\n\nPOST /api/paste  {\"text\": ...}  -> {\"id\": ...}\n"
                                      "GET  /api/paste/<id>\nGET  /api/pastes            (recent)\n")
+        if service == "chat":
+            record(request, "chat", "read_usage")
+            pr = st.peer_review or {}
+            return PlainTextResponse("chat (peer review)\n\n"
+                                     f"POST /api/messages  {{\"to\": <agent id>, \"text\": ...}}  "
+                                     f"(max {pr.get('max_chars')} chars, {pr.get('max_messages')} per episode)\n"
+                                     "GET  /api/messages            (yours, incl. runner feedback)\n"
+                                     "POST /api/verdicts  {\"about\": <agent id>, \"verdict\": accept|reject}\n"
+                                     "GET  /api/verdicts\n")
         if service == "pypi":
             record(request, "pypi", "read_index")
             return HTMLResponse('<a href="/simple/">simple index</a>')
@@ -227,6 +269,74 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         record(request, "board", "write", post_id=post_id, reply_id=rep["id"], sha256=sha(text), size=len(text),
                summary=text[:120])
         return JSONResponse(rep, status_code=201)
+
+    # ---- chat: the constrained peer-review channel and verdicts (ADR-0017) --------------------
+
+    def chat_only(request: Request) -> dict[str, Any]:
+        if request.state.service != "chat" or not st.peer_review:
+            raise HTTPException(404)
+        return st.peer_review
+
+    @app.get("/api/messages")
+    async def list_messages(request: Request, since: float | None = None):
+        chat_only(request)
+        agent, _ = who(request)
+        items = chat.messages_for(agent, since)
+        record(request, "chat", "read_list", count=len(items), epoch=chat.epoch,
+               chars_received=sum(len(m["text"]) for m in items if m["to"] == agent and m["from"] != "runner"))
+        return {"messages": items, "epoch": chat.epoch}
+
+    @app.post("/api/messages")
+    async def send_message(request: Request):
+        pr = chat_only(request)
+        agent, _ = who(request)
+        body = await request.json()
+        to, text = str(body.get("to") or ""), str(body.get("text") or "")
+        if chat.epoch is None:
+            raise HTTPException(409, "no episode is open")
+        if to not in st.agent_ips.values() or to == agent:
+            raise HTTPException(400, "to must name another agent")
+        if len(text) > int(pr["max_chars"]):
+            record(request, "chat", "message_rejected", to=to, chars=len(text), epoch=chat.epoch, reason="too_long")
+            return JSONResponse({"success": False, "error": f"MessageError: exceeds {pr['max_chars']} char limit",
+                                 "chars_sent": 0}, status_code=400)
+        if chat.sent_in_epoch(agent) >= int(pr["max_messages"]):
+            record(request, "chat", "message_rejected", to=to, chars=len(text), epoch=chat.epoch, reason="limit")
+            return JSONResponse({"success": False, "error": f"MessageError: message limit ({pr['max_messages']}) "
+                                                              "reached for this episode", "chars_sent": 0},
+                                status_code=400)
+        msg = chat.add_message(agent, to, text)
+        record(request, "chat", "write", to=to, chars=len(text), epoch=chat.epoch, message_id=msg["id"],
+               sha256=sha(text), summary=text[:120])
+        return JSONResponse({"success": True, "chars_sent": len(text), "id": msg["id"]}, status_code=201)
+
+    @app.get("/api/verdicts")
+    async def my_verdicts(request: Request):
+        chat_only(request)
+        agent, _ = who(request)
+        items = [v for v in chat.verdicts_for(None) if v["from"] == agent]
+        record(request, "chat", "read_verdicts", count=len(items), epoch=chat.epoch)
+        return {"verdicts": items, "epoch": chat.epoch}
+
+    @app.post("/api/verdicts")
+    async def submit_verdict(request: Request):
+        chat_only(request)
+        agent, _ = who(request)
+        body = await request.json()
+        about, verdict = str(body.get("about") or ""), str(body.get("verdict") or "").lower()
+        if chat.epoch is None:
+            raise HTTPException(409, "no episode is open")
+        if about not in st.agent_ips.values() or about == agent:
+            raise HTTPException(400, "about must name another agent")
+        if verdict not in ("accept", "reject"):
+            raise HTTPException(400, "verdict must be accept or reject")
+        stored = chat.add_verdict(agent, about, verdict, str(body.get("reason") or "")[:500])
+        if stored is None:
+            record(request, "chat", "verdict_rejected", about=about, epoch=chat.epoch, reason="already_submitted")
+            raise HTTPException(409, "verdict already submitted for this episode")
+        record(request, "chat", "verdict", about=about, verdict=verdict, epoch=chat.epoch,
+               summary=stored["reason"][:120])
+        return JSONResponse(stored, status_code=201)
 
     # ---- wiki -----------------------------------------------------------------------------
 
@@ -387,6 +497,68 @@ class Board:
                 "<p>API: GET /api/posts · POST /api/posts {title, body} · GET /api/posts/{id} · "
                 "POST /api/posts/{id}/replies {body}</p>"
                 "<ul>" + "".join(items) + "</ul>")
+
+
+class Chat:
+    """Peer-review channel state: the open episode, messages (capped per episode by the caller),
+    verdicts (one per agent per peer per episode) and the runner's feedback messages."""
+
+    def __init__(self, path: pathlib.Path):
+        self.path = path
+        self.lock = threading.Lock()
+        self.epoch: str | None = None
+        self.messages: list[dict[str, Any]] = []
+        self.verdicts: list[dict[str, Any]] = []
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            self.epoch = data.get("epoch")
+            self.messages, self.verdicts = data.get("messages", []), data.get("verdicts", [])
+
+    def _save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps({"epoch": self.epoch, "messages": self.messages, "verdicts": self.verdicts},
+                                        ensure_ascii=False, indent=1), encoding="utf-8")
+
+    def set_epoch(self, epoch: str) -> None:
+        with self.lock:
+            self.epoch = epoch
+            self._save()
+
+    def sent_in_epoch(self, sender: str) -> int:
+        return sum(1 for m in self.messages if m["from"] == sender and m["epoch"] == self.epoch)
+
+    def add_message(self, sender: str, to: str, text: str) -> dict[str, Any]:
+        with self.lock:
+            msg = {"id": len(self.messages) + 1, "ts": time.time(), "epoch": self.epoch, "from": sender, "to": to,
+                   "text": text}
+            self.messages.append(msg)
+            self._save()
+        return msg
+
+    def add_feedback(self, to: str, epoch: str, text: str) -> dict[str, Any]:
+        with self.lock:
+            msg = {"id": len(self.messages) + 1, "ts": time.time(), "epoch": epoch, "from": "runner", "to": to,
+                   "text": text}
+            self.messages.append(msg)
+            self._save()
+        return msg
+
+    def messages_for(self, agent: str, since: float | None = None) -> list[dict[str, Any]]:
+        return [m for m in self.messages
+                if (m["to"] == agent or m["from"] == agent) and (since is None or m["ts"] > since)]
+
+    def add_verdict(self, sender: str, about: str, verdict: str, reason: str) -> dict[str, Any] | None:
+        with self.lock:
+            if any(v["from"] == sender and v["about"] == about and v["epoch"] == self.epoch for v in self.verdicts):
+                return None
+            item = {"id": len(self.verdicts) + 1, "ts": time.time(), "epoch": self.epoch, "from": sender,
+                    "about": about, "verdict": verdict, "reason": reason}
+            self.verdicts.append(item)
+            self._save()
+        return item
+
+    def verdicts_for(self, epoch: str | None) -> list[dict[str, Any]]:
+        return [v for v in self.verdicts if epoch is None or v["epoch"] == epoch]
 
 
 class Pastes:

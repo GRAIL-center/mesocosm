@@ -100,3 +100,18 @@ def test_exposure_schedule_and_accounts_reach_the_services_container():
     assert service_address(manifest, "services") == "172.30.0.3" and service_address(manifest, "gateway") == "172.30.0.2"
     manifest.isolate_agents = True
     assert service_address(manifest, "services") == "172.30.1.3" and service_address(manifest, "control") == "172.30.1.4"
+
+
+def test_peer_review_adds_the_chat_hostname_and_its_limits():
+    from mesocosm.core.manifest import PeerReviewSpec
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
+    manifest.services.board = False
+    manifest.services.peer_review = PeerReviewSpec(enabled=True, max_chars=200, max_messages=5)
+    svc = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]
+    assert svc["services"]["networks"]["sandbox"]["aliases"] == ["services", "wiki", "git", "pypi", "sites", "chat"]
+    pr = yaml.safe_load(svc["services"]["environment"]["MESOCOSM_PEER_REVIEW"])
+    assert pr["max_chars"] == 200 and pr["max_messages"] == 5 and pr["reward_per_verdict"] == 10
+    assert svc["agent-1"]["environment"]["MESOCOSM_SERVICES"] == "wiki,git,pypi,sites,chat"
+    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    assert plain["services"]["services"]["environment"]["MESOCOSM_PEER_REVIEW"] == "null"

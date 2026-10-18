@@ -95,10 +95,23 @@ class WikiSpec(BaseModel):
                                                        "visible_from / visible_after_seconds); default: the seed wiki")
 
 
+class PeerReviewSpec(BaseModel):
+    """The peer-verification protocol after Shi et al. (ADR-0017): a `chat` service with a message
+    channel capped per episode, verdicts on the peer's work, a shared reward when verdicts match the
+    peers' actual correctness, and runner feedback between episodes."""
+    enabled: bool = False
+    max_chars: int = Field(default=200, ge=1)
+    max_messages: int = Field(default=5, ge=1)
+    verdict_review: bool = Field(default=True, description="Feedback says whether each verdict was right")
+    reward_feedback: bool = Field(default=True, description="Feedback states the episode reward")
+    reward_per_verdict: int = Field(default=10, ge=0)
+
+
 class ServicesSpec(BaseModel):
     """The shared world inside the sandbox (mesocosm.env.services). Enabled by default."""
     enabled: bool = True
     board: bool = True
+    peer_review: PeerReviewSpec = Field(default_factory=PeerReviewSpec)
     wiki: WikiSpec = Field(default_factory=WikiSpec)
     git: list[str] = Field(default_factory=lambda: ["project"], description="Shared repository names")
     pypi: list[str] = Field(default_factory=lambda: ["requests", "pytest", "rich", "pyyaml"],
@@ -232,6 +245,16 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             errors.append("conditions.exposure: expected {wiki: {<page slug>: <seconds after start>}}")
         elif not manifest.services.enabled:
             errors.append("rejected_unsupported: conditions.exposure needs services.enabled")
+    if manifest.services.peer_review.enabled:
+        if len(manifest.agents) != 2:
+            errors.append("services.peer_review needs exactly two agents")
+        if manifest.mode != "comparison":
+            errors.append("rejected_unsupported: services.peer_review runs episodes in lockstep; use mode: comparison")
+        if not manifest.services.enabled:
+            errors.append("rejected_unsupported: services.peer_review needs services.enabled")
+        if manifest.services.board:
+            errors.append("services.peer_review: set services.board: false, "
+                          "the board would be an unconstrained channel")
     if manifest.mode == "persistent":
         if not manifest.tasks and not manifest.stream.dir:
             errors.append("mode: persistent needs initial tasks or stream.dir")

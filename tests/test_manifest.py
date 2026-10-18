@@ -145,3 +145,18 @@ def test_exposure_and_accounts_are_validated(tmp_path):
     assert any("services.accounts: user names must be unique" in e for e in validate_manifest(_write(tmp_path, data)).errors)
     data["services"] = {"accounts": [{"user": "Not Valid", "password": "pw"}]}
     assert not validate_manifest(_write(tmp_path, data)).ok
+
+
+def test_peer_review_needs_two_agents_comparison_mode_and_no_board(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    data["services"] = {"board": False, "peer_review": {"enabled": True, "max_chars": 200, "max_messages": 5}}
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.errors == ["services.peer_review needs exactly two agents"]
+    data["agents"].append({**data["agents"][0], "id": "agent-2", "url": "http://127.0.0.1:4097"})
+    assert validate_manifest(_write(tmp_path, data)).ok
+    data["services"]["board"] = True
+    data["mode"] = "persistent"
+    report = validate_manifest(_write(tmp_path, data))
+    assert any("lockstep" in e for e in report.errors) and any("services.board: false" in e for e in report.errors)
