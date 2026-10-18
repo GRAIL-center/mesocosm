@@ -176,4 +176,4 @@ Copy these into `docs/capability-matrix.md` with the evidence column pointing at
 - M5 capture route: `nnsight-serve`, vLLM plugin, or recompute-only.
 - Whether the gateway or vLLM is the source of exact token ids.
 - DNS sinkhole requirement for M1.
-- Whether Harbor's sandbox can reach the gateway, or whether tasks must be imported into our own sandbox (M1 task adapter design).
+- Whether Harbor's sandbox can reach the gateway, or whether tasks must be imported into our own sandbox (M1 task adapter design). Answer: it can, with the provider injected; Harbor's task container itself has internet access (its default network mode), so for isolated runs tasks are imported into our sandbox and the verifier runs afterwards in a container that may have egress.

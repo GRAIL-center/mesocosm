@@ -24,9 +24,10 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 
 | Capability | Harbor | Evidence |
 |---|---|---|
-| Run a Terminal-Bench 2.0 task locally in Docker | unverified (no Docker on Colab) | spike 06 on the workstation |
-| Use the task's verifier independently of Harbor's run loop | unverified | spike 06 |
-| Install OpenCode as the agent inside the task container | unverified | spike 06 |
+| Run a Terminal-Bench 2.0 task locally in Docker | supported: `harbor run -p <task> -e docker` on `terminal-bench@2.0/fix-git` (prebuilt image pulled, agent ran, verifier wrote `reward.txt`); job layout `jobs/<job>/<task>__<id>/{agent,verifier,artifacts,trial.log}` | Colab L4 2026-10-18, #7 |
+| Use the task's verifier independently of Harbor's run loop | **unsupported as planned**: TB2 `tests/test.sh` installs curl and uv from the internet at verification time, so `verifier_command()` with `--network none` cannot run it; the verifier container needs egress (it runs after the agent, outside the agent's reach) or a pre-baked verifier image | Colab L4 2026-10-18, #7 |
+| Install OpenCode as the agent inside the task container | supported: Harbor's built-in `opencode` agent installs nodejs/npm/opencode at trial start (about 3 min on the Colab VM) | Colab L4 2026-10-18, #7 |
+| Harbor's `opencode` agent routes model calls through the gateway | supported when the gateway provider is injected through `agents[].kwargs.opencode_config` (model `mesocosm/mesocosm-3b`, `@ai-sdk/openai-compatible`): 4 `chat_completion` records tagged `harbor-1`, token ids present. With OpenCode's built-in `openai` provider (`-m openai/...`, `OPENAI_BASE_URL`) the agent calls `/v1/responses`, which the gateway only passes through: no exposure record, and the run failed on a 404. Note `-a`/`-m` on the CLI replace the config's agents list and drop kwargs | Colab L4 2026-10-18, #7 |
 | Import SWE-bench tasks | unverified | |
 
 ## Inference and observation
