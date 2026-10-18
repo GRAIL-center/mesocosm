@@ -17,3 +17,6 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0011](0011-conditions-enforced-by-the-world.md) | Exposure timing, accounts and traps are conditions enforced by the world services | accepted |
 | [0012](0012-memory-chaining-mid-run-conditions.md) | Memory policy, run chaining and mid-run condition changes are control-plane operations with receipts | accepted |
 | [0013](0013-flags-verdicts-staged-scenarios.md) | Candidate incidents are flags from traps and state checks; people give verdicts; scenarios escalate what the world offers | accepted |
+| [0014](0014-run-lifecycle-at-the-gateway.md) | Pause, resume and stop are enforced at the gateway | accepted |
+| [0015](0015-persistent-operation-and-snapshots.md) | Persistent operation is a shared work queue; snapshots copy what the platform owns and declare the rest | accepted |
+| [0016](0016-activations-by-recompute.md) | Activations are recomputed from recorded token ids, not captured inside the serving engine | accepted |
