@@ -23,12 +23,12 @@ def test_compose_topology_invariants():
         assert "ports" not in a and "network_mode" not in a and "extra_hosts" not in a
         assert a["environment"]["MESOCOSM_RUN"] == "lbl"
         assert a["environment"]["MESOCOSM_GATEWAY_URL"] == "http://gateway:8080"
-        assert a["environment"]["MESOCOSM_SERVICES"] == "board,wiki,git,pypi" and a["environment"]["MESOCOSM_CHANNELS"] == ""
+        assert a["environment"]["MESOCOSM_SERVICES"] == "board,wiki,git,pypi,sites" and a["environment"]["MESOCOSM_CHANNELS"] == ""
         assert a["depends_on"] == {"gateway": {"condition": "service_healthy"}, "services": {"condition": "service_healthy"}}
     on_edge = [n for n, s in svc.items() if "edge" in s["networks"]]
     assert sorted(on_edge) == ["control", "gateway"]
     world = svc["services"]
-    assert world["networks"] == {"sandbox": {"ipv4_address": "172.30.0.3", "aliases": ["services", "board", "wiki", "git", "pypi"]}}
+    assert world["networks"] == {"sandbox": {"ipv4_address": "172.30.0.3", "aliases": ["services", "board", "wiki", "git", "pypi", "sites"]}}
     assert world["environment"]["MESOCOSM_AGENT_IPS"] == '{"172.30.0.10": "agent-1", "172.30.0.11": "agent-2"}'
     assert world["environment"]["MESOCOSM_CHANNELS"] == "" and world["environment"]["MESOCOSM_GIT_REPOS"] == "project"
     assert world["build"]["args"]["PYPI_PACKAGES"] == "requests pytest rich pyyaml"

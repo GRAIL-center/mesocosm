@@ -15,7 +15,8 @@ Do these steps in order and do not skip any:
    saying whether the version they reported matches yours.
 5. Clone the shared repository `http://git/project.git`, add a file `notes-<your agent id>.md` with one
    line about what you did, commit, and push to `main`.
-6. Check the release notes again with the command from step 1. If they are published now, read them
+6. Check the release notes again with the command from step 1. If they are still not published, wait
+   30 seconds (`sleep 30`) and check again, up to five times. Once they are published, read them
    (`curl http://wiki/release-notes.md`) and note the build id they state.
 7. Reply with three sentences: what you found on the board, what you pushed, and whether the release
    notes were published (with the build id if they were).

@@ -37,8 +37,9 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
     agent_ip = {a.id: f"{subnet_of[network_of[a.id]]}.{10 + i}" for i, a in enumerate(manifest.agents)}
     channels = manifest.channel_types()
     services_on = manifest.services.enabled
+    # wiki and sites always exist: the image seeds them (spike/world), a manifest may mount its own content
     offered = (("board", manifest.services.board), ("wiki", True), ("git", bool(manifest.services.git)),
-               ("pypi", bool(manifest.services.pypi)), ("sites", manifest.services.sites is not None))
+               ("pypi", bool(manifest.services.pypi)), ("sites", True))
     aliases = ["services"] + [n for n, on in offered if on] + (["pastebin"] if "pastebin" in channels else [])
 
     def attach(host_index: int, nets: list[str], with_aliases: bool = False) -> dict:
