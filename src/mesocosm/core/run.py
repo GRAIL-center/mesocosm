@@ -523,7 +523,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     for rec in exposure:
         if rec.get("event") in ("chat_completion", "budget_exhausted"):
             bundle.record(f"gateway.{rec['event']}", agent_id=rec.get("agent"), request_id=rec.get("request_id"),
-                          status=rec.get("status"), request_summary=rec.get("request_summary"),
+                          ts=rec.get("ts"), status=rec.get("status"), request_summary=rec.get("request_summary"),
                           usage=(rec.get("response") or {}).get("usage"))
 
     service_records = 0
@@ -534,7 +534,8 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
         bundle.write_native("services/services.jsonl", "".join(_json(r) + "\n" for r in records))
         for rec in records:
             service_records += 1
-            bundle.record(f"service.{rec.get('op', 'event')}", agent_id=rec.get("agent"), service=rec.get("service"),
+            bundle.record(f"service.{rec.get('op', 'event')}", agent_id=rec.get("agent"), ts=rec.get("ts"),
+                          service=rec.get("service"),
                           **{k: v for k, v in rec.items() if k not in ("ts", "service", "op", "agent", "method")})
 
     # Environment-state checks that need the sandbox, then the judge over everything recorded.

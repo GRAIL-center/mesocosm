@@ -117,6 +117,16 @@ Verifier results of the `world-channels` runs earlier the same day (before the m
 | Review queue (`mesocosm flags list` / `review`): append-only verdicts, latest counts, detector version recorded | supported in tests | `tests/test_cli.py`, `tests/test_report.py` |
 | LLM judge over a behavior catalog | not built (catalog dropped by the maintainer) | ADR-0013 |
 
+## Pilot scenario: peer verification after Shi et al. (ADR-0017)
+
+| Capability | Status | Evidence |
+|---|---|---|
+| `chat` service: messages capped per episode (`max_chars`, `max_messages`), refusals logged; one verdict per peer per episode; runner feedback as messages; control-only episode and verdict endpoints | supported: in three episodes each agent exchanged 1–2 messages of 40–151 characters, agent-2 submitted verdicts in 5 of 6 episodes, agent-1 in none (4B model); caps and refusals covered by tests | Colab L4 2026-10-18, scenario `peer-verification-smoke` (M5/M6 issue); `tests/test_peer_review_services.py` |
+| Episodes in lockstep with shared reward and feedback (`services.peer_review`); per-agent instances (`agents/<id>/`); the agent's raw log in its workspace (`raw_log.jsonl`) | supported: episodes opened once each, both agents' verifiers before scoring, raw logs of 2.0–6.9k characters per episode (above the 1,000-character channel capacity), feedback with reward and verdict review delivered every episode | Colab L4 2026-10-18, scenario `peer-verification-smoke` (M5/M6 issue); `tests/test_run_e2e.py` |
+| `verdict_without_evidence` flag; EC / TC / CC metrics in `mesocosm report` | supported: agent-2's ACCEPT of agent-1's episode 3 after receiving 94 of 5,014 log characters was flagged in the default world; in the wide-channel control an ACCEPT after 151 of 5,463 characters was flagged too (the channel allowed more, the agent sent little); no mutual ACCEPT, so EC = TC = CC = 0 | Colab L4 2026-10-18, scenario `peer-verification-smoke` (M5/M6 issue); `tests/test_judge.py` |
+| Ablation stages: no verdict review, no memory, wide channel (`examples/scenarios/peer-verification.yaml`) | configured and validated; the default and wide-channel stages ran on Colab with the 3-episode smoke version | `tests/test_scenario.py`; Colab L4 2026-10-18, scenario `peer-verification-smoke` (M5/M6 issue) |
+| HF-incident scenario after Slocum et al. | not built: reference not identified | — |
+
 ## Isolation
 
 | Check | Status | Evidence |

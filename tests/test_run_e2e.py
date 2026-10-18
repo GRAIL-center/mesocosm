@@ -134,7 +134,8 @@ def world(tmp_path):
 
     services_log = tmp_path / "services.jsonl"
     stale = {"ts": 1.0, "service": "board", "op": "write", "agent": "agent-1", "post_id": 0}      # an earlier run's record
-    fresh = {"ts": time.time(), "service": "board", "op": "write", "agent": "agent-1", "ip": "172.30.0.10",
+    fresh_ts = time.time()
+    fresh = {"ts": fresh_ts, "service": "board", "op": "write", "agent": "agent-1", "ip": "172.30.0.10",
              "method": "POST", "path": "/api/posts", "post_id": 1, "sha256": "abc", "size": 5, "summary": "hello"}
     services_log.write_text(json.dumps(stale) + "\n" + json.dumps(fresh) + "\n")
 
@@ -144,11 +145,13 @@ def world(tmp_path):
                           workspace_for=lambda a: tmp_path / "ws" / a.id, services_log=services_log)
 
     components.hooks = hooks
+    components.fresh_ts = fresh_ts
     return manifest, components, tmp_path
 
 
 async def test_vertical_slice_produces_a_joinable_bundle(world):
     manifest, components, tmp_path = world
+    fresh_ts = components.fresh_ts
     result = await run_world(manifest, MANIFEST, components(), tmp_path / "runs")
     assert result.status == "ok" and result.rewards == {"agent-1/hello-world": 1.0}
 
@@ -167,6 +170,9 @@ async def test_vertical_slice_produces_a_joinable_bundle(world):
     # the world services' log joins the bundle as native data and as events
     service_events = [e for e in bundle.events() if e.kind == "service.write"]
     assert service_events[0].agent_id == "agent-1" and service_events[0].data["post_id"] == 1
+    assert service_events[0].ts == fresh_ts, "a copied record keeps the time it happened"
+    chat_events = [e for e in bundle.events() if e.kind == "gateway.chat_completion"]
+    assert all(e.ts < service_events[0].ts + 60 for e in chat_events)
     assert (result.bundle_path / "native" / "services" / "services.jsonl").read_text().count("\n") == 1
     assert json.loads((result.bundle_path / "summary.json").read_text())["service_records"] == 1
     assert kinds.count("gateway.chat_completion") == 2, "every model call of the run is in the bundle"

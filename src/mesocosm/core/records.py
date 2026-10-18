@@ -81,9 +81,11 @@ class RunBundle:
         return self._steps[agent_id]
 
     def record(self, kind: str, *, agent_id: str | None = None, step: int | None = None,
-               request_id: str | None = None, **data: Any) -> Event:
+               request_id: str | None = None, ts: float | None = None, **data: Any) -> Event:
+        """Append one event. `ts` is for copies of records made elsewhere (gateway, services), so the
+        event keeps the time the thing happened, not the time it was copied."""
         ev = Event(run_id=self.run_id, kind=kind, agent_id=agent_id, step=step,
-                   request_id=request_id, data=data)
+                   request_id=request_id, data=data, **({"ts": ts} if ts is not None else {}))
         self._append("events.jsonl", ev.model_dump(mode="json"))
         return ev
 
