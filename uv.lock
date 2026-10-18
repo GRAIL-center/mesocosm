@@ -600,9 +600,12 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "mypy" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "safetensors" },
 ]
 gateway = [
     { name = "fastapi" },
@@ -623,6 +626,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "nnsight", marker = "extra == 'observe'", specifier = ">=0.8.0" },
+    { name = "numpy", marker = "extra == 'dev'", specifier = ">=1.26" },
     { name = "numpy", marker = "extra == 'observe'", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
@@ -630,6 +634,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "safetensors", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "safetensors", marker = "extra == 'observe'", specifier = ">=0.4" },
     { name = "torch", marker = "extra == 'observe'", specifier = ">=2.13" },
     { name = "transformers", marker = "extra == 'observe'", specifier = ">=5.17" },

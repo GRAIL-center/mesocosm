@@ -153,6 +153,8 @@ class CaptureSpec(BaseModel):
     layers: list[int] = Field(default_factory=list, description="Decoder layer indices; empty = every quarter")
     raw: Literal["flagged", "all", "none"] = "flagged"
     positions: Literal["completion", "all"] = "completion"
+    probes: list[str] = Field(default_factory=list, description="Probe files (relative to the manifest, ADR-0031) "
+                                                                "scored over the raw tensors after a capture")
 
 
 class MonitorSpec(BaseModel):

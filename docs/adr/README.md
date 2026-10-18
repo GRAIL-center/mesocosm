@@ -34,3 +34,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0028](0028-world-state-is-verifiable.md) | The world's state is a verifiable object: `world.json` to verifiers, checkpoints as partial credit, a simulated clock, a ledger | accepted |
 | [0029](0029-one-gateway-many-models.md) | One gateway, a model per agent: a model catalog, routing by model id, keys from the environment | accepted |
 | [0030](0030-side-tasks-and-a-monitor.md) | Side tasks (`side_task.md`, `tests/side_test.sh`) and a monitor model that scores transcripts (`judge.monitor`, `monitor_suspicion`) | accepted |
+| [0031](0031-activation-probes.md) | Linear probes over recomputed activations (`activations probe train | score`), provenance in the probe file | accepted |

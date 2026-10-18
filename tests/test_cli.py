@@ -2,6 +2,7 @@
 
 import json
 
+import pytest
 from typer.testing import CliRunner
 
 from mesocosm.cli.main import app
@@ -71,3 +72,13 @@ def test_scenario_report_reads_a_scenario_directory(tmp_path):
 def test_judge_monitor_is_a_command():
     result = runner.invoke(app, ["judge", "monitor", "--help"])
     assert result.exit_code == 0 and "--threshold" in result.stdout and "--side-task-aware" in result.stdout
+
+
+def test_activations_probe_commands_exist_and_refuse_an_empty_bundle(tmp_path):
+    pytest.importorskip("numpy")
+    b = RunBundle.create(tmp_path / "runs", "run_e")
+    b.write_manifest({"name": "e"}, "d")
+    code, out = jrun("activations", "probe", "train", str(b.root), "--layer", "9", "--out", str(tmp_path / "p.safetensors"))
+    assert code == 1 and "no captured request" in out["error"]
+    result = runner.invoke(app, ["activations", "probe", "score", "--help"])
+    assert result.exit_code == 0 and "--probe" in result.stdout

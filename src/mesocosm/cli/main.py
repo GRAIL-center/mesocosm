@@ -18,6 +18,7 @@ observe_app = typer.Typer(no_args_is_help=True, help="Live observation of a run"
 conditions_app = typer.Typer(no_args_is_help=True, help="Conditions during a run")
 snapshot_app = typer.Typer(no_args_is_help=True, help="Snapshots of a world's declared state")
 activations_app = typer.Typer(no_args_is_help=True, help="Activations recomputed from recorded token ids")
+probe_app = typer.Typer(no_args_is_help=True, help="Linear probes over captured activations")
 flags_app = typer.Typer(no_args_is_help=True, help="Candidate incidents and their review")
 scenario_app = typer.Typer(no_args_is_help=True, help="Staged scenarios")
 export_app = typer.Typer(no_args_is_help=True, help="Run bundles in formats other tools read")
@@ -30,6 +31,7 @@ app.add_typer(flags_app, name="flags")
 app.add_typer(scenario_app, name="scenario")
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(activations_app, name="activations")
+activations_app.add_typer(probe_app, name="probe")
 app.add_typer(judge_app, name="judge")
 app.add_typer(export_app, name="export")
 
@@ -490,7 +492,62 @@ def activations_capture(bundle: pathlib.Path,
     layer_ids = [int(x) for x in layers.split(",")] if layers else None
     report = capture(bundle, model, layer_ids, raw, positions, limit, request_id or None, device, dtype,
                      served_model=served_model)
+    if report.get("captured", 0) > 0:
+        report["probes"] = _score_manifest_probes(bundle)
     _emit(report, json_, ok=report.get("captured", 0) > 0)
+
+
+def _score_manifest_probes(bundle: pathlib.Path) -> dict:
+    """observe.capture.probes of the bundle's manifest, scored over what was just captured (ADR-0031)."""
+    from mesocosm.core.records import RunBundle
+    from mesocosm.observe.probes import score
+
+    stored = RunBundle.open(bundle).manifest()
+    base = pathlib.Path(stored["path"]).parent if stored.get("path") else pathlib.Path.cwd()
+    out = {}
+    for rel in ((stored.get("manifest") or {}).get("observe") or {}).get("capture", {}).get("probes") or []:
+        path = pathlib.Path(rel) if pathlib.Path(rel).is_absolute() else base / rel
+        try:
+            out[path.stem] = score(bundle, path)
+        except (ValueError, OSError) as e:
+            out[path.stem] = {"error": str(e)}
+    return out
+
+
+@probe_app.command("train")
+def probe_train(bundles: list[pathlib.Path] = typer.Argument(..., help="Bundles with captured raw tensors"),
+                layer: int = typer.Option(..., "--layer"),
+                out: pathlib.Path = typer.Option(..., "--out", help="Probe file (.safetensors)"),
+                labels: pathlib.Path = typer.Option(None, "--labels", help="JSON {request_id: 0|1}; default: the "
+                                                                          "judge's flags label the positives"),
+                pool: str = typer.Option("mean", "--pool", help="mean | last position"),
+                l2: float = typer.Option(1e-2, "--l2"),
+                steps: int = typer.Option(500, "--steps"),
+                json_: bool = JSON_OPT) -> None:
+    """Train a logistic-regression probe on the raw tensors captured at one layer (ADR-0031)."""
+    from mesocosm.observe.probes import train
+
+    try:
+        report = train(bundles, layer, out, labels, pool, l2, steps)
+    except ValueError as e:
+        _emit({"error": str(e)}, json_, ok=False)
+        return
+    _emit(report, json_)
+
+
+@probe_app.command("score")
+def probe_score(bundle: pathlib.Path, probe: pathlib.Path = typer.Option(..., "--probe"),
+                name: str = typer.Option(None, "--name", help="Score file name; default: the probe's"),
+                json_: bool = JSON_OPT) -> None:
+    """Score every captured request of a bundle with a probe; refuses a bundle captured differently."""
+    from mesocosm.observe.probes import score
+
+    try:
+        report = score(bundle, probe, name)
+    except ValueError as e:
+        _emit({"error": str(e)}, json_, ok=False)
+        return
+    _emit(report, json_)
 
 
 @activations_app.command("verify")
