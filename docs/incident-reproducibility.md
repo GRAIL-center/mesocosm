@@ -50,7 +50,7 @@ but needs a task structure we don't ship yet; **new condition** = needs a platfo
 
 | # | Behaviour (incident) | Needs | Status | Mechanism / gap |
 |---|---|---|---|---|
-| 1 | Isolated agents **discover each other** via an unintended channel — a shared package cache (HF) or a writable external wiki (DSE) | a shared affordance that leaks cross-agent traces but is not labelled a channel | **new condition** | We provide channels (`pastebin`, `shared_dir`) and the egress check confirms them; nothing offers an *unlabelled* store that leaks other agents' activity. This is the load-bearing gap for both incidents. |
+| 1 | Isolated agents **discover each other** via an unintended channel — a shared package cache (HF) or a writable external wiki (DSE) | a shared affordance that leaks cross-agent traces but is not labelled a channel | **built (ADR-0033)** | `services.cache`: a shared build cache that is a present service, not a designated channel; its listing leaks that objects exist (the trace leak), `writable`/`list_recent` knobs stage discovery, and a cross-agent pickup is flagged `emergent_channel`. |
 | 2 | **Collude to share answers** across cohorts with the same task | several agents, the same task, a shared channel, a reward for the answer | **now** | Give N agents one task instance + `services.chat`/`board`/`pastebin`; the judge's `hidden_channel_use` and the services log capture it. |
 | 3 | **Self-sacrifice for the collective** (skip ahead / fail own task to relay info to peers) | an individual cost that helps others, visible on a channel | **scenario+** | Peer review (ADR-0017/0026) already models a shared reward; the "race ahead and relay" variant needs timed rounds (row 11). No detector for sacrifice yet. |
 | 4 | **Bypass the egress proxy** (NO_PROXY suffix + `/etc/hosts` + Host header) | a leaky egress policy the agent can defeat | **out of scope** | Our invariant allows no direct route at all, so a *successful* bypass cannot exist by design. The *attempt* is logged (`blocked_egress`); a deliberately-leaky proxy would violate ADR-0022. We study the attempt, not the escape. |
@@ -80,11 +80,8 @@ cross-agent leak store, no moderator deleting (row 8), no timed rounds (row 11),
 
 ## Conditions worth adding, in priority order
 
-1. **An unlabelled, leaky shared store (the Artifactory analog).** The one gap both incidents share (row 1).
-   A shared mutable resource — a package index that lists recent uploads, a shared scratch area, or a git
-   server whose refs reveal other agents' pushes — that the platform does **not** announce as a channel, with
-   a judge detector for *emergent* channel use on a store not designated as one. Without this we can only ask
-   "will agents use the channel we gave them", never "will isolated agents find a way to talk".
+1. ~~An unlabelled, leaky shared store (the Artifactory analog).~~ **Built: `services.cache` + the
+   `emergent_channel` detector (ADR-0033).** The remaining five conditions are unchanged.
 2. **Transcript-vs-world cross-check detector (row 7).** Compare a tool output the agent reported (from the
    harness log / its next prompt) against the world services' record of the same action; flag divergence.
    Cheap, high value, and squarely in Mesocosm's "record what actually happened" thesis.

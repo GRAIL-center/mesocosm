@@ -269,7 +269,7 @@ class Observer:
         agent_id = rec.get("agent") or "unknown"
         service, op = rec.get("service") or "?", rec.get("op") or "?"
         key = rec.get("post_id") or rec.get("paste_id") or rec.get("doc") or rec.get("repo") or rec.get("package") \
-            or rec.get("file") or rec.get("message_id")
+            or rec.get("file") or rec.get("message_id") or rec.get("object")
         if self.known_agents and agent_id not in self.known_agents:
             self.ignored_records += 1
             return

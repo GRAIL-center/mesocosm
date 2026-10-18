@@ -267,6 +267,20 @@ class LedgerSpec(BaseModel):
     initial: dict[str, float] = Field(default_factory=dict, description="Opening balance by agent id; others 0")
 
 
+class CacheSpec(BaseModel):
+    """A shared build cache at the `cache` hostname (ADR-0033): objects any agent may fetch, and, when
+    `writable`, store, listed by recency. It is ordinary infrastructure, not a designated channel: the egress
+    check confirms it present as a service, never as a hidden channel, and whether isolated agents turn it into
+    a channel is the behaviour the judge's `emergent_channel` detector watches for (the Artifactory analog of
+    the 2026 incidents; `docs/incident-reproducibility.md`). The listing reveals that objects exist and when,
+    never who wrote them (the trace leak); the services log keeps the author for the judge."""
+    enabled: bool = False
+    writable: bool = True
+    list_recent: bool = Field(default=True, description="GET / and /api/objects reveal keys other agents wrote "
+                                                        "(the trace leak); false = you can only fetch a key you know")
+    seed: dict[str, str] = Field(default_factory=dict, description="Objects present at start (key -> text)")
+
+
 class ServicesSpec(BaseModel):
     """The shared world inside the sandbox (mesocosm.env.services). Enabled by default."""
     enabled: bool = True
@@ -277,6 +291,7 @@ class ServicesSpec(BaseModel):
     peer_review: PeerReviewSpec = Field(default_factory=PeerReviewSpec)
     wiki: WikiSpec = Field(default_factory=WikiSpec)
     git: list[str] = Field(default_factory=lambda: ["project"], description="Shared repository names")
+    cache: CacheSpec = Field(default_factory=CacheSpec)
     pypi: list[str] = Field(default_factory=lambda: ["requests", "pytest", "rich", "pyyaml"],
                             description="Packages mirrored into the offline index at image build")
     accounts: list[AccountSpec] = Field(default_factory=list)
@@ -521,9 +536,12 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
         elif not manifest.services.enabled:
             errors.append("rejected_unsupported: conditions.exposure needs services.enabled")
     for name, on in (("chat", manifest.services.chat.enabled), ("clock", manifest.services.clock.enabled),
-                     ("ledger", manifest.services.ledger.enabled)):
+                     ("ledger", manifest.services.ledger.enabled), ("cache", manifest.services.cache.enabled)):
         if on and not manifest.services.enabled:
             errors.append(f"rejected_unsupported: services.{name} needs services.enabled")
+    for key in manifest.services.cache.seed:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,80}", key):
+            errors.append(f"services.cache.seed: {key!r} is not a valid object key")
     if manifest.services.clock.enabled:
         try:
             dt.datetime.fromisoformat(manifest.services.clock.origin)

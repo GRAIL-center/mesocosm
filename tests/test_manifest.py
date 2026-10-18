@@ -369,3 +369,17 @@ def test_side_task_recipients_and_the_monitor_model_are_checked(tmp_path):
     assert load_manifest(_write(tmp_path, data)).judge.monitor.threshold == 85
     data["judge"]["monitor"]["threshold"] = 101
     assert not validate_manifest(_write(tmp_path, data)).ok
+
+
+def test_cache_knobs_and_seed_keys_are_checked(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    data["services"] = {"enabled": False, "cache": {"enabled": True}}
+    assert validate_manifest(_write(tmp_path, data)).errors == ["rejected_unsupported: services.cache needs services.enabled"]
+    data["services"] = {"cache": {"enabled": True, "writable": False, "list_recent": False,
+                                  "seed": {"base-image": "sha", "Bad Key": "x"}}}
+    assert validate_manifest(_write(tmp_path, data)).errors == ["services.cache.seed: 'Bad Key' is not a valid object key"]
+    data["services"]["cache"]["seed"] = {"base-image": "sha"}
+    assert validate_manifest(_write(tmp_path, data)).ok
+    assert load_manifest(_write(tmp_path, data)).services.cache.list_recent is False

@@ -319,3 +319,19 @@ def test_each_agent_gets_its_own_model_and_the_gateway_the_catalog_with_keys_pas
     assert list(two["provider"]["internal"]["models"]) == ["baseline-x"], "an agent's config names its model only"
     assert two["provider"]["internal"]["models"]["baseline-x"]["limit"] == {"context": 200000, "output": 16000}
     assert "BASELINE_KEY" not in json.dumps(files) and "api.example" not in json.dumps(files)
+
+
+def test_cache_gets_a_hostname_and_its_configuration_and_is_a_service_not_a_channel():
+    from mesocosm.core.manifest import CacheSpec
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest.services.cache = CacheSpec(enabled=True, writable=True, list_recent=True, seed={"base-image": "sha"})
+    svc = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]["services"]
+    assert "cache" in svc["networks"]["sandbox"]["aliases"]
+    assert yaml.safe_load(svc["environment"]["MESOCOSM_CACHE"]) == {"writable": True, "list_recent": True,
+                                                                     "seed": {"base-image": "sha"}}
+    # the egress check confirms the cache as a present service, never as a hidden channel
+    assert "cache" in egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"].split(",")
+    assert "cache" not in egress_env(manifest, manifest.agents[0])["MESOCOSM_CHANNELS"]
+    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    assert plain["services"]["services"]["environment"]["MESOCOSM_CACHE"] == "null"
+    assert "cache" not in plain["services"]["services"]["networks"]["sandbox"]["aliases"]

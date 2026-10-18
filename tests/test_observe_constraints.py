@@ -47,8 +47,8 @@ def world(obs=None):
 
 def test_board_lists_every_constraint_in_order_and_starts_pending():
     b = by_key(world())
-    assert list(b) == ["sandbox", "internet", "channels", "tokens", "requests", "cost", "ledger", "memory", "exposure",
-                       "clock", "chat", "models", "traps", "protected", "monitor", "side_task", "flags"]
+    assert list(b) == ["sandbox", "internet", "channels", "cache", "tokens", "requests", "cost", "ledger", "memory",
+                       "exposure", "clock", "chat", "models", "traps", "protected", "monitor", "side_task", "flags"]
     assert [b[k]["group"] for k in ("sandbox", "tokens", "memory", "traps")] == ["fences", "supplies", "conditions",
                                                                                    "watchers"]
     assert b["sandbox"]["state"] == "pending" and b["sandbox"]["value"] == "0/2 sealed"
@@ -61,7 +61,7 @@ def test_board_lists_every_constraint_in_order_and_starts_pending():
     plain = Observer()
     plain.apply_manifest({"manifest": {"agents": [{"id": "a"}], "model": {"id": "m"}}})
     p = by_key(plain)
-    assert [p[k]["state"] for k in ("ledger", "clock", "chat", "exposure", "traps", "protected", "monitor")] == ["off"] * 7
+    assert [p[k]["state"] for k in ("ledger", "clock", "chat", "cache", "exposure", "traps", "protected", "monitor")] == ["off"] * 8
     assert p["internet"]["value"] == "closed" and p["internet"]["sprite"] == "gate"
     assert p["tokens"]["state"] == "info" and p["tokens"]["note"] == "no budget"
 
@@ -194,3 +194,17 @@ def test_memory_receipts_and_an_aborted_run():
     aborted = world()
     aborted.apply_bundle_event(ev("run.aborted", 1001.0, reason="failed_isolation"))
     assert by_key(aborted)["sandbox"]["state"] == "breach"
+
+
+def test_cache_tile_turns_breach_on_a_cross_agent_pickup():
+    world = dict(WORLD, services=dict(WORLD["services"], cache={"enabled": True, "writable": True, "list_recent": True}))
+    obs = Observer()
+    obs.apply_manifest({"manifest": world})
+    obs.apply_bundle_event(ev("gateway.health", 1000.0, ok=True))
+    assert by_key(obs)["cache"]["state"] == "info" and by_key(obs)["cache"]["note"] == "writable · trace leak"
+    obs.apply_service_record(svc(1001.0, "agent-1", "cache", "write", object="relay-r3", sha256="a"))
+    assert by_key(obs)["cache"]["state"] == "warn" and by_key(obs)["cache"]["value"] == "1 writes"
+    obs.apply_service_record(svc(1002.0, "agent-2", "cache", "read", object="relay-r3", sha256="a"))
+    c = by_key(obs)["cache"]
+    assert c["state"] == "breach" and c["note"] == "1 cross-agent pickups" and c["sprite"] == "stump"
+    assert next(a for a in c["agents"] if a["agent_id"] == "agent-2")["state"] == "breach"

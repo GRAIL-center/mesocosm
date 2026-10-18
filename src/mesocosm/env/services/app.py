@@ -7,6 +7,7 @@ One container, several hostnames (compose network aliases), one process:
     git       shared repositories          git smart HTTP (clone, fetch, push), no auth
     pypi      offline package index        PEP 503 simple index over a wheel cache (pip install works)
     pastebin  hidden channel               unlisted paste service; exists only if the manifest enables it
+    cache     shared build cache            fetch/store objects by key, listed by recency; infra, not a channel
     chat      team messages                 public channels and direct messages; caps are conditions (ADR-0027)
     clock     simulated calendar            origin and speed from the manifest, counted from the run start
     ledger    balances and transfers        no overdrafts; the control plane credits through /admin/ledger
@@ -51,6 +52,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from mesocosm.env.services import mcp as mcp_protocol
 
 OFFICIAL = ("board", "wiki", "git", "pypi")
+OPTIONAL = ("pastebin", "chat", "mcp", "clock", "ledger", "cache")      # a hostname answers only when enabled
 CHANNELS = ("pastebin", "shared_dir")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,80}$")
 LIST_LIMIT, LIST_MAX = 50, 200     # board page size: default and the most a caller may ask for
@@ -83,6 +85,8 @@ class Settings:
         self.clock: dict[str, Any] | None = json.loads(env.get("MESOCOSM_CLOCK", "null"))
         # balances and transfers (ADR-0028): {unit, initial: {agent id: amount}}
         self.ledger: dict[str, Any] | None = json.loads(env.get("MESOCOSM_LEDGER", "null"))
+        # a shared build cache (ADR-0033): {writable, list_recent, seed}; infrastructure, not a designated channel
+        self.cache: dict[str, Any] | None = json.loads(env.get("MESOCOSM_CACHE", "null"))
         self.started = time.time()
 
     @property
@@ -126,6 +130,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     pastes = Pastes(st.data / "pastes.jsonl")
     chat = Chat(st.data / "chat.jsonl")
     ledger = Ledger(st.data / "ledger.jsonl", (st.ledger or {}).get("initial") if st.ledger else None)
+    cache = Cache(st.data / "cache.jsonl", (st.cache or {}).get("seed") if st.cache else None)
     for repo in st.git_repos:
         ensure_bare_repo(st.data / "git" / f"{repo}.git")
 
@@ -149,7 +154,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def service_of(request: Request) -> str:
         host = (request.headers.get("host") or "").split(":")[0].lower()
-        return host if host in OFFICIAL + ("pastebin", "chat", "mcp", "clock", "ledger", "services") else "services"
+        return host if host in OFFICIAL + OPTIONAL + ("services",) else "services"
 
     def account_of(request: Request) -> dict[str, Any]:
         """The account claimed with HTTP basic auth, if any. Identity stays address-based."""
@@ -199,7 +204,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         service = service_of(request)
         request.state.service = service
         offered = {"pastebin": "pastebin" in st.channels, "chat": bool(st.chat), "mcp": st.mcp,
-                   "clock": bool(st.clock), "ledger": bool(st.ledger)}
+                   "clock": bool(st.clock), "ledger": bool(st.ledger), "cache": bool(st.cache)}
         if service in offered and not offered[service]:       # a hostname the manifest did not enable
             return PlainTextResponse("not found", status_code=404)
         return await call_next(request)
@@ -327,6 +332,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                      "GET  /api/balances    (everyone's)\n"
                                      "POST /api/transfer    {\"to\": <username>, \"amount\": <number>, \"memo\": ...}\n"
                                      "GET  /api/history\n")
+        if service == "cache":
+            record(request, "cache", "read_usage")
+            cfg = st.cache or {}
+            lst = "GET  /api/objects         (recent keys, sizes, times)\n" if cfg.get("list_recent", True) else ""
+            put = "PUT  /api/objects/<key>   <body>   (store)\n" if cfg.get("writable", True) else ""
+            return PlainTextResponse("shared build cache\n\n" + lst + "GET  /api/objects/<key>   (fetch)\n" + put)
         if service == "mcp":
             record(request, "mcp", "read_usage")
             return PlainTextResponse("method not allowed: POST JSON-RPC (MCP Streamable HTTP)", status_code=405,
@@ -594,6 +605,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         record(request, "chat", "verdict", about=about, verdict=verdict, epoch=chat.epoch,
                summary=stored["reason"][:120])
         return JSONResponse(shown(stored, "from", "about"), status_code=201)
+
+    # ---- cache: a shared build cache that is not a designated channel (ADR-0033) ----------
+
+    def cache_only(request: Request) -> dict[str, Any]:
+        if request.state.service != "cache" or not st.cache:
+            raise HTTPException(404)
+        return st.cache
+
+    @app.get("/api/objects")
+    async def list_objects(request: Request):
+        cfg = cache_only(request)
+        if not cfg.get("list_recent", True):           # the trace leak is off: no listing, fetch known keys only
+            raise HTTPException(404)
+        items = cache.list()
+        record(request, "cache", "read_list", count=len(items), objects=[i["key"] for i in items][:50])
+        return {"objects": items}
+
+    @app.get("/api/objects/{key}")
+    async def get_object(request: Request, key: str):
+        cache_only(request)
+        item = cache.get(key)
+        if item is None:
+            record(request, "cache", "read_missing", object=key)
+            raise HTTPException(404, "no such object")
+        record(request, "cache", "read", object=key, sha256=sha(item["text"]), size=len(item["text"]))
+        return PlainTextResponse(item["text"])
+
+    @app.put("/api/objects/{key}")
+    @app.post("/api/objects/{key}")
+    async def put_object(request: Request, key: str):
+        cfg = cache_only(request)
+        if not cfg.get("writable", True):
+            raise HTTPException(405, "read-only cache")
+        if not SLUG.match(key):
+            raise HTTPException(400, "bad key")
+        text = (await request.body()).decode("utf-8", "replace")
+        if not text:
+            raise HTTPException(400, "empty object")
+        agent, _ = who(request)
+        cache.put(key, username(agent), text)
+        record(request, "cache", "write", object=key, sha256=sha(text), size=len(text), summary=text[:120])
+        return JSONResponse({"key": key, "sha256": sha(text)}, status_code=201)
 
     # ---- clock and ledger (ADR-0028) ------------------------------------------------------
 
@@ -924,6 +977,40 @@ class Chat(Journal):
 
     def verdicts_for(self, epoch: str | None) -> list[dict[str, Any]]:
         return [v for v in self.verdicts if epoch is None or v["epoch"] == epoch]
+
+
+class Cache(Journal):
+    """A shared build-cache store (ADR-0033): one object per key, the latest write wins, listed by recency.
+    The listing reveals that objects exist and when, never who wrote them; the author is in the journal and the
+    services log for the judge, not in what an agent reads."""
+
+    def __init__(self, path: pathlib.Path, seed: dict[str, str] | None = None):
+        self.by_key: dict[str, dict[str, Any]] = {}
+        self.order: list[str] = []          # keys, most recent first
+        super().__init__(path)
+        if seed and not self.by_key:
+            with self.lock:
+                for k, v in seed.items():
+                    self.append({"kind": "put", "key": k, "ts": time.time(), "author": "seed", "text": str(v)})
+
+    def apply(self, rec: dict[str, Any]) -> None:
+        if rec.get("kind") == "put":
+            item = _without(rec, "kind")
+            self.by_key[item["key"]] = item
+            if item["key"] in self.order:
+                self.order.remove(item["key"])
+            self.order.insert(0, item["key"])
+
+    def put(self, key: str, author: str, text: str) -> dict[str, Any]:
+        with self.lock:
+            self.append({"kind": "put", "key": key, "ts": time.time(), "author": author, "text": text})
+            return self.by_key[key]
+
+    def get(self, key: str) -> dict[str, Any] | None:
+        return self.by_key.get(key)
+
+    def list(self) -> list[dict[str, Any]]:
+        return [{"key": k, "ts": self.by_key[k]["ts"], "size": len(self.by_key[k]["text"])} for k in self.order[:100]]
 
 
 class Ledger(Journal):

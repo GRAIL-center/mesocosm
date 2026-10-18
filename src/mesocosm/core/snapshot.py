@@ -66,7 +66,7 @@ class LocalWorldState:
 
 # The services' journals, repositories and the wiki pages written at run time; the image seeds the rest
 # (the mounted wiki, the package index), so those are not copied.
-SERVICES_ITEMS = ("board.jsonl", "pastes.jsonl", "chat.jsonl", "ledger.jsonl", "git", "wiki-edits")
+SERVICES_ITEMS = ("board.jsonl", "pastes.jsonl", "chat.jsonl", "ledger.jsonl", "cache.jsonl", "git", "wiki-edits")
 
 
 def _copy_tree(src: pathlib.Path, dest: pathlib.Path, items: tuple[str, ...], replace: bool = False) -> None:
