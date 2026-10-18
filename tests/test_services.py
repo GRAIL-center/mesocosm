@@ -232,3 +232,96 @@ async def test_manifest_visibility_overrides_the_page_front_matter(tmp_path):
         assert (await c.get("/getting-started.md")).status_code == 404
         index = (await c.get("/")).text
         assert "- secret" in index and "getting-started" not in index
+
+
+async def test_board_pages_newest_first_and_the_log_names_only_the_page(tmp_path):
+    st = settings(tmp_path)
+    app = create_app(st)
+    async with client(app, "172.30.0.11", "board") as c:
+        for i in range(120):
+            await c.post("/api/posts", json={"title": f"t{i}", "body": f"post {i}"})
+        page = (await c.get("/api/posts")).json()
+        assert page["total"] == 120 and page["limit"] == 50 and page["offset"] == 0
+        assert [p["id"] for p in page["posts"]][:3] == [120, 119, 118] and len(page["posts"]) == 50
+        older = (await c.get("/api/posts", params={"offset": 100, "limit": 10})).json()
+        assert [p["id"] for p in older["posts"]] == list(range(20, 10, -1))
+        assert len((await c.get("/api/posts", params={"limit": 1000})).json()["posts"]) == 120, "limit is capped at 200"
+        last = (await c.get("/api/posts", params={"offset": 115})).json()
+        assert [p["id"] for p in last["posts"]] == [5, 4, 3, 2, 1]
+        assert (await c.get("/api/posts", params={"offset": 500})).json()["posts"] == []
+        since = page["posts"][0]["ts"]
+        await c.post("/api/posts", json={"body": "newer"})
+        fresh = (await c.get("/api/posts", params={"since": since})).json()
+        assert fresh["total"] == 1 and fresh["posts"][0]["body"] == "newer"
+        assert "71 older posts: GET /api/posts?offset=50" in (await c.get("/")).text
+    reads = [ln for ln in log_lines(st.log_path) if ln["op"] == "read_list"]
+    assert reads[0]["count"] == 50 and reads[0]["total"] == 120 and reads[0]["post_ids"][0] == 120
+    assert all(len(r["post_ids"]) <= 200 for r in reads)
+
+
+async def test_journals_are_appended_and_replayed_at_start(tmp_path):
+    st = settings(tmp_path, channels=("pastebin",))
+    st.peer_review = {"max_chars": 50, "max_messages": 5}
+    app = create_app(st)
+    async with client(app, "172.30.0.11", "board") as b, client(app, "172.30.0.11", "pastebin") as pb, \
+            client(app, "172.30.0.11", "chat") as ch, client(app, "172.30.0.4", "172.30.0.3") as control:
+        await b.post("/api/posts", json={"title": "a", "body": "first"})
+        await b.post("/api/posts", json={"title": "b", "body": "second"})
+        await b.post("/api/posts/1/replies", json={"body": "re"})
+        pid = (await pb.post("/api/paste", json={"text": "psst"})).json()["id"]
+        await control.post("/admin/epoch", json={"epoch": "ep01"})
+        await ch.post("/api/messages", json={"to": "agent-2", "text": "hello"})
+        await ch.post("/api/verdicts", json={"about": "agent-2", "verdict": "accept"})
+    board_lines = (st.data / "board.jsonl").read_text().splitlines()
+    assert [json.loads(ln)["kind"] for ln in board_lines] == ["post", "post", "reply"], "one line per write"
+    # a fresh process over the same data directory sees the same world
+    again = create_app(st)
+    async with client(again, "172.30.0.12", "board") as b, client(again, "172.30.0.12", "pastebin") as pb, \
+            client(again, "172.30.0.12", "chat") as ch, client(again, "172.30.0.4", "172.30.0.3") as control:
+        posts = (await b.get("/api/posts")).json()["posts"]
+        assert [(p["id"], p["replies"]) for p in posts] == [(2, 0), (1, 1)]
+        assert (await b.get("/api/posts/1")).json()["replies"][0]["body"] == "re"
+        assert (await pb.get(f"/api/paste/{pid}")).json()["text"] == "psst"
+        inbox = (await ch.get("/api/messages")).json()
+        assert inbox["epoch"] == "ep01" and [(m["from"], m["to"], m["text"]) for m in inbox["messages"]] == \
+            [("agent-1", "agent-2", "hello")]
+        assert (await control.get("/admin/verdicts")).json()["verdicts"][0]["about"] == "agent-2"
+        # and the next write continues the sequence
+        assert (await b.post("/api/posts", json={"body": "third"})).json()["id"] == 3
+
+
+async def test_control_plane_anchors_the_exposure_clock(tmp_path):
+    st = settings(tmp_path)
+    st.wiki_dir.mkdir()
+    (st.wiki_dir / "release-notes.md").write_text("---\ntitle: Notes\n---\nshipped\n")
+    st.wiki_visibility = {"release-notes": 30}
+    app = create_app(st)
+    async with client(app, "172.30.0.11", "wiki") as agent, client(app, "172.30.0.4", "172.30.0.3") as control:
+        assert (await agent.get("/release-notes.md")).status_code == 404, "30 s after the service start"
+        assert (await agent.post("/admin/clock", json={"started": 0})).status_code == 404
+        anchored = time.time() - 31
+        assert (await control.post("/admin/clock", json={"started": anchored})).json() == {"started": anchored}
+        assert (await control.get("/admin/state")).json()["started"] == anchored
+        assert (await agent.get("/release-notes.md")).text == "shipped\n"
+        assert "release-notes" in (await agent.get("/")).text
+        await control.post("/admin/clock", json={"started": time.time()})
+        assert (await agent.get("/release-notes.md")).status_code == 404
+    ops = [(ln["op"], ln["agent"]) for ln in log_lines(st.log_path)]
+    assert ops[:2] == [("read_hidden", "agent-1"), ("admin_denied", "agent-1")]
+
+
+def test_distribution_hashes_are_cached_per_file_version(tmp_path):
+    from mesocosm.env.services.app import file_sha, front_matter, sha
+
+    wheel = tmp_path / "pkg-1.0-py3-none-any.whl"
+    wheel.write_bytes(b"one")
+    assert file_sha(wheel) == sha(b"one") == file_sha(wheel)
+    time.sleep(0.01)
+    wheel.write_bytes(b"two!")
+    assert file_sha(wheel) == sha(b"two!"), "a changed file (mtime or size) is hashed again"
+    page = tmp_path / "p.md"
+    page.write_text("---\ntitle: One\n---\nbody\n")
+    assert front_matter(page) == {"title": "One"}
+    time.sleep(0.01)
+    page.write_text("---\ntitle: Two\n---\nbody\n")
+    assert front_matter(page) == {"title": "Two"}

@@ -18,7 +18,7 @@ import os
 import pathlib
 import secrets
 import time
-from typing import Any
+from typing import IO, Any
 
 from pydantic import BaseModel, Field
 
@@ -110,6 +110,14 @@ class RunBundle:
             content = content.encode("utf-8")
         target.write_bytes(content)
         return target
+
+    def open_native(self, relpath: str) -> IO[str]:
+        """A raw artifact written incrementally (e.g. native/gateway/records.jsonl), once."""
+        target = self.root / "native" / relpath
+        if target.exists():
+            raise FileExistsError(f"native artifact already written: {relpath}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target.open("w", encoding="utf-8")
 
     def write_summary(self, summary: dict[str, Any]) -> None:
         target = self.root / "summary.json"

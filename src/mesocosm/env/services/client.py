@@ -16,6 +16,12 @@ class ServicesAdmin:
         r.raise_for_status()
         return r.json()
 
+    async def set_clock(self, started: float) -> dict[str, Any]:
+        """Anchor the exposure schedule: `conditions.exposure` seconds count from `started`."""
+        r = await self.client.post("/admin/clock", json={"started": started})
+        r.raise_for_status()
+        return r.json()
+
     async def set_epoch(self, epoch: str) -> dict[str, Any]:
         r = await self.client.post("/admin/epoch", json={"epoch": epoch})
         r.raise_for_status()

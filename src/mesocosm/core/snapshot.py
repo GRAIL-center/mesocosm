@@ -63,7 +63,7 @@ class LocalWorldState:
             shutil.copytree(src, self.shared_dir, dirs_exist_ok=True)
 
 
-SERVICES_ITEMS = ("board.json", "pastes.json", "chat.json", "git")
+SERVICES_ITEMS = ("board.jsonl", "pastes.jsonl", "chat.jsonl", "git")   # the services' journals and repositories
 
 
 def _copy_tree(src: pathlib.Path, dest: pathlib.Path, items: tuple[str, ...], replace: bool = False) -> None:

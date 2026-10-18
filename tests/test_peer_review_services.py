@@ -75,4 +75,5 @@ async def test_one_verdict_per_peer_per_episode(tmp_path):
         assert (await a1.get("/admin/verdicts")).status_code == 404, "agents cannot read the control view"
     ops = [(ln["op"], ln["agent"], ln.get("verdict"), ln.get("about")) for ln in log_lines(st.log_path) if ln["service"] == "chat"]
     assert ("verdict", "agent-1", "accept", "agent-2") in ops and ("verdict_rejected", "agent-1", None, "agent-2") in ops
-    assert json.loads((st.data / "chat.json").read_text())["verdicts"][0]["reason"] == "log looked fine"
+    journal = [json.loads(ln) for ln in (st.data / "chat.jsonl").read_text().splitlines()]
+    assert [r["kind"] for r in journal] == ["epoch", "verdict"] and journal[1]["reason"] == "log looked fine"

@@ -48,11 +48,13 @@ class DockerEgressVerifier:
         self.compose_file = str(compose_file)
 
     async def verify(self, agent_ids: list[str]) -> dict[str, EgressResult]:
-        results: dict[str, EgressResult] = {}
-        for agent_id in agent_ids:
-            proc = await asyncio.create_subprocess_exec(
-                "docker", "compose", "-f", self.compose_file, "exec", "-T", agent_id, "egress-check",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-            out, _ = await proc.communicate()
-            results[agent_id] = parse_egress_output(out.decode("utf-8", "replace"), proc.returncode)
-        return results
+        """All agents are checked at once; the check is a few seconds per container."""
+        results = await asyncio.gather(*(self._check(agent_id) for agent_id in agent_ids))
+        return dict(zip(agent_ids, results, strict=True))
+
+    async def _check(self, agent_id: str) -> EgressResult:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "compose", "-f", self.compose_file, "exec", "-T", agent_id, "egress-check",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        out, _ = await proc.communicate()
+        return parse_egress_output(out.decode("utf-8", "replace"), proc.returncode)

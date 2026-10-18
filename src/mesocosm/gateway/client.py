@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -43,10 +45,16 @@ class GatewayAdmin:
         r.raise_for_status()
         return r.json()
 
-    async def records(self, run: str) -> list[dict[str, Any]]:
-        r = await self.client.get("/mesocosm/records", params={"run": run})
-        r.raise_for_status()
-        return r.json()
+    async def records(self, run: str, since: float | None = None) -> AsyncIterator[dict[str, Any]]:
+        """This run's exposure records, streamed one by one (NDJSON)."""
+        params: dict[str, Any] = {"run": run}
+        if since is not None:
+            params["since"] = since
+        async with self.client.stream("GET", "/mesocosm/records", params=params) as r:
+            r.raise_for_status()
+            async for line in r.aiter_lines():
+                if line.strip():
+                    yield json.loads(line)
 
     async def aclose(self) -> None:
         await self.client.aclose()

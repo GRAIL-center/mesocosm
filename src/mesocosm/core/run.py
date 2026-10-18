@@ -456,7 +456,11 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     exposure = manifest.conditions.get("exposure")
     if exposure is not None:
         wanted = exposure.get("wiki", {}) if isinstance(exposure, dict) else {}
-        state = await components.services.state() if components.services else None
+        state = None
+        if components.services:
+            # The schedule counts from the run start, not from whenever the services container came up.
+            await components.services.set_clock(time.time())
+            state = await components.services.state()
         applied = state.get("wiki_visibility") if state else None
         ok = applied == wanted
         detail = {"applied": applied, "channels": (state or {}).get("channels"),
@@ -494,7 +498,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
         scheduler = asyncio.create_task(_stream_tasks(manifest, manifest_path, bundle, queue, len(manifest.agents)))
         try:
             runners = [_run_agent_persistent(manifest, components, bundle, agent, queue) for agent in manifest.agents]
-            for agent_rewards in await asyncio.gather(*runners):
+            for agent_rewards in await _run_together(runners):
                 rewards.update(agent_rewards)
         finally:
             if not scheduler.done():
@@ -512,31 +516,39 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                           allowed_channels=allowed_channels(task), **task_marks)
         # Agents work on the tasks at the same time; each has its own harness, sessions and collector.
         sync = EpisodeSync(manifest, components, bundle) if manifest.services.peer_review.enabled else None
-        for agent_rewards in await asyncio.gather(*(_run_agent(manifest, components, bundle, agent, tasks, sync)
-                                                    for agent in manifest.agents)):
+        for agent_rewards in await _run_together([_run_agent(manifest, components, bundle, agent, tasks, sync)
+                                                  for agent in manifest.agents]):
             rewards.update(agent_rewards)
 
     usage = await components.gateway.usage()
     bundle.record("gateway.usage", **usage)
-    exposure = [r for r in await components.gateway.records(run_label) if float(r.get("ts") or 0) >= started]
-    bundle.write_native("gateway/records.jsonl", "".join(_json(r) + "\n" for r in exposure))
-    for rec in exposure:
-        if rec.get("event") in ("chat_completion", "budget_exhausted"):
-            bundle.record(f"gateway.{rec['event']}", agent_id=rec.get("agent"), request_id=rec.get("request_id"),
-                          ts=rec.get("ts"), status=rec.get("status"), request_summary=rec.get("request_summary"),
-                          usage=(rec.get("response") or {}).get("usage"))
+    # The exposure copies are streamed record by record: a run's full prompts can be hundreds of MB.
+    model_calls = 0
+    with bundle.open_native("gateway/records.jsonl") as out:
+        async for rec in components.gateway.records(run_label, since=started):
+            out.write(_json(rec) + "\n")
+            if rec.get("event") == "chat_completion":
+                model_calls += 1
+            if rec.get("event") in ("chat_completion", "budget_exhausted"):
+                bundle.record(f"gateway.{rec['event']}", agent_id=rec.get("agent"), request_id=rec.get("request_id"),
+                              ts=rec.get("ts"), status=rec.get("status"), request_summary=rec.get("request_summary"),
+                              usage=(rec.get("response") or {}).get("usage"))
 
     service_records = 0
     if components.services_log and components.services_log.exists():
-        lines = [ln for ln in components.services_log.read_text(encoding="utf-8").splitlines() if ln.strip()]
-        records = [json.loads(ln) for ln in lines]
-        records = [r for r in records if float(r.get("ts") or 0) >= started]
-        bundle.write_native("services/services.jsonl", "".join(_json(r) + "\n" for r in records))
-        for rec in records:
-            service_records += 1
-            bundle.record(f"service.{rec.get('op', 'event')}", agent_id=rec.get("agent"), ts=rec.get("ts"),
-                          service=rec.get("service"),
-                          **{k: v for k, v in rec.items() if k not in ("ts", "service", "op", "agent", "method")})
+        with bundle.open_native("services/services.jsonl") as out, \
+                components.services_log.open(encoding="utf-8") as src:
+            for line in src:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                if float(rec.get("ts") or 0) < started:
+                    continue
+                out.write(_json(rec) + "\n")
+                service_records += 1
+                bundle.record(f"service.{rec.get('op', 'event')}", agent_id=rec.get("agent"), ts=rec.get("ts"),
+                              service=rec.get("service"),
+                              **{k: v for k, v in rec.items() if k not in ("ts", "service", "op", "agent", "method")})
 
     # Environment-state checks that need the sandbox, then the judge over everything recorded.
     if components.shared_files is not None and "shared_dir" in manifest.channel_types():
@@ -551,15 +563,24 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     status = "stopped" if stop_requested(bundle.root) else "ok"
     bundle.write_summary({"status": status, "run_label": run_label, "mode": manifest.mode, "rewards": rewards,
                           "tasks_taken": tasks_taken,
-                          "model_calls": sum(1 for r in exposure if r.get("event") == "chat_completion"),
+                          "model_calls": model_calls,
                           "service_records": service_records, "flags": flag_counts(flags),
                           "agent_seconds": agent_seconds(events), "events": len(events) + len(flags)})
     return RunResult(bundle.run_id, bundle.root, status, rewards)
 
 
-def _json(obj: Any) -> str:
-    import json
+async def _run_together(runners: list[Awaitable[dict[str, float | None]]]) -> list[dict[str, float | None]]:
+    """The agents run at the same time; the first failure cancels the others, so no runner outlives its
+    run and keeps writing into the bundle (or into the next run's, in a chain)."""
+    try:
+        async with asyncio.TaskGroup() as group:
+            tasks = [group.create_task(r) for r in runners]
+    except ExceptionGroup as failures:
+        raise failures.exceptions[0] from failures
+    return [t.result() for t in tasks]
 
+
+def _json(obj: Any) -> str:
     return json.dumps(obj, ensure_ascii=False)
 
 

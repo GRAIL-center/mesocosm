@@ -17,7 +17,9 @@ internet; the services are the internet the agents get.
 Fictional accounts (MESOCOSM_ACCOUNTS) are accepted as HTTP basic auth and recorded as *claimed*
 next to the address-based identity; a trap account, one nobody was given, writes a
 `trap_triggered` line the moment it is used. The control plane reads /admin/state (denied to
-agent addresses) to verify that the conditions it asked for are the ones in force.
+agent addresses) to verify that the conditions it asked for are the ones in force, and sets the
+clock the exposure schedule counts from (/admin/clock). Board, pastes and chat are append-only
+journals (board.jsonl, pastes.jsonl, chat.jsonl) replayed into memory at start.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 OFFICIAL = ("board", "wiki", "git", "pypi", "sites")
 CHANNELS = ("pastebin", "shared_dir")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,80}$")
+LIST_LIMIT, LIST_MAX = 50, 200     # board page size: default and the most a caller may ask for
 
 
 class Settings:
@@ -66,19 +69,22 @@ class Settings:
 
 
 class Log:
-    """Append-only JSONL, one line per request that touched a service."""
+    """Append-only JSONL, one line per request that touched a service. The file stays open,
+    line-buffered, so a record is on disk when the request returns and no open/close per request."""
 
     def __init__(self, path: pathlib.Path):
         self.path = path
         self.lock = threading.Lock()
         self.count = 0
+        self._file: Any = None
 
     def write(self, rec: dict[str, Any]) -> None:
         line = json.dumps(rec, ensure_ascii=False) + "\n"
         with self.lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as f:
-                f.write(line)
+            if self._file is None:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self._file = self.path.open("a", encoding="utf-8", buffering=1)
+            self._file.write(line)
             self.count += 1
 
 
@@ -93,9 +99,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="mesocosm world services", docs_url=None, redoc_url=None)
     app.state.settings = st
     app.state.log = log
-    board = Board(st.data / "board.json")
-    pastes = Pastes(st.data / "pastes.json")
-    chat = Chat(st.data / "chat.json")
+    board = Board(st.data / "board.jsonl")
+    pastes = Pastes(st.data / "pastes.jsonl")
+    chat = Chat(st.data / "chat.jsonl")
     for repo in st.git_repos:
         ensure_bare_repo(st.data / "git" / f"{repo}.git")
 
@@ -177,6 +183,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         chat.set_epoch(str(body["epoch"]))
         return {"epoch": chat.epoch}
 
+    @app.post("/admin/clock")
+    async def admin_clock(request: Request):
+        """The control plane anchors the visibility schedule to the run start (ADR-0011): `started`
+        is the instant that `exposure` seconds count from. Defaults to the service start."""
+        control_only(request)
+        body = await request.json()
+        st.started = float(body["started"])
+        return {"started": st.started}
+
     @app.post("/admin/feedback")
     async def admin_feedback(request: Request):
         """Episode feedback for one agent, delivered as a message from the runner."""
@@ -194,7 +209,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def index(request: Request):
         service = request.state.service
         if service == "board":
-            record(request, "board", "read_list")
+            page, total = board.list()      # the HTML view shows the same newest page as the API
+            record(request, "board", "read_list", count=len(page), total=total, offset=0,
+                   post_ids=[p["id"] for p in page], view="html")
             return HTMLResponse(board.html())
         if service == "wiki":
             docs = wiki_docs(st)
@@ -230,11 +247,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # ---- board ----------------------------------------------------------------------------
 
     @app.get("/api/posts")
-    async def list_posts(request: Request, since: float | None = None):
-        posts = board.list(since)
+    async def list_posts(request: Request, since: float | None = None, limit: int = LIST_LIMIT, offset: int = 0):
+        """Newest first, `limit` per page (default 50, at most 200), `offset` to page back, `since` to
+        poll for new posts. `total` says how many match."""
+        limit, offset = max(1, min(limit, LIST_MAX)), max(0, offset)
+        posts, total = board.list(since, limit, offset)
         # the list carries every post's body: a reader of the list has read each of them
-        record(request, "board", "read_list", count=len(posts), post_ids=[p["id"] for p in posts])
-        return {"posts": posts}
+        record(request, "board", "read_list", count=len(posts), total=total, offset=offset,
+               post_ids=[p["id"] for p in posts])
+        return {"posts": posts, "total": total, "limit": limit, "offset": offset}
 
     @app.post("/api/posts")
     async def create_post(request: Request):
@@ -345,7 +366,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def wiki_page(request: Request, slug: str):
         if request.state.service not in ("wiki", "services"):
             raise HTTPException(404)
-        doc = next((d for d in wiki_docs(st) if d["slug"] == slug), None)
+        doc = wiki_doc(st, slug)
         if doc is None or not doc["visible"]:
             record(request, "wiki", "read_hidden" if doc else "read_missing", doc=slug)
             raise HTTPException(404, "no such page")
@@ -395,7 +416,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         record(request, "pypi", "read_project", package=name, count=len(files))
         if not files:
             raise HTTPException(404, "no such project")
-        links = "".join(f'<a href="/files/{f.name}#sha256={sha(f.read_bytes())}">{f.name}</a><br>' for f in files)
+        links = "".join(f'<a href="/files/{f.name}#sha256={file_sha(f)}">{f.name}</a><br>' for f in files)
         return HTMLResponse(f"<!DOCTYPE html><html><body><h1>Links for {html.escape(name)}</h1>{links}</body></html>")
 
     @app.get("/files/{filename}")
@@ -446,102 +467,131 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-# ---- board / pastes storage (small JSON files; a run's traffic is tiny) -----------------------
+# ---- board / pastes / chat storage: append-only journals replayed into memory at start -----------
 
-class Board:
+class Journal:
+    """One JSONL file per store; a write appends one line and updates the in-memory state through
+    `apply`, which is also how the file is replayed at start. Nothing is ever rewritten."""
+
     def __init__(self, path: pathlib.Path):
         self.path = path
         self.lock = threading.Lock()
-        self.posts: list[dict[str, Any]] = []
+        self._file: Any = None
         if path.exists():
-            self.posts = json.loads(path.read_text(encoding="utf-8"))
+            with path.open(encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        self.apply(json.loads(line))
 
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.posts, ensure_ascii=False, indent=1), encoding="utf-8")
+    def append(self, rec: dict[str, Any]) -> None:
+        """Caller holds the lock."""
+        if self._file is None:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._file = self.path.open("a", encoding="utf-8", buffering=1)
+        self._file.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        self.apply(rec)
 
-    def list(self, since: float | None = None) -> list[dict[str, Any]]:
-        return [{k: v for k, v in p.items() if k != "replies"} | {"replies": len(p["replies"])}
-                for p in self.posts if since is None or p["ts"] > since]
+    def apply(self, rec: dict[str, Any]) -> None:
+        raise NotImplementedError
+
+
+def _without(rec: dict[str, Any], *keys: str) -> dict[str, Any]:
+    return {k: v for k, v in rec.items() if k not in keys}
+
+
+class Board(Journal):
+    def __init__(self, path: pathlib.Path):
+        self.posts: list[dict[str, Any]] = []       # index = id - 1
+        super().__init__(path)
+
+    def apply(self, rec: dict[str, Any]) -> None:
+        kind = rec.get("kind")
+        if kind == "post":
+            self.posts.append(_without(rec, "kind") | {"replies": []})
+        elif kind == "reply":
+            self.posts[rec["post_id"] - 1]["replies"].append(_without(rec, "kind", "post_id"))
+
+    def list(self, since: float | None = None, limit: int = LIST_LIMIT,
+             offset: int = 0) -> tuple[list[dict[str, Any]], int]:
+        """Newest first. Returns the page and the number of posts matching `since`."""
+        posts = self.posts
+        if since is not None:
+            posts = [p for p in posts if p["ts"] > since]
+        total = len(posts)
+        page = posts[max(0, total - offset - limit):max(0, total - offset)]
+        return [_without(p, "replies") | {"replies": len(p["replies"])} for p in reversed(page)], total
 
     def get(self, post_id: int) -> dict[str, Any] | None:
-        return next((p for p in self.posts if p["id"] == post_id), None)
+        return self.posts[post_id - 1] if 1 <= post_id <= len(self.posts) else None
 
     def add(self, *, author: str, title: str, body: str, claimed: str | None) -> dict[str, Any]:
         with self.lock:
-            post = {"id": len(self.posts) + 1, "ts": time.time(), "author": author, "claimed_author": claimed,
-                    "title": title, "body": body, "replies": []}
-            self.posts.append(post)
-            self._save()
-        return post
+            self.append({"kind": "post", "id": len(self.posts) + 1, "ts": time.time(), "author": author,
+                         "claimed_author": claimed, "title": title, "body": body})
+            return self.posts[-1]
 
     def reply(self, post_id: int, *, author: str, body: str) -> dict[str, Any] | None:
         with self.lock:
             post = self.get(post_id)
             if post is None:
                 return None
-            rep = {"id": len(post["replies"]) + 1, "ts": time.time(), "author": author, "body": body}
-            post["replies"].append(rep)
-            self._save()
-        return rep
+            self.append({"kind": "reply", "post_id": post_id, "id": len(post["replies"]) + 1, "ts": time.time(),
+                         "author": author, "body": body})
+            return post["replies"][-1]
 
     def html(self) -> str:
         items = []
-        for p in reversed(self.posts):
+        for p in reversed(self.posts[-LIST_LIMIT:]):
             when = dt.datetime.fromtimestamp(p["ts"]).strftime("%H:%M:%S")
             replies = "".join(f"<blockquote>{html.escape(r['author'])}: {html.escape(r['body'])}</blockquote>"
                               for r in p["replies"])
             items.append(f"<li><b>{html.escape(p['title'] or '(no title)')}</b> · {html.escape(p['author'])} · {when}"
                          f"<pre>{html.escape(p['body'])}</pre>{replies}</li>")
+        older = len(self.posts) - LIST_LIMIT
+        more = f"<p>{older} older posts: GET /api/posts?offset={LIST_LIMIT}</p>" if older > 0 else ""
         return ("<!doctype html><title>board</title><h1>Team board</h1>"
-                "<p>API: GET /api/posts · POST /api/posts {title, body} · GET /api/posts/{id} · "
-                "POST /api/posts/{id}/replies {body}</p>"
-                "<ul>" + "".join(items) + "</ul>")
+                "<p>API: GET /api/posts[?limit=50&offset=0&since=ts] · POST /api/posts {title, body} · "
+                "GET /api/posts/{id} · POST /api/posts/{id}/replies {body}</p>"
+                "<ul>" + "".join(items) + "</ul>" + more)
 
 
-class Chat:
+class Chat(Journal):
     """Peer-review channel state: the open episode, messages (capped per episode by the caller),
     verdicts (one per agent per peer per episode) and the runner's feedback messages."""
 
     def __init__(self, path: pathlib.Path):
-        self.path = path
-        self.lock = threading.Lock()
         self.epoch: str | None = None
         self.messages: list[dict[str, Any]] = []
         self.verdicts: list[dict[str, Any]] = []
-        if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            self.epoch = data.get("epoch")
-            self.messages, self.verdicts = data.get("messages", []), data.get("verdicts", [])
+        super().__init__(path)
 
-    def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"epoch": self.epoch, "messages": self.messages, "verdicts": self.verdicts},
-                                        ensure_ascii=False, indent=1), encoding="utf-8")
+    def apply(self, rec: dict[str, Any]) -> None:
+        kind, item = rec.get("kind"), _without(rec, "kind")
+        if kind == "epoch":
+            self.epoch = item["epoch"]
+        elif kind == "message":
+            self.messages.append(item)
+        elif kind == "verdict":
+            self.verdicts.append(item)
 
     def set_epoch(self, epoch: str) -> None:
         with self.lock:
-            self.epoch = epoch
-            self._save()
+            self.append({"kind": "epoch", "ts": time.time(), "epoch": epoch})
 
     def sent_in_epoch(self, sender: str) -> int:
         return sum(1 for m in self.messages if m["from"] == sender and m["epoch"] == self.epoch)
 
     def add_message(self, sender: str, to: str, text: str) -> dict[str, Any]:
         with self.lock:
-            msg = {"id": len(self.messages) + 1, "ts": time.time(), "epoch": self.epoch, "from": sender, "to": to,
-                   "text": text}
-            self.messages.append(msg)
-            self._save()
-        return msg
+            self.append({"kind": "message", "id": len(self.messages) + 1, "ts": time.time(), "epoch": self.epoch,
+                         "from": sender, "to": to, "text": text})
+            return self.messages[-1]
 
     def add_feedback(self, to: str, epoch: str, text: str) -> dict[str, Any]:
         with self.lock:
-            msg = {"id": len(self.messages) + 1, "ts": time.time(), "epoch": epoch, "from": "runner", "to": to,
-                   "text": text}
-            self.messages.append(msg)
-            self._save()
-        return msg
+            self.append({"kind": "message", "id": len(self.messages) + 1, "ts": time.time(), "epoch": epoch,
+                         "from": "runner", "to": to, "text": text})
+            return self.messages[-1]
 
     def messages_for(self, agent: str, since: float | None = None) -> list[dict[str, Any]]:
         return [m for m in self.messages
@@ -551,37 +601,34 @@ class Chat:
         with self.lock:
             if any(v["from"] == sender and v["about"] == about and v["epoch"] == self.epoch for v in self.verdicts):
                 return None
-            item = {"id": len(self.verdicts) + 1, "ts": time.time(), "epoch": self.epoch, "from": sender,
-                    "about": about, "verdict": verdict, "reason": reason}
-            self.verdicts.append(item)
-            self._save()
-        return item
+            self.append({"kind": "verdict", "id": len(self.verdicts) + 1, "ts": time.time(), "epoch": self.epoch,
+                         "from": sender, "about": about, "verdict": verdict, "reason": reason})
+            return self.verdicts[-1]
 
     def verdicts_for(self, epoch: str | None) -> list[dict[str, Any]]:
         return [v for v in self.verdicts if epoch is None or v["epoch"] == epoch]
 
 
-class Pastes:
+class Pastes(Journal):
     def __init__(self, path: pathlib.Path):
-        self.path = path
-        self.lock = threading.Lock()
         self.items: list[dict[str, Any]] = []
-        if path.exists():
-            self.items = json.loads(path.read_text(encoding="utf-8"))
+        self.by_id: dict[str, dict[str, Any]] = {}
+        super().__init__(path)
+
+    def apply(self, rec: dict[str, Any]) -> None:
+        self.items.append(rec)
+        self.by_id[rec["id"]] = rec
 
     def add(self, author: str, text: str) -> dict[str, Any]:
         with self.lock:
-            item = {"id": secrets.token_hex(4), "ts": time.time(), "author": author, "text": text}
-            self.items.append(item)
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(self.items, ensure_ascii=False), encoding="utf-8")
-        return item
+            self.append({"id": secrets.token_hex(4), "ts": time.time(), "author": author, "text": text})
+            return self.items[-1]
 
     def list(self) -> list[dict[str, Any]]:
         return [{"id": i["id"], "ts": i["ts"], "size": len(i["text"])} for i in self.items[-50:]]
 
     def get(self, paste_id: str) -> dict[str, Any] | None:
-        return next((i for i in self.items if i["id"] == paste_id), None)
+        return self.by_id.get(paste_id)
 
 
 # ---- wiki --------------------------------------------------------------------------------------
@@ -593,31 +640,53 @@ def strip_front_matter(text: str) -> str:
     return FRONT.sub("", text, count=1)
 
 
-def wiki_docs(st: Settings) -> list[dict[str, Any]]:
-    """Markdown files in the wiki dir; `visible_from: <ISO time>` or `visible_after_seconds: N`
-    (relative to service start) in the front matter hides a page until then."""
-    docs = []
-    if not st.wiki_dir.is_dir():
-        return docs
-    now = time.time()
-    for path in sorted(st.wiki_dir.glob("*.md")):
+_META_CACHE: dict[tuple[str, int, int], dict[str, str]] = {}   # (path, mtime_ns, size) -> front matter
+
+
+def front_matter(path: pathlib.Path) -> dict[str, str]:
+    """Parsed front matter, cached by the file's identity so the index does not re-read every page."""
+    stat = path.stat()
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    meta = _META_CACHE.get(key)
+    if meta is None:
+        meta = {}
         head = FRONT.match(path.read_text(encoding="utf-8"))
-        meta: dict[str, str] = {}
         if head:
             for line in head.group(1).splitlines():
                 if ":" in line:
                     k, v = line.split(":", 1)
                     meta[k.strip()] = v.strip().strip('"')
-        visible_at = None
-        if path.stem in st.wiki_visibility:
-            visible_at = st.started + float(st.wiki_visibility[path.stem])
-        elif meta.get("visible_after_seconds"):
-            visible_at = st.started + float(meta["visible_after_seconds"])
-        elif meta.get("visible_from"):
-            visible_at = dt.datetime.fromisoformat(meta["visible_from"]).timestamp()
-        docs.append({"slug": path.stem, "path": path, "title": meta.get("title") or path.stem,
-                     "visible_at": visible_at, "visible": visible_at is None or now >= visible_at})
-    return docs
+        _META_CACHE[key] = meta
+    return meta
+
+
+def wiki_doc(st: Settings, slug: str, path: pathlib.Path | None = None,
+             now: float | None = None) -> dict[str, Any] | None:
+    """One page by slug; `visible_from: <ISO time>` or `visible_after_seconds: N` (relative to
+    `started`) in the front matter hides it until then, and the manifest's schedule overrides both."""
+    path = path or st.wiki_dir / f"{slug}.md"
+    if not SLUG.match(slug) or not path.is_file():
+        return None
+    meta = front_matter(path)
+    visible_at = None
+    if slug in st.wiki_visibility:
+        visible_at = st.started + float(st.wiki_visibility[slug])
+    elif meta.get("visible_after_seconds"):
+        visible_at = st.started + float(meta["visible_after_seconds"])
+    elif meta.get("visible_from"):
+        visible_at = dt.datetime.fromisoformat(meta["visible_from"]).timestamp()
+    now = time.time() if now is None else now
+    return {"slug": slug, "path": path, "title": meta.get("title") or slug,
+            "visible_at": visible_at, "visible": visible_at is None or now >= visible_at}
+
+
+def wiki_docs(st: Settings) -> list[dict[str, Any]]:
+    """Every page in the wiki dir, with its visibility now."""
+    if not st.wiki_dir.is_dir():
+        return []
+    now = time.time()
+    docs = (wiki_doc(st, path.stem, path, now) for path in sorted(st.wiki_dir.glob("*.md")))
+    return [d for d in docs if d is not None]
 
 
 def wiki_index(docs: list[dict[str, Any]]) -> str:
@@ -638,6 +707,23 @@ def pypi_projects(pypi_dir: pathlib.Path) -> list[str]:
         return []
     names = {normalize(f.name.split("-")[0]) for f in files.iterdir() if f.suffix in (".whl", ".gz", ".zip")}
     return sorted(names)
+
+
+_SHA_CACHE: dict[tuple[str, int, int], str] = {}   # (path, mtime_ns, size) -> sha256
+
+
+def file_sha(path: pathlib.Path) -> str:
+    """sha256 of a distribution file, computed once per file version (a 50 MB wheel per request is not)."""
+    stat = path.stat()
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    digest = _SHA_CACHE.get(key)
+    if digest is None:
+        h = hashlib.sha256()
+        with path.open("rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        digest = _SHA_CACHE[key] = h.hexdigest()
+    return digest
 
 
 def pypi_files(pypi_dir: pathlib.Path, name: str) -> list[pathlib.Path]:

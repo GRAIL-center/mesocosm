@@ -212,3 +212,19 @@ async def test_a_hold_that_outlives_the_limit_is_released_with_an_explicit_error
     assert peer.status_code == 200, "pausing one agent leaves the other running"
     stop = await admin.stop("lbl")
     assert stop.verification.detail == {"released_held_requests": 0} and (await admin.health())["paused"] == []
+
+
+async def test_records_are_streamed_per_run_and_since(gw):
+    app, up, client, tmp_path = gw
+    admin = GatewayAdmin("http://gateway", transport=httpx.ASGITransport(app=app))
+    for run, agent in (("r1", "agent-2"), ("r2", "agent-2"), ("r1", "agent-2")):
+        await client.post("/v1/chat/completions", headers={"X-Mesocosm-Agent": agent, "X-Mesocosm-Run": run},
+                          json={"model": "mesocosm-3b", "messages": [{"role": "user", "content": run}]})
+    r1 = [rec async for rec in admin.records("r1")]
+    assert [r["run"] for r in r1] == ["r1", "r1"] and all(r["event"] == "chat_completion" for r in r1)
+    assert [rec["run"] async for rec in admin.records("r2")] == ["r2"]
+    later = [rec async for rec in admin.records("r1", since=r1[-1]["ts"])]
+    assert later == [r1[-1]], "`since` keeps only this run's records when a label is reused"
+    assert [rec async for rec in admin.records("nope")] == []
+    raw = await client.get("/mesocosm/records", params={"run": "r1"})
+    assert raw.headers["content-type"].startswith("application/x-ndjson") and raw.text.count("\n") == 2

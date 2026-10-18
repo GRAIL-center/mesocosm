@@ -256,12 +256,56 @@ async def test_agents_work_on_the_task_at_the_same_time(world, tmp_path):
     assert (result.bundle_path / "native" / "agent-2" / "hello-world" / "messages.json").exists()
 
 
+async def test_one_failing_agent_cancels_the_others(world):
+    manifest, components, root = world
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "url": "http://127.0.0.1:4097"}))
+    comps = components()
+    real_harness_for = comps.harness_for
+    stalled = asyncio.Event()
+
+    class Stalling:
+        """agent-2's harness: its first call never returns (a hung `opencode serve`)."""
+
+        async def health(self):
+            return {"healthy": True}
+
+        async def create_session(self, *a, **k):
+            stalled.set()
+            await asyncio.sleep(3600)
+
+        async def aclose(self):
+            pass
+
+        def __getattr__(self, name):
+            return self.create_session
+
+    def harness_for(agent):
+        return Stalling() if agent.id == "agent-2" else real_harness_for(agent)
+
+    comps.harness_for = harness_for
+
+    async def broken_verify(task, workspace, logs_dir):
+        await stalled.wait()
+        raise RuntimeError("verifier container died")
+
+    comps.verifier.verify = broken_verify
+    # with asyncio.gather the stalled agent-2 would keep the run (and the bundle) alive for an hour
+    result = await asyncio.wait_for(run_world(manifest, MANIFEST, comps, root / "runs"), timeout=5)
+    assert result.status == "failed" and "verifier container died" in result.error
+    bundle = RunBundle.open(result.bundle_path)
+    assert bundle.events()[-1].kind == "run.failed" and "verifier container died" in bundle.events()[-1].data["error"]
+
+
 class FakeServices:
     def __init__(self, wiki_visibility):
-        self.wiki_visibility = wiki_visibility
+        self.wiki_visibility, self.started = wiki_visibility, None
+
+    async def set_clock(self, started):
+        self.started = started
+        return {"started": started}
 
     async def state(self):
-        return {"channels": [], "wiki_visibility": self.wiki_visibility, "traps": []}
+        return {"channels": [], "wiki_visibility": self.wiki_visibility, "traps": [], "started": self.started}
 
 
 async def test_exposure_condition_is_verified_against_the_services(world):
@@ -276,6 +320,9 @@ async def test_exposure_condition_is_verified_against_the_services(world):
     assert receipt["result"] == "applied" and receipt["enforced_at"]["component"] == "services"
     assert receipt["requested"]["wiki"] == {"secret": 30} and receipt["verification"]["method"] == "services /admin/state"
     assert bundle_conditions(bundle)["exposure"] == {"wiki": {"secret": 30}, "result": "applied"}
+    anchored = receipt["verification"]["detail"]["services_started"]
+    assert comps.services.started == anchored and abs(anchored - receipt["enforced_at"]["wallclock"]) < 5, \
+        "the schedule counts from the run start, which the run manager set on the services"
 
     comps = components()
     comps.services = FakeServices({})                      # the services run with no schedule: contradiction
@@ -442,6 +489,9 @@ class FakePeerServices:
 
     async def state(self):
         return {"channels": [], "wiki_visibility": {}}
+
+    async def set_clock(self, started):
+        return {"started": started}
 
     async def set_epoch(self, epoch):
         self.epochs.append(epoch)

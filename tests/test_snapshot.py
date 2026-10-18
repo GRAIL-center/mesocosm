@@ -30,7 +30,7 @@ def world_on_disk(tmp_path):
     services = tmp_path / "services-data"
     (services / "git" / "project.git").mkdir(parents=True)
     (services / "git" / "project.git" / "HEAD").write_text("ref: refs/heads/main\n")
-    (services / "board.json").write_text(json.dumps({"posts": [{"id": 1, "body": "hello"}]}))
+    (services / "board.jsonl").write_text(json.dumps({"kind": "post", "id": 1, "body": "hello"}) + "\n")
     (services / "pypi").mkdir()
     (services / "pypi" / "big.whl").write_bytes(b"x" * 10)        # not part of a snapshot: the image seeds it
     shared = tmp_path / "shared"
@@ -57,24 +57,24 @@ async def test_snapshot_restore_roundtrip_is_hash_verified_and_declares_coverage
     assert [c["component"] for c in cov["captured"]] == ["workspace", "workspace", "services", "shared_dir",
                                                          "task_queue", "manifest"]
     assert read_tar_names(root / "workspaces" / "agent-1.tar.gz") == ["notes.md", "src/a.py"]
-    assert sorted(p.name for p in (root / "services").iterdir()) == ["board.json", "git"], "the index is not copied"
+    assert sorted(p.name for p in (root / "services").iterdir()) == ["board.jsonl", "git"], "the index is not copied"
     queue = json.loads((root / "queue.json").read_text())
     assert queue["pending"] == ["t2"] and queue["assigned"] == {"t1": "agent-1"} and queue["finished"] == {"agent-1/t1": 1.0}
     assert queue_state(bundle) == queue
     files = json.loads((root / "files.json").read_text())
     assert set(files) == {"workspaces/agent-1/notes.md", "workspaces/agent-1/src/a.py", "workspaces/agent-2/b.txt",
-                          "services/board.json", "services/git/project.git/HEAD", "shared/handoff.txt"}
+                          "services/board.jsonl", "services/git/project.git/HEAD", "shared/handoff.txt"}
 
     # the world moves on, then comes back exactly
     (ws / "agent-1" / "notes.md").write_text("changed\n")
     (ws / "agent-1" / "extra.txt").write_text("new\n")
-    (services / "board.json").write_text("{}")
+    (services / "board.jsonl").write_text("{}")
     (shared / "handoff.txt").unlink()
     result = await restore_snapshot(root, ws, world)
     assert result["ok"] and result["mismatches"] == [] and result["verified_files"] == 6
     assert result["restored"] == {"workspace:agent-1": 2, "workspace:agent-2": 1, "services": 2, "shared_dir": 1}
     assert (ws / "agent-1" / "notes.md").read_text() == "done\n" and not (ws / "agent-1" / "extra.txt").exists()
-    assert json.loads((services / "board.json").read_text())["posts"][0]["body"] == "hello"
+    assert json.loads((services / "board.jsonl").read_text())["body"] == "hello"
     assert (shared / "handoff.txt").read_text() == "psst\n" and (services / "pypi" / "big.whl").exists()
     assert hash_tree(ws / "agent-1") == {k[len("workspaces/agent-1/"):]: v for k, v in files.items()
                                          if k.startswith("workspaces/agent-1/")}
@@ -88,10 +88,10 @@ async def test_restore_reports_what_does_not_come_back(tmp_path):
     class LossyWorld(LocalWorldState):
         async def import_services(self, src):
             await super().import_services(src)
-            (self.services_dir / "board.json").write_text("{}")      # something the backend failed to restore
+            (self.services_dir / "board.jsonl").write_text("{}")      # something the backend failed to restore
 
     result = await restore_snapshot(root, ws, LossyWorld(services, shared))
-    assert not result["ok"] and result["mismatches"] == ["services/board.json"]
+    assert not result["ok"] and result["mismatches"] == ["services/board.jsonl"]
 
 
 async def test_fork_manifest_applies_the_patch_and_records_lineage(tmp_path):

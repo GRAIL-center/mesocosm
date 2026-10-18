@@ -7,6 +7,8 @@ import asyncio
 import pathlib
 import shutil
 
+from mesocosm.core.snapshot import SERVICES_ITEMS
+
 
 class DockerWorldState:
     def __init__(self, compose_file: str | pathlib.Path, agent_with_shared: str = "agent-1"):
@@ -24,15 +26,15 @@ class DockerWorldState:
 
     async def export_services(self, dest: pathlib.Path) -> None:
         dest.mkdir(parents=True, exist_ok=True)
-        for item in ("board.json", "pastes.json", "chat.json", "git"):
+        for item in SERVICES_ITEMS:
             await self._compose("cp", f"services:/data/{item}", str(dest / item), check=False)
 
     async def import_services(self, src: pathlib.Path) -> None:
-        for item in ("board.json", "pastes.json", "chat.json", "git"):
+        for item in SERVICES_ITEMS:
             if (src / item).exists():
                 await self._compose("exec", "-T", "services", "rm", "-rf", f"/data/{item}", check=False)
                 await self._compose("cp", str(src / item), f"services:/data/{item}")
-        await self._compose("restart", "services")     # the app reads board.json and pastes.json at start
+        await self._compose("restart", "services")     # the app replays its journals at start
 
     async def export_shared(self, dest: pathlib.Path) -> None:
         code, _ = await self._compose("cp", "control:/shared/.", str(dest), check=False)

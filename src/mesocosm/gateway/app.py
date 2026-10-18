@@ -19,6 +19,7 @@ import os
 import pathlib
 import time
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,6 +31,7 @@ from pydantic import BaseModel
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 
 HOP_BY_HOP = {"content-length", "transfer-encoding", "connection", "keep-alive", "host"}
+RECORDS_CHUNK = 1 << 20   # bytes of NDJSON per streamed chunk of /mesocosm/records
 BUDGET_KEYS = ("requests", "prompt_tokens", "completion_tokens")
 
 
@@ -166,18 +168,19 @@ class Gateway:
             self._log_file = open(self.settings.log_dir / "gateway.jsonl", "a", buffering=1, encoding="utf-8")
         self._log_file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    def records_for_run(self, run: str) -> list[dict[str, Any]]:
+    def records_for_run(self, run: str, since: float | None = None) -> Iterator[str]:
+        """The log lines of one run label (and not older than `since`), one at a time: the log holds
+        every run's full prompts and is read line by line, never loaded whole."""
         path = self.settings.log_dir / "gateway.jsonl"
         if not path.exists():
-            return []
-        out = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line:
-                continue
-            rec = json.loads(line)
-            if rec.get("run") == run:
-                out.append(rec)
-        return out
+            return
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                if rec.get("run") == run and (since is None or float(rec.get("ts") or 0) >= since):
+                    yield line if line.endswith("\n") else line + "\n"
 
     def usage_for(self, agent: str) -> dict[str, int]:
         return self.usage.setdefault(agent, {k: 0 for k in BUDGET_KEYS})
@@ -334,9 +337,26 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         return gw.stop(req.run, req.run_id).model_dump(mode="json")
 
     @app.get("/mesocosm/records")
-    async def records(run: str) -> list[dict[str, Any]]:
-        """Exposure records for one run label, so the control plane can copy them into the bundle."""
-        return gw.records_for_run(run)
+    async def records(run: str, since: float | None = None) -> StreamingResponse:
+        """Exposure records for one run label as NDJSON, so the control plane can copy them into the
+        bundle without either side holding the whole log in memory."""
+        lines = gw.records_for_run(run, since)
+
+        def chunk() -> str | None:
+            buf: list[str] = []
+            size = 0
+            for line in lines:
+                buf.append(line)
+                size += len(line)
+                if size >= RECORDS_CHUNK:
+                    break
+            return "".join(buf) if buf else None
+
+        async def stream():
+            while (data := await asyncio.to_thread(chunk)) is not None:
+                yield data
+
+        return StreamingResponse(stream(), media_type="application/x-ndjson")
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
     async def proxy(path: str, request: Request):
