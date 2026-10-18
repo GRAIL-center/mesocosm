@@ -33,6 +33,7 @@ class HarborTask:
     has_solution: bool
     side_instruction: str | None = None
     has_side_tests: bool = False
+    rounds: list[dict[str, Any]] = field(default_factory=list)   # [[rounds]] in task.toml (ADR-0035)
 
     def provenance(self) -> dict[str, Any]:
         """What the task is and exactly which text the agent and verifier saw."""
@@ -56,6 +57,25 @@ class HarborTask:
             return self.instruction.rstrip("\n") + "\n\n" + self.side_instruction.strip() + "\n"
         return self.instruction
 
+    def round_prompts(self, agent_id: str, side_task_agents: list[str] | None) -> list[dict[str, Any]]:
+        """The sequence of prompts to send for this task (ADR-0035). With no `[[rounds]]` it is one prompt (the
+        instruction, plus the side task for its recipients). With rounds it is one prompt per round, each with
+        its announced time budget prepended; the side task rides on the first round."""
+        give_side = bool(self.side_instruction) and (side_task_agents is None or agent_id in side_task_agents)
+        side = ("\n\n" + self.side_instruction.strip() + "\n") if give_side else ""
+        if not self.rounds:
+            base = self.instruction.rstrip("\n") + side if side else self.instruction
+            return [{"prompt": base, "seconds": None, "index": 1}]
+        out = []
+        for i, r in enumerate(self.rounds):
+            prompt = str(r.get("prompt") or "")
+            if r.get("seconds") is not None:
+                prompt = f"You have {int(r['seconds'])} seconds to answer this question.\n\n" + prompt
+            if i == 0 and side:
+                prompt = prompt.rstrip("\n") + side
+            out.append({"prompt": prompt, "seconds": r.get("seconds"), "index": i + 1})
+        return out
+
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -78,6 +98,7 @@ def load_task(path: str | pathlib.Path) -> HarborTask:
         has_solution=(path / "solution").is_dir(),
         side_instruction=side.read_text(encoding="utf-8") if side.is_file() else None,
         has_side_tests=(path / "tests" / "side_test.sh").is_file(),
+        rounds=[r for r in (config.get("rounds") or []) if isinstance(r, dict) and r.get("prompt")],
     )
 
 

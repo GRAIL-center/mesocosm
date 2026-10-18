@@ -729,3 +729,40 @@ async def test_side_task_goes_to_the_named_agents_and_the_monitor_scores_every_t
     assert all(r["agent"] != "monitor" for r in map(json.loads,
                (result.bundle_path / "native" / "gateway" / "records.jsonl").read_text().splitlines())), \
         "the monitor's own calls are not the agents' records"
+
+
+async def test_a_task_with_rounds_sends_a_prompt_per_round_in_one_session(world):
+    manifest, components, tmp_path = world
+    d = tmp_path / "tasks" / "rounds-task"
+    (d / "tests").mkdir(parents=True)
+    (d / "instruction.md").write_text("multi-round\n")
+    (d / "task.toml").write_text('[[rounds]]\nprompt = "R1: name a state"\nseconds = 60\n'
+                                 '[[rounds]]\nprompt = "R2: name another"\nseconds = 15\n')
+    (d / "tests" / "test.sh").write_text("true\n")
+    manifest.tasks = [TaskSpec(source="harbor", path="tasks/rounds-task")]
+    seen = []
+    components.hooks["on_message"] = lambda body: seen.append(body["parts"][0]["text"])
+    result = await run_world(manifest, tmp_path / "world.yaml", components(), tmp_path / "runs")
+    assert result.status == "ok"
+    assert len(seen) == 2 and seen[0].startswith("You have 60 seconds") and "R1: name a state" in seen[0]
+    assert seen[1].startswith("You have 15 seconds") and "R2: name another" in seen[1]
+    bundle = RunBundle.open(result.bundle_path)
+    rounds = [e for e in bundle.events() if e.kind == "harness.round"]
+    assert [(e.data["round"], e.data["seconds"]) for e in rounds] == [(1, 60), (2, 15)]
+    replies = [e.data.get("round") for e in bundle.events() if e.kind == "harness.reply"]
+    assert replies == [1, 2], "each reply carries its round; a single session throughout"
+    assert len([e for e in bundle.events() if e.kind == "harness.session"]) == 1
+
+
+async def test_staggered_cohorts_start_later_agents_after_a_delay(world):
+    manifest, components, tmp_path = world
+    manifest_path = two_tasks(tmp_path)
+    manifest.tasks = [TaskSpec(source="harbor", path="tasks/first", stagger_seconds=0.2)]
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "url": "http://127.0.0.1:4097"}))
+    result = await run_world(manifest, manifest_path, components(), tmp_path / "runs")
+    assert result.status == "ok"
+    bundle = RunBundle.open(result.bundle_path)
+    staggered = {e.agent_id: e.data["delay"] for e in bundle.events() if e.kind == "task.staggered"}
+    assert staggered == {"agent-2": 0.2}, "agent-1 (index 0) is not delayed; agent-2 (index 1) waits one interval"
+    sessions = {e.agent_id: e.ts for e in bundle.events() if e.kind == "harness.session"}
+    assert sessions["agent-2"] - sessions["agent-1"] >= 0.15, "the cohort behind started later"

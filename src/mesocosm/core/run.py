@@ -272,12 +272,18 @@ class EpisodeSync:
             self.bundle.record("episode.feedback", agent_id=a, task=task.name, episode=episode, text="\n".join(lines))
 
 
-def _side_task_agents(manifest: WorldManifest, task: HarborTask) -> list[str] | None:
-    """Who receives the task's side task: the manifest's `tasks[].side_task`, else everyone."""
+def _task_spec(manifest: WorldManifest, task: HarborTask):
+    """The manifest's TaskSpec for a loaded task (matched by path), or None."""
     for spec in manifest.tasks:
         if spec.path and (pathlib.Path(spec.path).name == task.path.name or task.path.as_posix().endswith(spec.path)):
-            return spec.side_task
+            return spec
     return None
+
+
+def _side_task_agents(manifest: WorldManifest, task: HarborTask) -> list[str] | None:
+    """Who receives the task's side task: the manifest's `tasks[].side_task`, else everyone."""
+    spec = _task_spec(manifest, task)
+    return spec.side_task if spec else None
 
 
 async def _run_task(manifest: WorldManifest, components: Components, bundle: RunBundle, agent: AgentSpec,
@@ -303,17 +309,31 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     protected = plant_protected(task.path, ctx.workspace)
     if protected:
         bundle.record("task.protected", agent_id=agent.id, task=task.name, files=protected)
+    # Cohorts (ADR-0035): agent k in manifest order starts k x stagger_seconds after agent 0, so the agents
+    # ahead have answers the ones behind still want. The delay is real; the time pressure in a round is diegetic.
+    spec = _task_spec(manifest, task)
+    index = [a.id for a in manifest.agents].index(agent.id)
+    stagger = (spec.stagger_seconds if spec else 0.0) * index
+    if stagger:
+        bundle.record("task.staggered", agent_id=agent.id, task=task.name, delay=round(stagger, 3))
+        await asyncio.sleep(stagger)
     bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
                   session_id=ctx.session_id, task=task.name)
-    instruction = task.instruction_for(agent.id, _side_task_agents(manifest, task))
-    side_given = instruction != task.instruction
+    side_agents = _side_task_agents(manifest, task)
+    rounds = task.round_prompts(agent.id, side_agents)
+    side_given = task.side_instruction is not None and (side_agents is None or agent.id in side_agents)
     if side_given:
         bundle.record("task.side_task", agent_id=agent.id, task=task.name, text=task.side_instruction,
                       sha256=hashlib.sha256((task.side_instruction or "").encode("utf-8")).hexdigest())
-    reply = await ctx.harness.send_message(ctx.session_id, instruction, provider_id=manifest.gateway.provider_id,
-                                           model_id=manifest.model_for(agent).id)
-    bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
-                  session_id=ctx.session_id, parts=_parts_summary(reply))
+    reply: dict[str, Any] = {}
+    for r in rounds:
+        if len(rounds) > 1:
+            bundle.record("harness.round", agent_id=agent.id, task=task.name, round=r["index"], seconds=r["seconds"])
+        reply = await ctx.harness.send_message(ctx.session_id, r["prompt"], provider_id=manifest.gateway.provider_id,
+                                               model_id=manifest.model_for(agent).id)
+        bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
+                      session_id=ctx.session_id, round=r["index"] if len(rounds) > 1 else None,
+                      parts=_parts_summary(reply))
     messages = await ctx.harness.list_messages(ctx.session_id)
     bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
     logs_dir = bundle.root / "verifier" / agent.id / task.name

@@ -110,6 +110,8 @@ class TaskSpec(BaseModel):
     name: str | None = None
     side_task: list[str] | None = Field(default=None, description="Agent ids that receive the task's side_task.md "
                                                                   "(ADR-0030); default: every agent")
+    stagger_seconds: float = Field(default=0.0, ge=0, description="Cohorts: agent k (manifest order) starts this "
+                                                                 "task k x stagger_seconds after agent 0 (ADR-0035)")
 
 
 class ModelSpec(BaseModel):
