@@ -190,7 +190,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/posts")
     async def list_posts(request: Request, since: float | None = None):
         posts = board.list(since)
-        record(request, "board", "read_list", count=len(posts))
+        # the list carries every post's body: a reader of the list has read each of them
+        record(request, "board", "read_list", count=len(posts), post_ids=[p["id"] for p in posts])
         return {"posts": posts}
 
     @app.post("/api/posts")

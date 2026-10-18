@@ -205,9 +205,13 @@ def test_service_records_join_reads_to_writes_as_interactions():
     obs.apply_service_record({"ts": 3.0, "service": "board", "op": "read", "agent": "agent-2", "post_id": 1, "sha256": "abc"})
     obs.apply_service_record({"ts": 3.5, "service": "board", "op": "read", "agent": "agent-1", "post_id": 1, "sha256": "abc"})
     obs.apply_service_record({"ts": 4.0, "service": "git", "op": "write", "agent": "curl", "repo": "project"})
+    # listing the board returns every post's body: that is a read of each post by the lister
+    obs.apply_service_record({"ts": 5.0, "service": "board", "op": "read_list", "agent": "agent-2", "count": 1, "post_ids": [1]})
     snap = obs.snapshot()
-    assert snap["interactions"] == [{"ts": 3.0, "from": "agent-1", "to": "agent-2", "service": "board", "key": "1", "sha256": "abc"}]
-    assert snap["service_records"] == 4 and snap["ignored_records"] == 1
+    assert snap["interactions"] == [
+        {"ts": 3.0, "from": "agent-1", "to": "agent-2", "service": "board", "key": "1", "sha256": "abc"},
+        {"ts": 5.0, "from": "agent-1", "to": "agent-2", "service": "board", "key": "1", "sha256": None, "via": "list"}]
+    assert snap["service_records"] == 5 and snap["ignored_records"] == 1
     items = obs.session_details("s1")["items"]
     assert items[0]["kind"] == "service" and items[0]["op"] == "write" and items[0]["summary"] == "sum is 5050"
     # the end-of-run copy inside the bundle feeds the same path when no live log is tailed

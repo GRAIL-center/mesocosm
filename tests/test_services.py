@@ -51,6 +51,7 @@ async def test_board_logs_writer_and_reader_identities(tmp_path):
         r = await a2.post(f"/api/posts/{post_id}/replies", json={"body": "thanks"})
         assert r.status_code == 201 and r.json()["author"] == "agent-2"
         assert (await a1.get("/api/posts")).json()["posts"][0]["replies"] == 1
+        assert log_lines(st.log_path)[-1]["post_ids"] == [post_id], "a list read names the posts it returned"
         assert "I finished wc.py" in (await a1.get("/")).text
         assert (await a1.post("/api/posts", json={"body": ""})).status_code == 400
         assert (await a1.get("/api/posts/99")).status_code == 404

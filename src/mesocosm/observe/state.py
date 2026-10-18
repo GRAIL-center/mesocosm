@@ -258,10 +258,18 @@ class Observer:
         if key is not None and op == "write":
             _put(self._writers, (service, str(key)), agent_id, WRITERS_MAX)
         elif key is not None and op == "read":
-            writer = self._writers.get((service, str(key)))
-            if writer and writer != agent_id:
-                self.interactions.append({"ts": ts, "from": writer, "to": agent_id, "service": service, "key": str(key),
-                                          "sha256": rec.get("sha256")})
+            self._join_read(ts, agent_id, service, key, rec.get("sha256"))
+        elif op == "read_list":                      # a board list carries every post it returns
+            for post_id in rec.get("post_ids") or []:
+                self._join_read(ts, agent_id, service, post_id, None, via="list")
+
+    def _join_read(self, ts, agent_id: str, service: str, key, sha256, via: str | None = None) -> None:
+        writer = self._writers.get((service, str(key)))
+        if writer and writer != agent_id:
+            item = {"ts": ts, "from": writer, "to": agent_id, "service": service, "key": str(key), "sha256": sha256}
+            if via:
+                item["via"] = via
+            self.interactions.append(item)
 
     def apply_manifest(self, manifest_json: dict[str, Any]) -> None:
         """manifest.json of the bundle: the agents that belong to this run."""
