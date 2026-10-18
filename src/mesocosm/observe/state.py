@@ -178,6 +178,7 @@ class Observer:
         self._writers: OrderedDict = OrderedDict()                  # (service, key) -> writer agent id
         self.service_records = 0
         self._live_services = False              # set by the server when it tails services.jsonl directly
+        self.run_conditions: dict[str, Any] = {} # conditions enforced at run level (channels), not per agent
 
     # -- ingestion ------------------------------------------------------------------------
 
@@ -206,7 +207,10 @@ class Observer:
             if node.status == BUSY:
                 node.status = IDLE
         elif kind == "conditions.set":
-            self._agent(agent_id).budget[data.get("condition", "?")] = data.get("result")
+            if agent_id:
+                self._agent(agent_id).budget[data.get("condition", "?")] = data.get("result")
+            else:
+                self.run_conditions[data.get("condition", "?")] = {k: v for k, v in data.items() if k != "condition"}
         elif kind == "verifier.reward":
             agent = self._agent(agent_id)
             agent.rewards.append({"task": data.get("task"), "reward": data.get("reward"), "ts": ts})
@@ -368,6 +372,7 @@ class Observer:
             "run_id": self.run_id, "status": self.status, "started_ts": self.started_ts,
             "last_ts": self.last_ts, "ingested": self.ingested, "ignored_records": self.ignored_records,
             "service_records": self.service_records, "interactions": list(self.interactions),
+            "run_conditions": self.run_conditions,
             "agents": agents,
             "sessions": {sid: n.to_dict() for sid, n in self.sessions.items()},
         }

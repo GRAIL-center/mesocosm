@@ -215,3 +215,12 @@ def test_service_records_join_reads_to_writes_as_interactions():
     obs2.apply_bundle_event(ev("service.write", 2.0, "agent-1", service="board", post_id=7, sha256="x", summary="hi"))
     obs2.apply_bundle_event(ev("service.read", 3.0, "agent-2", service="board", post_id=7, sha256="x"))
     assert obs2.snapshot()["interactions"][0]["to"] == "agent-2" and obs2.snapshot()["service_records"] == 2
+
+
+def test_run_level_conditions_do_not_create_an_agent():
+    obs = Observer()
+    obs.apply_bundle_event(ev("conditions.set", 1.0, None, condition="channel:pastebin", enabled=False, result="applied"))
+    obs.apply_bundle_event(ev("conditions.set", 1.1, "agent-1", condition="budget", result="applied"))
+    snap = obs.snapshot()
+    assert [a["agent_id"] for a in snap["agents"]] == ["agent-1"]
+    assert snap["run_conditions"] == {"channel:pastebin": {"enabled": False, "result": "applied"}}

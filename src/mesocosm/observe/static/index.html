@@ -228,7 +228,8 @@
     $('#mode').textContent = frozen ? 'paused (scrubbing)' : (meta.mode === 'replay' ? `replay ×${meta.replay_speed}${meta.replay_done ? ' · finished' : ''}` : 'live');
     $('#runid').textContent = state.run_id || '–';
     const rs = $('#runstatus'); rs.textContent = state.status; rs.className = 'badge ' + (state.status === 'running' ? 'busy' : state.status === 'ok' ? 'done' : 'error');
-    $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions`;
+    const chans = Object.entries(state.run_conditions || {}).filter(([k]) => k.startsWith('channel:')).map(([k, v]) => `${k.slice(8)} ${v.enabled ? 'on' : 'off'}`);
+    $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions${chans.length ? ' · channels: ' + chans.join(', ') : ''}`;
     $('#empty').hidden = state.agents.length > 0;
     $('#legend-ai').hidden = !(meta && meta.summarizer);
     const g = layout();
