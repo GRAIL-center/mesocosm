@@ -51,8 +51,10 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 | `wiki`: markdown pages, timed visibility, reads logged | supported: both agents read `getting-started` first; timed visibility in tests | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_services.py` |
 | `git`: smart HTTP clone/fetch/push to bare repositories, pushes and fetches logged | supported: both agents cloned and pushed `project`; agent-2's clone of agent-1's push recorded as an interaction | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_services.py` |
 | `pypi`: PEP 503 index over a wheel cache filled at image build; agents' pip points at it | supported: `pip install requests` inside an agent container resolved five wheels from the index with no internet | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_services.py` |
-| `sites`: static mock websites | supported in tests | `tests/test_services.py` |
-| `pastebin` hidden channel: unlisted paste service present only when enabled | supported in tests | `tests/test_services.py` |
+| `sites`: static mock websites (image seeds `vendor-docs`; a manifest may mount its own) | supported: both agents fetched `vendor-docs/changelog.html` from their containers; the hostname now always exists when services are on (the first run showed it missing) | Colab L4 2026-10-18, run `world-channels` (M3 issue); `tests/test_services.py` |
+| `pastebin` hidden channel: unlisted paste service present only when enabled | supported: reachable from both agents when enabled, absent when disabled (`egress-check` lines → receipts); the agents on the benign demo task did not use it | Colab L4 2026-10-18, run `world-channels` (M3 issue); run `world-demo` (M2 issue); `tests/test_services.py` |
+| Fictional accounts (`services.accounts`): HTTP basic auth accepted, never required; `account` / `account_valid` on every logged line; a trap account writes `trap_triggered` with the note of where it was planted; `/admin/state` denied to agent addresses | supported: both agents posted as the documented team account; an operator check from an agent container before the run produced `trap_triggered` and `admin_denied`, and stayed out of the bundle (records older than 5 s before the run are dropped); no agent used the planted credential | Colab L4 2026-10-18, run `world-channels` (M3 issue); `tests/test_services.py`; ADR-0011 |
+| Board list reads join to writes (`post_ids` on `read_list`; observer interactions `via: list`) | supported: the agents' exchange went through `GET /api/posts`; each list read joined to the other agent's post and to the reader's next model requests | Colab L4 2026-10-18, run `world-channels` (M3 issue); `tests/test_observe_state.py` |
 | Services log copied into the bundle as `native/services/services.jsonl` and `service.<op>` events | supported: 63 service records, 689 events in the Docker run | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_run_e2e.py` |
 
 ## Conditions
@@ -61,10 +63,16 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 |---|---|---|---|
 | Completion/prompt token budget per agent | gateway | supported: receipt on set, 429 `mesocosm_budget_exhausted` to the harness, recorded; OpenCode surfaces `session.error` | Colab L4 2026-10-17, #4 |
 | Request-count budget per agent | gateway | supported: stopped a 200-request compaction loop | Colab L4 2026-10-17, #2 |
-| Hidden channel available / unavailable (`channels: [{type: pastebin}]`, `shared_dir`) | compose + services; verified inside every agent by `egress-check`, receipt per channel, run aborts on contradiction | supported for the disabled state in Docker (both agents confirmed absence, receipts `applied`); the enabled state is covered by unit and e2e tests only | Colab L4 2026-10-18, run `world-demo` (M2 issue); `tests/test_run_e2e.py`, `tests/test_services.py`, ADR-0010 |
-| Information exposure timing (when a document becomes readable) | wiki service (`visible_from` / `visible_after_seconds` front matter) | supported by the service (hidden pages 404 and are logged as `read_hidden`); not yet driven from the manifest as a condition (M3) | `tests/test_services.py` |
-| Memory carried / reset | workspace manager + harness session | unverified | M3 |
+| Hidden channel available / unavailable (`channels: [{type: pastebin}]`, `shared_dir`) | compose + services; verified inside every agent by `egress-check`, receipt per channel, run aborts on contradiction | supported for both states in Docker: disabled in `world-demo` (both agents confirmed absence), enabled in `world-channels` (both agents confirmed `pastebin reachable (enabled)` and `shared_dir mounted (enabled)`); receipts `applied` | Colab L4 2026-10-18, run `world-channels` (M3 issue); run `world-demo` (M2 issue); `tests/test_run_e2e.py`, `tests/test_services.py`, ADR-0010 |
+| Information exposure timing (`conditions.exposure: {wiki: {<slug>: <seconds>}}`) | wiki service via `MESOCOSM_WIKI_VISIBILITY`; verified against `/admin/state`, receipt `conditions.set`, run aborts on mismatch (`failed_exposure_verification`) | supported: `release-notes` scheduled at +50 s after the services start; both agents got 404 (`read_hidden`) at +32 s and read the page from +51 s; the receipt records `services_started` | Colab L4 2026-10-18, run `world-channels` (M3 issue); `tests/test_run_e2e.py`, `tests/test_services.py`; ADR-0011 |
+| Memory carried / reset | workspace manager + harness session | `memory: reset` supported (fresh workspace and session per task); `memory: carry` is `rejected_unsupported` until the M3 memory policy exists | `tests/test_manifest.py` |
 | Task difficulty | task adapter | unverified | M3 |
+
+## Run manager
+
+| Behaviour | Status | Evidence |
+|---|---|---|
+| Agents work on a task at the same time (one runner per agent, gathered) | supported: both `harness.session` events in the same second, replies 56–59 s later, steps counted per agent | Colab L4 2026-10-18, run `world-channels` (M3 issue); `tests/test_run_e2e.py` |
 
 ## Isolation
 
