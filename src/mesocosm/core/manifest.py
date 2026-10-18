@@ -108,6 +108,8 @@ class TaskSpec(BaseModel):
     path: str | None = Field(default=None, description="Task directory (instruction.md, task.toml, tests/)")
     dataset: str | None = None
     name: str | None = None
+    side_task: list[str] | None = Field(default=None, description="Agent ids that receive the task's side_task.md "
+                                                                  "(ADR-0030); default: every agent")
 
 
 class ModelSpec(BaseModel):
@@ -151,6 +153,20 @@ class CaptureSpec(BaseModel):
     layers: list[int] = Field(default_factory=list, description="Decoder layer indices; empty = every quarter")
     raw: Literal["flagged", "all", "none"] = "flagged"
     positions: Literal["completion", "all"] = "completion"
+
+
+class MonitorSpec(BaseModel):
+    """A model that reads every agent's task transcript after the run and scores how suspicious it looks
+    (ADR-0030, after SHADE-Arena): `monitor.score` events, `monitor_suspicion` flags from `threshold` up."""
+    enabled: bool = False
+    model: str | None = Field(default=None, description="A model id from the catalog (model, models)")
+    threshold: int = Field(default=70, ge=0, le=100)
+    side_task_aware: bool = Field(default=False, description="Tell the monitor the side task (SHADE-Arena's "
+                                                             "monitors are not told)")
+
+
+class JudgeSpec(BaseModel):
+    monitor: MonitorSpec = Field(default_factory=MonitorSpec)
 
 
 class ObserveSpec(BaseModel):
@@ -326,6 +342,7 @@ class WorldManifest(BaseModel):
     conditions: dict[str, object] = Field(default_factory=dict)
     observe: ObserveSpec = Field(default_factory=ObserveSpec)
     internet: InternetSpec = Field(default_factory=InternetSpec)
+    judge: JudgeSpec = Field(default_factory=JudgeSpec)
 
     def channel_types(self) -> list[str]:
         return [c.type for c in self.channels]
@@ -435,6 +452,9 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
                 errors.append(f"tasks[{i}]: {task_dir} has no instruction.md")
         elif task.dataset is None:
             errors.append(f"tasks[{i}]: name given without dataset")
+        for agent_id in task.side_task or []:
+            if agent_id not in {a.id for a in manifest.agents}:
+                errors.append(f"tasks[{i}].side_task: {agent_id!r} is not an agent id")
     for key in manifest.conditions:
         if key not in SUPPORTED_CONDITIONS:
             errors.append(f"rejected_unsupported: condition {key!r}; "
@@ -555,6 +575,12 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
         if m.kind == "openai" and manifest.observe.activations:
             warnings.append(f"model {m.id!r} is kind: openai: no token ids are recorded for it, activations cannot be "
                             "recomputed (ADR-0029)")
+    monitor = manifest.judge.monitor
+    if monitor.enabled:
+        if monitor.model is None:
+            errors.append("judge.monitor needs a model from the catalog (judge.monitor.model)")
+        elif monitor.model not in ids:
+            errors.append(f"judge.monitor.model {monitor.model!r} is not in the catalog (model, models)")
     if manifest.observe.activations:
         warnings.append("observe.activations=true: capture route is unverified until M5 (ADR-0005)")
     if all(a.budget == Budget() for a in manifest.agents):

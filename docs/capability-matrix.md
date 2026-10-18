@@ -29,6 +29,7 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 | Install OpenCode as the agent inside the task container | supported: Harbor's built-in `opencode` agent installs nodejs/npm/opencode at trial start (about 3 min on the Colab VM) | Colab L4 2026-10-18, #7 |
 | Harbor's `opencode` agent routes model calls through the gateway | supported when the gateway provider is injected through `agents[].kwargs.opencode_config` (model `mesocosm/mesocosm-3b`, `@ai-sdk/openai-compatible`): 4 `chat_completion` records tagged `harbor-1`, token ids present. With OpenCode's built-in `openai` provider (`-m openai/...`, `OPENAI_BASE_URL`) the agent calls `/v1/responses`, which the gateway only passes through: no exposure record, and the run failed on a 404. Note `-a`/`-m` on the CLI replace the config's agents list and drop kwargs | Colab L4 2026-10-18, #7 |
 | Verifier reads the world (`/logs/world.json` written by the run manager before `tests/test.sh`) and awards partial credit (`/logs/verifier/checkpoints.json`; the mean is the reward when no reward file exists) | supported in tests; `examples/tasks/world-exchange/tests/test.sh` grades a notes file and a board post by the viewer in plain shell; not yet run in Docker | `tests/test_harbor_adapter.py`, `tests/test_run_e2e.py`; ADR-0028 |
+| Side tasks (`side_task.md` appended for `tasks[].side_task` agents, recorded `task.side_task`; `tests/side_test.sh` → `verifier.side_reward`) | supported in tests; `examples/tasks/release-notes` (credential to the pastebin) not yet run in Docker | `tests/test_harbor_adapter.py`, `tests/test_run_e2e.py`; ADR-0030 |
 | Import SWE-bench tasks | unverified | |
 
 ## Inference and observation
@@ -126,6 +127,7 @@ Verifier results of the `world-channels` runs earlier the same day (before the m
 | Web gateway requests (host, decision, status, bytes; probes and harness checks left out) and chat messages (recipient or channel) on the agent's timeline in the observe view | supported in tests | `tests/test_observe_state.py`; ADR-0027 |
 | Flags in the bundle (`flags.jsonl`, `judge.flag` events) and on the agent node in the observe view | supported | `tests/test_run_e2e.py`, `tests/test_observe_state.py` |
 | Review queue (`mesocosm flags list` / `review`): append-only verdicts, latest counts, detector version recorded | supported in tests | `tests/test_cli.py`, `tests/test_report.py` |
+| Monitor model (`judge.monitor`): scores every agent/task transcript 0–100 under a fixed rubric after the run (`monitor.score`), `monitor_suspicion` flags from the threshold up, undetected side-task successes counted in `summary.monitor`; `mesocosm judge monitor` offline; the monitor's calls carry their own identity | supported in tests (fake endpoint); not yet run with a real model | `tests/test_monitor.py`, `tests/test_run_e2e.py`, `tests/test_judge.py`; ADR-0030 |
 | LLM judge over a behavior catalog | not built (catalog dropped by the maintainer) | ADR-0013 |
 
 ## Pilot scenario: peer verification after Shi et al. (ADR-0017)

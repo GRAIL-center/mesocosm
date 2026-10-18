@@ -5,6 +5,10 @@ Task layout (Harbor docs, tasks/overview): instruction.md, task.toml, environmen
 /logs/verifier/checkpoints.json, {name: true | false | number}: partial credit (ADR-0028), the reward itself
 (their mean) when no reward file exists. The run manager puts the world's state at /logs/world.json first.
 
+A task may carry a side task (ADR-0030, after SHADE-Arena): side_task.md is appended to the instruction of
+the agents the manifest names (all by default) and tests/side_test.sh, run like test.sh into its own logs
+directory, says whether it was accomplished.
+
 Running the verifier needs Docker; building the command and reading the reward do not.
 """
 
@@ -27,11 +31,13 @@ class HarborTask:
     has_environment: bool
     has_tests: bool
     has_solution: bool
+    side_instruction: str | None = None
+    has_side_tests: bool = False
 
     def provenance(self) -> dict[str, Any]:
         """What the task is and exactly which text the agent and verifier saw."""
         toml = self.path / "task.toml"
-        test_sh = self.path / "tests" / "test.sh"
+        test_sh, side_sh = self.path / "tests" / "test.sh", self.path / "tests" / "side_test.sh"
         return {
             "source": "harbor",
             "name": self.name,
@@ -39,7 +45,16 @@ class HarborTask:
             "instruction_sha256": _sha256(self.instruction.encode("utf-8")),
             "task_toml_sha256": _sha256(toml.read_bytes()) if toml.exists() else None,
             "test_sh_sha256": _sha256(test_sh.read_bytes()) if self.has_tests else None,
+            "side_task_sha256": _sha256(self.side_instruction.encode("utf-8")) if self.side_instruction else None,
+            "side_test_sh_sha256": _sha256(side_sh.read_bytes()) if self.has_side_tests else None,
         }
+
+    def instruction_for(self, agent_id: str, side_task_agents: list[str] | None) -> str:
+        """The instruction an agent gets: the task, plus the side task when the agent is one of its recipients
+        (`side_task_agents`; None = every agent)."""
+        if self.side_instruction and (side_task_agents is None or agent_id in side_task_agents):
+            return self.instruction.rstrip("\n") + "\n\n" + self.side_instruction.strip() + "\n"
+        return self.instruction
 
 
 def _sha256(data: bytes) -> str:
@@ -55,11 +70,14 @@ def load_task(path: str | pathlib.Path) -> HarborTask:
     if (path / "task.toml").is_file():
         config = tomllib.loads((path / "task.toml").read_text(encoding="utf-8"))
     name = (config.get("metadata") or {}).get("name") or path.name
+    side = path / "side_task.md"
     return HarborTask(
         path=path, name=name, instruction=instruction_file.read_text(encoding="utf-8"), config=config,
         has_environment=(path / "environment").is_dir(),
         has_tests=(path / "tests" / "test.sh").is_file(),
         has_solution=(path / "solution").is_dir(),
+        side_instruction=side.read_text(encoding="utf-8") if side.is_file() else None,
+        has_side_tests=(path / "tests" / "side_test.sh").is_file(),
     )
 
 
@@ -136,18 +154,19 @@ def _reward_file(vdir: pathlib.Path) -> Reward | None:
 
 
 def verifier_command(task: HarborTask, *, workspace: pathlib.Path, logs_dir: pathlib.Path,
-                     image: str = "debian:bookworm-slim", timeout_sec: int | None = None) -> list[str]:
-    """`docker run` that executes tests/test.sh against the agent's workspace with no network.
+                     image: str = "debian:bookworm-slim", timeout_sec: int | None = None,
+                     script: str = "test.sh") -> list[str]:
+    """`docker run` that executes tests/<script> against the agent's workspace with no network.
 
     The workspace is mounted at /app (where the task environment works) and the task's tests/
     read-only at /tests; the verifier writes /logs/verifier/reward.*."""
-    if not task.has_tests:
-        raise FileNotFoundError(f"{task.path}: tests/test.sh missing")
+    if not (task.path / "tests" / script).is_file():
+        raise FileNotFoundError(f"{task.path}: tests/{script} missing")
     timeout = timeout_sec or int(((task.config.get("verifier") or {}).get("timeout_sec")) or 600)
     return [
         "docker", "run", "--rm", "--network", "none",
         "-v", f"{workspace.resolve()}:/app",
         "-v", f"{(task.path / 'tests').resolve()}:/tests:ro",
         "-v", f"{logs_dir.resolve()}:/logs",
-        image, "timeout", str(timeout), "sh", "/tests/test.sh",
+        image, "timeout", str(timeout), "sh", f"/tests/{script}",
     ]

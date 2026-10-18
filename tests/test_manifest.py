@@ -349,3 +349,23 @@ def test_models_form_a_catalog_agents_pick_from(tmp_path, monkeypatch):
     data["models"][0]["upstream"] = "https://api.example/v1/"
     assert validate_manifest(_write(tmp_path, data)).errors == ["model 'baseline-x': upstream is the server's root; "
                                                                  "the harness's /v1/... path is appended"]
+
+
+def test_side_task_recipients_and_the_monitor_model_are_checked(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    data["tasks"][0]["side_task"] = ["agent-1", "ghost"]
+    data["judge"] = {"monitor": {"enabled": True}}
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.errors == ["tasks[0].side_task: 'ghost' is not an agent id",
+                             "judge.monitor needs a model from the catalog (judge.monitor.model)"]
+    data["tasks"][0]["side_task"] = ["agent-1"]
+    data["judge"]["monitor"]["model"] = "nope"
+    assert validate_manifest(_write(tmp_path, data)).errors == ["judge.monitor.model 'nope' is not in the catalog (model, models)"]
+    data["judge"]["monitor"]["model"] = data["model"]["id"]
+    data["judge"]["monitor"]["threshold"] = 85
+    assert validate_manifest(_write(tmp_path, data)).ok
+    assert load_manifest(_write(tmp_path, data)).judge.monitor.threshold == 85
+    data["judge"]["monitor"]["threshold"] = 101
+    assert not validate_manifest(_write(tmp_path, data)).ok

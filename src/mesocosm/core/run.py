@@ -59,7 +59,8 @@ RECORD_SLACK_SECONDS = 5.0  # clock skew allowed between the control plane and t
 
 
 class Verifier(Protocol):
-    async def verify(self, task: HarborTask, workspace: pathlib.Path, logs_dir: pathlib.Path) -> Reward: ...
+    async def verify(self, task: HarborTask, workspace: pathlib.Path, logs_dir: pathlib.Path,
+                     script: str = "test.sh") -> Reward: ...
 
 
 class EgressVerifier(Protocol):
@@ -81,6 +82,7 @@ class Components:
     restored_from: pathlib.Path | None = None        # a fork: the snapshot the world was restored from
     restore_result: dict[str, Any] | None = None     # the restore's verification, recorded as run.restored
     lineage: dict[str, Any] | None = None            # parent run, snapshot, patch -> lineage.json
+    monitor: Any | None = None                       # judge.monitor's model (judge.monitor.MonitorModel), if enabled
 
 
 @dataclass
@@ -270,11 +272,20 @@ class EpisodeSync:
             self.bundle.record("episode.feedback", agent_id=a, task=task.name, episode=episode, text="\n".join(lines))
 
 
+def _side_task_agents(manifest: WorldManifest, task: HarborTask) -> list[str] | None:
+    """Who receives the task's side task: the manifest's `tasks[].side_task`, else everyone."""
+    for spec in manifest.tasks:
+        if spec.path and (pathlib.Path(spec.path).name == task.path.name or task.path.as_posix().endswith(spec.path)):
+            return spec.side_task
+    return None
+
+
 async def _run_task(manifest: WorldManifest, components: Components, bundle: RunBundle, agent: AgentSpec,
                     task: HarborTask, ctx: AgentContext, marks: dict[str, Any],
                     sync: EpisodeSync | None = None) -> float | None:
     """One task for one agent: memory policy, planted files, harness turn, native log, verifier, state check;
-    under peer review also the episode's opening, scoring and feedback."""
+    under peer review also the episode's opening, scoring and feedback; with a side task its delivery and
+    its own verifier (ADR-0030)."""
     if sync is not None:
         await sync.open(task)
     keep = components.restored_from if (components.restored_from is not None and ctx.tasks_done == 0) else None
@@ -294,7 +305,12 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
         bundle.record("task.protected", agent_id=agent.id, task=task.name, files=protected)
     bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
                   session_id=ctx.session_id, task=task.name)
-    reply = await ctx.harness.send_message(ctx.session_id, task.instruction, provider_id=manifest.gateway.provider_id,
+    instruction = task.instruction_for(agent.id, _side_task_agents(manifest, task))
+    side_given = instruction != task.instruction
+    if side_given:
+        bundle.record("task.side_task", agent_id=agent.id, task=task.name, text=task.side_instruction,
+                      sha256=hashlib.sha256((task.side_instruction or "").encode("utf-8")).hexdigest())
+    reply = await ctx.harness.send_message(ctx.session_id, instruction, provider_id=manifest.gateway.provider_id,
                                            model_id=manifest.model_for(agent).id)
     bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
                   session_id=ctx.session_id, parts=_parts_summary(reply))
@@ -313,6 +329,15 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
                   task=task.name, reward=reward.value, source=reward.source, labels=reward.labels,
                   checkpoints=reward.checkpoints or None, **marks)
+    if side_given and task.has_side_tests:
+        side_dir = logs_dir / "side"
+        side_dir.mkdir(parents=True, exist_ok=True)
+        if (logs_dir / "world.json").exists():
+            (side_dir / "world.json").write_text((logs_dir / "world.json").read_text(encoding="utf-8"),
+                                                 encoding="utf-8")
+        side = await components.verifier.verify(task, ctx.workspace, side_dir, script="side_test.sh")
+        bundle.record("verifier.side_reward", agent_id=agent.id, step=bundle.next_step(agent.id), task=task.name,
+                      reward=side.value, source=side.source, checkpoints=side.checkpoints or None)
     if protected:
         bundle.record("judge.state_check", agent_id=agent.id, check="protected_files", task=task.name,
                       files=protected_state(ctx.workspace, protected))
@@ -602,6 +627,13 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     # Environment-state checks that need the sandbox, then the judge over everything recorded.
     if components.shared_files is not None and "shared_dir" in manifest.channel_types():
         bundle.record("judge.state_check", check="shared_dir", files=await components.shared_files())
+    monitor_summary = None
+    if components.monitor is not None and manifest.judge.monitor.enabled:
+        from mesocosm.judge.monitor import score_bundle
+
+        monitor_summary = await score_bundle(bundle, components.monitor, manifest.judge.monitor.threshold,
+                                             manifest.judge.monitor.side_task_aware)
+        bundle.record("monitor.done", **monitor_summary)
     events = bundle.events()
     flags = detect(events, bundle.run_id)
     for flag in flags:
@@ -610,7 +642,10 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                       summary=flag.summary, detector=flag.detector, detector_version=flag.detector_version)
 
     status = "stopped" if stop_requested(bundle.root) else "ok"
+    side_rewards = {f"{e.agent_id}/{e.data.get('task')}": e.data.get("reward")
+                    for e in events if e.kind == "verifier.side_reward"}
     bundle.write_summary({"status": status, "run_label": run_label, "mode": manifest.mode, "rewards": rewards,
+                          "side_rewards": side_rewards or None, "monitor": monitor_summary,
                           "tasks_taken": tasks_taken,
                           "model_calls": model_calls,
                           "service_records": service_records, "web_records": web_records,
@@ -692,10 +727,11 @@ class DockerVerifier:
     def __init__(self, image: str = "debian:bookworm-slim"):
         self.image = image
 
-    async def verify(self, task: HarborTask, workspace: pathlib.Path, logs_dir: pathlib.Path) -> Reward:
+    async def verify(self, task: HarborTask, workspace: pathlib.Path, logs_dir: pathlib.Path,
+                     script: str = "test.sh") -> Reward:
         from mesocosm.adapters.harbor.task import read_reward, verifier_command
 
-        cmd = verifier_command(task, workspace=workspace, logs_dir=logs_dir, image=self.image)
+        cmd = verifier_command(task, workspace=workspace, logs_dir=logs_dir, image=self.image, script=script)
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
                                                     stderr=asyncio.subprocess.STDOUT)
         out, _ = await proc.communicate()

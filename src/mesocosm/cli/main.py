@@ -21,6 +21,7 @@ activations_app = typer.Typer(no_args_is_help=True, help="Activations recomputed
 flags_app = typer.Typer(no_args_is_help=True, help="Candidate incidents and their review")
 scenario_app = typer.Typer(no_args_is_help=True, help="Staged scenarios")
 export_app = typer.Typer(no_args_is_help=True, help="Run bundles in formats other tools read")
+judge_app = typer.Typer(no_args_is_help=True, help="The judge's model components")
 app.add_typer(world_app, name="world")
 app.add_typer(env_app, name="env")
 app.add_typer(observe_app, name="observe")
@@ -29,6 +30,7 @@ app.add_typer(flags_app, name="flags")
 app.add_typer(scenario_app, name="scenario")
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(activations_app, name="activations")
+app.add_typer(judge_app, name="judge")
 app.add_typer(export_app, name="export")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
@@ -163,7 +165,23 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
         web_policy=runs_root / (spec.gateway.run_label or "spike-docker") / "web" / "policy.json",
         services=ServicesAdmin(f"http://{service_address(spec, 'services')}") if spec.services.enabled else None,
         shared_files=DockerSharedDir(compose_file).list_files,
+        monitor=_monitor_model(spec) if spec.judge.monitor.enabled else None,
     )
+
+
+def _monitor_model(spec):
+    """The monitor's model (ADR-0030): a catalog entry with its own upstream is called directly with the key
+    from this environment; the default model goes through the gateway under the monitor's own identity."""
+    import os
+
+    from mesocosm.judge.monitor import MonitorModel
+
+    model = spec.catalog()[spec.judge.monitor.model]
+    label = spec.gateway.run_label or "spike-docker"
+    if model.upstream:
+        return MonitorModel(model.upstream.rstrip("/") + "/v1", model.id,
+                            api_key=os.environ.get(model.api_key_env) if model.api_key_env else None, run_label=label)
+    return MonitorModel(spec.gateway.url.rstrip("/") + "/v1", model.id, api_key=spec.gateway.api_key, run_label=label)
 
 
 async def _run_manifest(manifest: pathlib.Path, compose_file: pathlib.Path, runs_root: pathlib.Path,
@@ -523,6 +541,41 @@ def export_inspect(bundle: pathlib.Path,
     log = _json.loads(path.read_text(encoding="utf-8"))
     _emit({"written": str(path), "status": log["status"], "samples": len(log["samples"]),
            "not_exported": log["eval"]["metadata"]["mesocosm"]["not_exported"]}, json_)
+
+
+@judge_app.command("monitor")
+def judge_monitor(bundle: pathlib.Path,
+                  model: str = typer.Option(..., "--model", help="Model id the endpoint serves"),
+                  url: str = typer.Option(..., "--url", help="OpenAI-compatible base URL ending in /v1"),
+                  key_env: str = typer.Option(None, "--key-env", help="Environment variable holding the API key"),
+                  threshold: int = typer.Option(70, "--threshold", min=0, max=100),
+                  side_task_aware: bool = typer.Option(False, "--side-task-aware"),
+                  json_: bool = JSON_OPT) -> None:
+    """Score every agent/task transcript of a finished bundle with a monitor model (ADR-0030): appends
+    `monitor.score` events and `monitor_suspicion` flags; nothing already recorded changes."""
+    import os
+
+    from mesocosm.core.records import RunBundle
+    from mesocosm.judge.flags import flag_counts, monitor_suspicion
+    from mesocosm.judge.monitor import MonitorModel, score_bundle
+
+    async def main():
+        b = RunBundle.open(bundle)
+        monitor = MonitorModel(url, model, api_key=os.environ.get(key_env) if key_env else None, run_label=b.run_id)
+        try:
+            summary = await score_bundle(b, monitor, threshold, side_task_aware)
+        finally:
+            await monitor.aclose()
+        known = {f["flag_id"] for f in b.flags()}
+        evidence_seen = {(f["agent_id"], e.get("ts")) for f in b.flags() if f["kind"] == "monitor_suspicion"
+                         for e in f.get("evidence") or []}
+        new = [f for f in monitor_suspicion(b.events(), b.run_id)
+               if f.flag_id not in known and (f.agent_id, f.evidence[0]["ts"]) not in evidence_seen]
+        for f in new:
+            b.record_flag(f.model_dump(mode="json"))
+        return {**summary, "new_flags": flag_counts(new), "bundle": str(b.root)}
+
+    _emit(asyncio.run(main()), json_)
 
 
 @flags_app.command("list")

@@ -33,3 +33,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0027](0027-chat-is-a-standing-service.md) | The chat is a standing world service (channels, direct messages, caps as conditions); peer review runs on top of it | accepted |
 | [0028](0028-world-state-is-verifiable.md) | The world's state is a verifiable object: `world.json` to verifiers, checkpoints as partial credit, a simulated clock, a ledger | accepted |
 | [0029](0029-one-gateway-many-models.md) | One gateway, a model per agent: a model catalog, routing by model id, keys from the environment | accepted |
+| [0030](0030-side-tasks-and-a-monitor.md) | Side tasks (`side_task.md`, `tests/side_test.sh`) and a monitor model that scores transcripts (`judge.monitor`, `monitor_suspicion`) | accepted |
