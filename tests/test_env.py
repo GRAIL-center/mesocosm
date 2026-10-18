@@ -146,6 +146,21 @@ def test_chat_adds_the_hostname_and_carries_its_limits_and_peer_review_rides_on_
     assert "chat" not in plain["services"]["services"]["networks"]["sandbox"]["aliases"]
 
 
+def test_clock_and_ledger_get_hostnames_and_their_configuration():
+    from mesocosm.core.manifest import ClockSpec, LedgerSpec
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest.services.clock = ClockSpec(enabled=True, origin="2026-03-01T08:00:00", speed=12)
+    manifest.services.ledger = LedgerSpec(enabled=True, unit="tokens", initial={"agent-1": 500})
+    svc = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]["services"]
+    assert svc["networks"]["sandbox"]["aliases"] == ["services", "board", "wiki", "git", "pypi", "clock", "ledger"]
+    assert yaml.safe_load(svc["environment"]["MESOCOSM_CLOCK"]) == {"origin": "2026-03-01T08:00:00", "speed": 12.0}
+    assert yaml.safe_load(svc["environment"]["MESOCOSM_LEDGER"]) == {"unit": "tokens", "initial": {"agent-1": 500.0}}
+    assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "board,wiki,git,pypi,clock,ledger"
+    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    env = plain["services"]["services"]["environment"]
+    assert env["MESOCOSM_CLOCK"] == "null" and env["MESOCOSM_LEDGER"] == "null"
+
+
 def test_agent_files_carry_the_harness_config_and_identity_and_nothing_of_the_platform(tmp_path):
     manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
     manifest.agents.append(manifest.agents[0].model_copy(update={

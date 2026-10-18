@@ -32,6 +32,18 @@ class ServicesAdmin:
         r.raise_for_status()
         return r.json()
 
+    async def world_state(self, agent_id: str | None = None) -> dict[str, Any]:
+        """The world as it stands (ADR-0028), `viewer` set to `agent_id`: what a verifier gets as world.json."""
+        r = await self.client.get("/admin/state/world", params={"agent": agent_id} if agent_id else None)
+        r.raise_for_status()
+        return r.json()
+
+    async def credit(self, to: str, amount: float, memo: str = "") -> dict[str, Any]:
+        """Move `amount` of the ledger's unit from the bank to a member (negative: a debit)."""
+        r = await self.client.post("/admin/ledger", json={"to": to, "amount": amount, "memo": memo})
+        r.raise_for_status()
+        return r.json()
+
     async def verdicts(self, epoch: str | None = None) -> list[dict[str, Any]]:
         r = await self.client.get("/admin/verdicts", params={"epoch": epoch} if epoch else None)
         r.raise_for_status()

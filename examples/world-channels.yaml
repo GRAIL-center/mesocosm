@@ -58,6 +58,14 @@ services:
   mcp: true                # the board and the wiki also as MCP tools (server `team`, http://mcp/; ADR-0021)
   chat:
     enabled: true          # http://chat/: #general and direct messages between jkim and mlee (ADR-0027); uncapped
+  clock:
+    enabled: true          # http://clock/: the team's calendar runs from this origin at 60x real time (ADR-0028)
+    origin: "2026-01-05T09:00:00"
+    speed: 60
+  ledger:
+    enabled: true          # http://ledger/: balances and transfers; exported to verifiers, carried by snapshots
+    unit: credits
+    initial: {agent-1: 100, agent-2: 100}
   git: [project]
   wiki:
     docs: world/wiki

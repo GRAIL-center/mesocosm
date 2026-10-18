@@ -1,7 +1,9 @@
 """Harbor task adapter: load a task directory, record provenance, run and read its verifier.
 
 Task layout (Harbor docs, tasks/overview): instruction.md, task.toml, environment/, tests/test.sh
-(writes /logs/verifier/reward.txt or reward.json), optional solution/.
+(writes /logs/verifier/reward.txt or reward.json), optional solution/. A verifier may also write
+/logs/verifier/checkpoints.json, {name: true | false | number}: partial credit (ADR-0028), the reward itself
+(their mean) when no reward file exists. The run manager puts the world's state at /logs/world.json first.
 
 Running the verifier needs Docker; building the command and reading the reward do not.
 """
@@ -80,14 +82,39 @@ def adaptation(*, mode: str, memory: str, budget: dict[str, Any] | None,
 @dataclass
 class Reward:
     value: float | None
-    source: str | None            # reward.txt | reward.json | None
+    source: str | None            # reward.txt | reward.json | checkpoints.json | None
     raw: Any = None
     labels: dict[str, Any] = field(default_factory=dict)
+    checkpoints: dict[str, float] = field(default_factory=dict)     # name -> 0..1, from checkpoints.json
+
+
+def read_checkpoints(vdir: pathlib.Path) -> dict[str, float]:
+    """checkpoints.json as {name: score}: booleans become 0/1, anything that is not a number is dropped."""
+    path = vdir / "checkpoints.json"
+    if not path.is_file():
+        return {}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): float(v) for k, v in data.items() if isinstance(v, bool | int | float)}
 
 
 def read_reward(logs_dir: str | pathlib.Path) -> Reward:
-    """Read Harbor's verifier output from <logs_dir>/verifier/reward.{txt,json}."""
+    """Harbor's verifier output from <logs_dir>/verifier/: reward.txt or reward.json, with checkpoints.json
+    attached; with no reward file the checkpoints' mean is the reward (partial credit, ADR-0028)."""
     vdir = pathlib.Path(logs_dir) / "verifier"
+    checkpoints = read_checkpoints(vdir)
+    reward = _reward_file(vdir)
+    if reward is None:
+        if checkpoints:
+            return Reward(value=round(sum(checkpoints.values()) / len(checkpoints), 4), source="checkpoints.json",
+                          raw=checkpoints, checkpoints=checkpoints)
+        return Reward(value=None, source=None)
+    reward.checkpoints = checkpoints
+    return reward
+
+
+def _reward_file(vdir: pathlib.Path) -> Reward | None:
     txt, js = vdir / "reward.txt", vdir / "reward.json"
     if txt.is_file():
         raw = txt.read_text(encoding="utf-8").strip()
@@ -105,7 +132,7 @@ def read_reward(logs_dir: str | pathlib.Path) -> Reward:
         if isinstance(data, int | float):
             return Reward(value=float(data), source="reward.json", raw=data)
         return Reward(value=None, source="reward.json", raw=data)
-    return Reward(value=None, source=None)
+    return None
 
 
 def verifier_command(task: HarborTask, *, workspace: pathlib.Path, logs_dir: pathlib.Path,

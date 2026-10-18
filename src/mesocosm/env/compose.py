@@ -73,6 +73,7 @@ def world_hostnames(manifest: WorldManifest) -> list[str]:
     offered = (("board", manifest.services.board), ("wiki", True), ("git", bool(manifest.services.git)),
                ("pypi", bool(manifest.services.pypi)),
                ("pastebin", "pastebin" in channels), ("chat", manifest.services.chat.enabled),
+               ("clock", manifest.services.clock.enabled), ("ledger", manifest.services.ledger.enabled),
                ("mcp", manifest.services.mcp))
     return [n for n, on in offered if on]
 
@@ -251,6 +252,10 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                                             if manifest.services.chat.enabled else None),
                 "MESOCOSM_PEER_REVIEW": json.dumps(manifest.services.peer_review.model_dump()
                                                    if manifest.services.peer_review.enabled else None),
+                "MESOCOSM_CLOCK": json.dumps(manifest.services.clock.model_dump(exclude={"enabled"})
+                                             if manifest.services.clock.enabled else None),
+                "MESOCOSM_LEDGER": json.dumps(manifest.services.ledger.model_dump(exclude={"enabled"})
+                                              if manifest.services.ledger.enabled else None),
             },
             "volumes": volumes,
         }

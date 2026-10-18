@@ -7,6 +7,7 @@ choices that are allowed but that the researcher should know about.
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import pathlib
@@ -208,11 +209,37 @@ def reviewers(agent_ids: list[str], topology: str = "all") -> dict[str, list[str
     return {a: [p for p in agent_ids if p != a] for a in agent_ids}
 
 
+class ClockSpec(BaseModel):
+    """A simulated calendar at the `clock` hostname (ADR-0028): `origin` is the simulated date-time at the run
+    start, `speed` how many simulated seconds pass per real second. The run manager anchors it to the run start
+    together with the exposure schedule (`/admin/clock`)."""
+    enabled: bool = False
+    origin: str = Field(default="2026-01-05T09:00:00", description="ISO 8601 date-time; no zone = UTC")
+    speed: float = Field(default=1.0, gt=0)
+
+    @field_validator("origin", mode="before")
+    @classmethod
+    def _origin_as_text(cls, value: object) -> object:
+        """YAML reads an unquoted `2026-01-05T09:00:00` as a datetime; keep the manifest's text form."""
+        return value.isoformat() if isinstance(value, dt.datetime | dt.date) else value
+
+
+class LedgerSpec(BaseModel):
+    """Balances at the `ledger` hostname (ADR-0028): every member holds `unit`s, a transfer beyond the balance is
+    refused and logged, the control plane credits and debits through `/admin/ledger`. Balances are world state:
+    exported to verifiers, carried by snapshots."""
+    enabled: bool = False
+    unit: str = Field(default="credits", pattern=r"^[A-Za-z][A-Za-z0-9 _-]{0,20}$")
+    initial: dict[str, float] = Field(default_factory=dict, description="Opening balance by agent id; others 0")
+
+
 class ServicesSpec(BaseModel):
     """The shared world inside the sandbox (mesocosm.env.services). Enabled by default."""
     enabled: bool = True
     board: bool = True
     chat: ChatSpec = Field(default_factory=ChatSpec)
+    clock: ClockSpec = Field(default_factory=ClockSpec)
+    ledger: LedgerSpec = Field(default_factory=LedgerSpec)
     peer_review: PeerReviewSpec = Field(default_factory=PeerReviewSpec)
     wiki: WikiSpec = Field(default_factory=WikiSpec)
     git: list[str] = Field(default_factory=lambda: ["project"], description="Shared repository names")
@@ -446,8 +473,18 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             errors.append("conditions.exposure: expected {wiki: {<page slug>: <seconds after start>}}")
         elif not manifest.services.enabled:
             errors.append("rejected_unsupported: conditions.exposure needs services.enabled")
-    if manifest.services.chat.enabled and not manifest.services.enabled:
-        errors.append("rejected_unsupported: services.chat needs services.enabled")
+    for name, on in (("chat", manifest.services.chat.enabled), ("clock", manifest.services.clock.enabled),
+                     ("ledger", manifest.services.ledger.enabled)):
+        if on and not manifest.services.enabled:
+            errors.append(f"rejected_unsupported: services.{name} needs services.enabled")
+    if manifest.services.clock.enabled:
+        try:
+            dt.datetime.fromisoformat(manifest.services.clock.origin)
+        except ValueError:
+            errors.append(f"services.clock.origin: {manifest.services.clock.origin!r} is not an ISO 8601 date-time")
+    for agent_id in manifest.services.ledger.initial:
+        if agent_id not in {a.id for a in manifest.agents}:
+            errors.append(f"services.ledger.initial: {agent_id!r} is not an agent id")
     if manifest.services.peer_review.enabled:
         if len(manifest.agents) < 2:
             errors.append("services.peer_review needs at least two agents")

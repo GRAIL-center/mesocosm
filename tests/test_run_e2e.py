@@ -383,6 +383,9 @@ class FakeServices:
     async def state(self):
         return {"channels": [], "wiki_visibility": self.wiki_visibility, "traps": [], "started": self.started}
 
+    async def world_state(self, agent_id=None):
+        return {"viewer": {"agent_id": agent_id}, "board": {"posts": []}}
+
 
 
 
@@ -583,6 +586,10 @@ class FakePeerServices:
         self.feedback.append((to, epoch, text))
         return {"id": len(self.feedback)}
 
+    async def world_state(self, agent_id=None):
+        return {"viewer": {"agent_id": agent_id, "username": agent_id}, "board": {"posts": []},
+                "chat": {"messages": [{"from": "agent-2", "to": agent_id, "text": "psst"}]}}
+
 
 async def test_peer_review_runs_episodes_in_lockstep_scores_verdicts_and_feeds_back(world):
     manifest, components, tmp_path = world
@@ -611,6 +618,12 @@ async def test_peer_review_runs_episodes_in_lockstep_scores_verdicts_and_feeds_b
     assert result.status == "ok" and len(result.rewards) == 6
     bundle = RunBundle.open(result.bundle_path)
     assert services.epochs == ["first", "second"], "an episode is opened once, by whichever agent gets there first"
+    # the world as it stood went to every verifier as world.json, with the agent under verification as the viewer
+    world = json.loads((result.bundle_path / "verifier" / "agent-2" / "first" / "world.json").read_text())
+    assert world["viewer"]["agent_id"] == "agent-2" and world["chat"]["messages"][0]["text"] == "psst"
+    exported = [e for e in bundle.events() if e.kind == "verifier.world_state"]
+    assert len(exported) == 6 and exported[0].data["size"] > 50 and len(exported[0].data["sha256"]) == 64
+    assert next(e for e in bundle.events() if e.kind == "verifier.reward").data["checkpoints"] is None
     episodes = [e for e in bundle.events() if e.kind == "peer_review.episode"]
     # every agent was correct: six right ACCEPTs in episode 1; in episode 2 only agent-1->agent-3 and agent-3->agent-1
     assert [(e.data["episode"], e.data["reward"], e.data["mutual_accept"]) for e in episodes] == [(1, 60, True), (2, 20, False)]

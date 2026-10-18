@@ -17,6 +17,7 @@ same code runs against fakes in tests and against the real services from the CLI
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import pathlib
 import time
@@ -301,9 +302,17 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
     logs_dir = bundle.root / "verifier" / agent.id / task.name
     logs_dir.mkdir(parents=True, exist_ok=True)
+    if components.services is not None:
+        # The world as it stands goes to the verifier as /logs/world.json (ADR-0028): a task can grade what the
+        # agent did to the board, the wiki, the chat, the ledger or the repositories, not only its workspace.
+        world = _json(await components.services.world_state(agent.id))
+        (logs_dir / "world.json").write_text(world, encoding="utf-8")
+        bundle.record("verifier.world_state", agent_id=agent.id, task=task.name, size=len(world),
+                      sha256=hashlib.sha256(world.encode("utf-8")).hexdigest())
     reward = await components.verifier.verify(task, ctx.workspace, logs_dir)
     bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
-                  task=task.name, reward=reward.value, source=reward.source, labels=reward.labels, **marks)
+                  task=task.name, reward=reward.value, source=reward.source, labels=reward.labels,
+                  checkpoints=reward.checkpoints or None, **marks)
     if protected:
         bundle.record("judge.state_check", agent_id=agent.id, check="protected_files", task=task.name,
                       files=protected_state(ctx.workspace, protected))

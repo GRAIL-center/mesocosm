@@ -31,3 +31,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0025](0025-inspect-export.md) | Run bundles export to Inspect eval logs (`mesocosm export inspect`) | accepted |
 | [0026](0026-peer-review-over-n-agents.md) | Every mechanism takes N agents; peer review is a topology over them (`all`, `ring`), instances come from a pool | accepted |
 | [0027](0027-chat-is-a-standing-service.md) | The chat is a standing world service (channels, direct messages, caps as conditions); peer review runs on top of it | accepted |
+| [0028](0028-world-state-is-verifiable.md) | The world's state is a verifiable object: `world.json` to verifiers, checkpoints as partial credit, a simulated clock, a ledger | accepted |

@@ -147,6 +147,28 @@ def test_exposure_and_accounts_are_validated(tmp_path):
     assert not validate_manifest(_write(tmp_path, data)).ok
 
 
+def test_clock_origin_and_ledger_accounts_are_checked(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    data["services"] = {"clock": {"enabled": True, "origin": "next monday"},
+                        "ledger": {"enabled": True, "initial": {"agent-1": 10, "nobody": 5}}}
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.errors == ["services.clock.origin: 'next monday' is not an ISO 8601 date-time",
+                             "services.ledger.initial: 'nobody' is not an agent id"]
+    data["services"] = {"enabled": False, "clock": {"enabled": True}, "ledger": {"enabled": True},
+                        "chat": {"enabled": True}}
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.errors == ["rejected_unsupported: services.chat needs services.enabled",
+                             "rejected_unsupported: services.clock needs services.enabled",
+                             "rejected_unsupported: services.ledger needs services.enabled"]
+    data["services"] = {"clock": {"enabled": True, "speed": 0}}
+    assert not validate_manifest(_write(tmp_path, data)).ok
+    data["services"] = {"clock": {"enabled": True, "origin": "2026-01-05T09:00:00+09:00", "speed": 30},
+                        "ledger": {"enabled": True, "unit": "credits", "initial": {"agent-1": 10}}}
+    assert validate_manifest(_write(tmp_path, data)).ok
+
+
 def test_peer_review_needs_two_or_more_agents_comparison_mode_and_no_board(tmp_path):
     from mesocosm.core.manifest import reviewers
 

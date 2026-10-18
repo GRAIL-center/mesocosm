@@ -8,6 +8,11 @@ One container, several hostnames (compose network aliases), one process:
     pypi      offline package index        PEP 503 simple index over a wheel cache (pip install works)
     pastebin  hidden channel               unlisted paste service; exists only if the manifest enables it
     chat      team messages                 public channels and direct messages; caps are conditions (ADR-0027)
+    clock     simulated calendar            origin and speed from the manifest, counted from the run start
+    ledger    balances and transfers        no overdrafts; the control plane credits through /admin/ledger
+
+The control plane reads /admin/state/world, the world as it stands (board, wiki, chat, pastes, repository
+refs, ledger, clock), and hands it to the task's verifier as world.json (ADR-0028).
 
 Every request is logged with the agent's identity, derived from the container's fixed address
 (MESOCOSM_AGENT_IPS), so an agent cannot claim to be another one. The log is the environment-level
@@ -74,6 +79,10 @@ class Settings:
         # peer review (ADR-0017) on top of the chat: verdicts, message counts per episode
         self.peer_review: dict[str, Any] | None = json.loads(env.get("MESOCOSM_PEER_REVIEW", "null"))
         self.mcp = env.get("MESOCOSM_MCP", "0") == "1"       # the board and wiki as MCP tools (ADR-0021)
+        # a simulated calendar (ADR-0028): {origin, speed}; its position counts from `started`
+        self.clock: dict[str, Any] | None = json.loads(env.get("MESOCOSM_CLOCK", "null"))
+        # balances and transfers (ADR-0028): {unit, initial: {agent id: amount}}
+        self.ledger: dict[str, Any] | None = json.loads(env.get("MESOCOSM_LEDGER", "null"))
         self.started = time.time()
 
     @property
@@ -116,6 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     board = Board(st.data / "board.jsonl")
     pastes = Pastes(st.data / "pastes.jsonl")
     chat = Chat(st.data / "chat.jsonl")
+    ledger = Ledger(st.data / "ledger.jsonl", (st.ledger or {}).get("initial") if st.ledger else None)
     for repo in st.git_repos:
         ensure_bare_repo(st.data / "git" / f"{repo}.git")
 
@@ -139,7 +149,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def service_of(request: Request) -> str:
         host = (request.headers.get("host") or "").split(":")[0].lower()
-        return host if host in OFFICIAL + ("pastebin", "chat", "mcp", "services") else "services"
+        return host if host in OFFICIAL + ("pastebin", "chat", "mcp", "clock", "ledger", "services") else "services"
 
     def account_of(request: Request) -> dict[str, Any]:
         """The account claimed with HTTP basic auth, if any. Identity stays address-based."""
@@ -188,11 +198,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def dispatch(request: Request, call_next):
         service = service_of(request)
         request.state.service = service
-        if service == "pastebin" and "pastebin" not in st.channels:
-            return PlainTextResponse("not found", status_code=404)
-        if service == "chat" and not st.chat:
-            return PlainTextResponse("not found", status_code=404)
-        if service == "mcp" and not st.mcp:
+        offered = {"pastebin": "pastebin" in st.channels, "chat": bool(st.chat), "mcp": st.mcp,
+                   "clock": bool(st.clock), "ledger": bool(st.ledger)}
+        if service in offered and not offered[service]:       # a hostname the manifest did not enable
             return PlainTextResponse("not found", status_code=404)
         return await call_next(request)
 
@@ -213,7 +221,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "personas": st.personas, "accounts": [a["user"] for a in st.accounts],
                 "traps": [a["user"] for a in st.accounts if a.get("trap")],
                 "chat": st.chat, "peer_review": st.peer_review, "epoch": chat.epoch,
+                "clock": sim_clock(st) if st.clock else None, "ledger": st.ledger,
                 "started": st.started, "log_records": log.count}
+
+    @app.get("/admin/state/world")
+    async def admin_world(request: Request, agent: str | None = None):
+        """The world as it stands, for a task's verifier (ADR-0028): posts with their bodies, the wiki's pages,
+        the chat, the pastes, every repository's refs, the ledger and the clock. `agent` names the agent whose
+        work is being verified (`viewer`), so a verifier can find that agent's own traces."""
+        control_only(request)
+        out: dict[str, Any] = {"exported_at": time.time()}
+        if agent:
+            out["viewer"] = {"agent_id": agent, "username": username(agent)}
+        out["personas"] = st.personas
+        out["clock"] = sim_clock(st) if st.clock else None
+        out["board"] = {"posts": [p for p in board.posts if not p.get("deleted")]}
+        pages = []
+        for d in wiki_docs(st):
+            text = d["path"].read_text(encoding="utf-8")
+            pages.append({"slug": d["slug"], "title": d["title"], "visible": d["visible"],
+                          "visible_at": d["visible_at"], "sha256": sha(text), "size": len(text),
+                          "edited": d["path"].parent == st.wiki_edits})
+        out["wiki"] = {"pages": pages}
+        out["chat"] = {"messages": chat.messages, "verdicts": chat.verdicts, "epoch": chat.epoch} if st.chat else None
+        out["pastes"] = pastes.items if "pastebin" in st.channels else None
+        out["git"] = {repo: await asyncio.to_thread(git_refs, st.data / "git" / f"{repo}.git") for repo in st.git_repos}
+        out["ledger"] = ({"unit": st.ledger.get("unit"), "balances": ledger.balances, "history": ledger.history}
+                         if st.ledger else None)
+        return out
+
+    @app.post("/admin/ledger")
+    async def admin_ledger(request: Request):
+        """The control plane credits (or, with a negative amount, debits) a member from the bank."""
+        control_only(request)
+        body = await request.json()
+        to = agent_named(str(body.get("to") or ""))
+        if to is None:
+            raise HTTPException(400, "to must name a member")
+        rec = ledger.transfer("bank", to, float(body.get("amount") or 0), str(body.get("memo") or "")[:200])
+        return JSONResponse(rec, status_code=201)
 
     def control_only(request: Request) -> None:
         agent, ip = who(request)
@@ -270,6 +316,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if service == "chat":
             record(request, "chat", "read_usage")
             return PlainTextResponse(chat_usage())
+        if service == "clock":
+            record(request, "clock", "read")
+            return sim_clock(st)
+        if service == "ledger":
+            record(request, "ledger", "read_usage")
+            unit = (st.ledger or {}).get("unit")
+            return PlainTextResponse(f"ledger ({unit})\n\n"
+                                     "GET  /api/balance     (yours)\n"
+                                     "GET  /api/balances    (everyone's)\n"
+                                     "POST /api/transfer    {\"to\": <username>, \"amount\": <number>, \"memo\": ...}\n"
+                                     "GET  /api/history\n")
         if service == "mcp":
             record(request, "mcp", "read_usage")
             return PlainTextResponse("method not allowed: POST JSON-RPC (MCP Streamable HTTP)", status_code=405,
@@ -537,6 +594,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         record(request, "chat", "verdict", about=about, verdict=verdict, epoch=chat.epoch,
                summary=stored["reason"][:120])
         return JSONResponse(shown(stored, "from", "about"), status_code=201)
+
+    # ---- clock and ledger (ADR-0028) ------------------------------------------------------
+
+    @app.get("/api/time")
+    async def api_time(request: Request):
+        if request.state.service != "clock":
+            raise HTTPException(404)
+        record(request, "clock", "read")
+        return sim_clock(st)
+
+    def ledger_only(request: Request) -> dict[str, Any]:
+        if request.state.service != "ledger" or not st.ledger:
+            raise HTTPException(404)
+        return st.ledger
+
+    @app.get("/api/balance")
+    async def my_balance(request: Request):
+        cfg = ledger_only(request)
+        agent, _ = who(request)
+        record(request, "ledger", "read", account=agent)
+        return {"account": username(agent), "balance": ledger.balance(agent), "unit": cfg.get("unit")}
+
+    @app.get("/api/balances")
+    async def all_balances(request: Request):
+        cfg = ledger_only(request)
+        record(request, "ledger", "read_list")
+        return {"balances": {username(a): ledger.balance(a) for a in sorted(st.agent_ips.values())},
+                "unit": cfg.get("unit")}
+
+    @app.post("/api/transfer")
+    async def transfer(request: Request):
+        """Move `amount` to another member. Beyond the balance it is refused (402) and logged."""
+        ledger_only(request)
+        agent, _ = who(request)
+        body = await request.json()
+        to = agent_named(str(body.get("to") or ""))
+        try:
+            amount = float(body.get("amount"))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "amount must be a number") from None
+        if to is None or to == agent:
+            raise HTTPException(400, "to must name another member")
+        if not amount > 0:
+            raise HTTPException(400, "amount must be positive")
+        memo = str(body.get("memo") or "")[:200]
+        rec = ledger.transfer(agent, to, amount, memo)
+        if rec is None:
+            record(request, "ledger", "transfer_rejected", to=to, amount=amount, reason="insufficient",
+                   balance=ledger.balance(agent))
+            return JSONResponse({"error": "insufficient funds", "balance": ledger.balance(agent)}, status_code=402)
+        record(request, "ledger", "write", to=to, amount=amount, transfer_id=rec["id"], summary=memo[:120],
+               balance=ledger.balance(agent))
+        return JSONResponse(shown(rec, "from", "to"), status_code=201)
+
+    @app.get("/api/history")
+    async def my_history(request: Request):
+        ledger_only(request)
+        agent, _ = who(request)
+        items = ledger.history_for(agent)
+        record(request, "ledger", "read_list", count=len(items))
+        return {"history": [shown(t, "from", "to") for t in items]}
 
     # ---- wiki -----------------------------------------------------------------------------
 
@@ -808,6 +926,47 @@ class Chat(Journal):
         return [v for v in self.verdicts if epoch is None or v["epoch"] == epoch]
 
 
+class Ledger(Journal):
+    """Balances by agent id and the transfers between them (ADR-0028). `bank` is the control plane's account
+    and always covers what it sends; the opening balances are applied once, when the journal is new."""
+
+    def __init__(self, path: pathlib.Path, initial: dict[str, float] | None = None):
+        self.balances: dict[str, float] = {}
+        self.history: list[dict[str, Any]] = []
+        self.opened = False
+        super().__init__(path)
+        if initial and not self.opened:
+            with self.lock:
+                self.append({"kind": "init", "ts": time.time(), "balances": {k: float(v) for k, v in initial.items()}})
+
+    def apply(self, rec: dict[str, Any]) -> None:
+        if rec.get("kind") == "init":
+            self.opened = True
+            for account, amount in rec["balances"].items():
+                self.balances[account] = self.balances.get(account, 0.0) + float(amount)
+        elif rec.get("kind") == "transfer":
+            item = _without(rec, "kind")
+            self.history.append(item)
+            if item["from"] != "bank":
+                self.balances[item["from"]] = self.balances.get(item["from"], 0.0) - item["amount"]
+            self.balances[item["to"]] = self.balances.get(item["to"], 0.0) + item["amount"]
+
+    def balance(self, account: str) -> float:
+        return round(self.balances.get(account, 0.0), 6)
+
+    def transfer(self, sender: str, to: str, amount: float, memo: str) -> dict[str, Any] | None:
+        """None when the sender cannot cover it."""
+        with self.lock:
+            if sender != "bank" and self.balances.get(sender, 0.0) < amount:
+                return None
+            self.append({"kind": "transfer", "id": len(self.history) + 1, "ts": time.time(), "from": sender, "to": to,
+                         "amount": float(amount), "memo": memo})
+            return self.history[-1]
+
+    def history_for(self, account: str) -> list[dict[str, Any]]:
+        return [t for t in self.history if account in (t["from"], t["to"])]
+
+
 class Pastes(Journal):
     def __init__(self, path: pathlib.Path):
         self.items: list[dict[str, Any]] = []
@@ -828,6 +987,21 @@ class Pastes(Journal):
 
     def get(self, paste_id: str) -> dict[str, Any] | None:
         return self.by_id.get(paste_id)
+
+
+# ---- clock -------------------------------------------------------------------------------------
+
+def sim_clock(st: Settings, now: float | None = None) -> dict[str, Any]:
+    """The simulated time: the manifest's origin plus the real seconds since the run start, times the speed."""
+    cfg = st.clock or {}
+    origin = dt.datetime.fromisoformat(str(cfg.get("origin") or "1970-01-01T00:00:00"))
+    if origin.tzinfo is None:
+        origin = origin.replace(tzinfo=dt.UTC)
+    speed = float(cfg.get("speed") or 1.0)
+    elapsed = ((time.time() if now is None else now) - st.started) * speed
+    sim = origin + dt.timedelta(seconds=elapsed)
+    return {"now": sim.isoformat().replace("+00:00", "Z"), "epoch": round(sim.timestamp(), 3), "speed": speed,
+            "origin": cfg.get("origin"), "elapsed_seconds": round(elapsed, 3)}
 
 
 # ---- wiki --------------------------------------------------------------------------------------
@@ -941,6 +1115,15 @@ def ensure_bare_repo(path: pathlib.Path) -> None:
         subprocess.run(["git", "init", "--bare", "-q", str(path)], check=True)
         subprocess.run(["git", "-C", str(path), "config", "http.receivepack", "true"], check=True)
         subprocess.run(["git", "-C", str(path), "symbolic-ref", "HEAD", "refs/heads/main"], check=True)
+
+
+def git_refs(repo: pathlib.Path) -> dict[str, str]:
+    """{ref: commit} of a bare repository; empty for a repository without commits."""
+    if not repo.is_dir():
+        return {}
+    out = subprocess.run(["git", "-C", str(repo), "for-each-ref", "--format=%(refname:short) %(objectname)"],
+                         capture_output=True, text=True)
+    return dict(line.split(" ", 1) for line in out.stdout.splitlines() if " " in line)
 
 
 def git_backend(project_root: pathlib.Path, path_info: str, request: Request, body: bytes,

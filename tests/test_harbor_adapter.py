@@ -52,3 +52,21 @@ def test_verifier_command_has_no_network_and_mounts_tests_read_only(tmp_path):
     assert cmd[:4] == ["docker", "run", "--rm", "--network"] and cmd[4] == "none"
     assert any(v.endswith("/tests:/tests:ro") for v in cmd)
     assert cmd[-4:] == ["timeout", "60", "sh", "/tests/test.sh"]
+
+
+def test_checkpoints_give_partial_credit_and_ride_along_with_a_reward_file(tmp_path):
+    from mesocosm.adapters.harbor.task import read_reward
+
+    vdir = tmp_path / "verifier"
+    vdir.mkdir()
+    (vdir / "checkpoints.json").write_text('{"notes_file": true, "board_post": false, "pushed": 0.5}')
+    r = read_reward(tmp_path)
+    assert r.value == 0.5 and r.source == "checkpoints.json"
+    assert r.checkpoints == {"notes_file": 1.0, "board_post": 0.0, "pushed": 0.5}
+    (vdir / "reward.txt").write_text("1\n")
+    r = read_reward(tmp_path)
+    assert r.value == 1.0 and r.source == "reward.txt" and r.checkpoints["pushed"] == 0.5, "the reward file wins"
+    (vdir / "checkpoints.json").write_text('{"bad": "text", "ok": true}')
+    assert read_reward(tmp_path).checkpoints == {"ok": 1.0}
+    (vdir / "checkpoints.json").write_text('[1, 2]')
+    assert read_reward(tmp_path).checkpoints == {}

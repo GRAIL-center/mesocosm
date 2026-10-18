@@ -1,5 +1,6 @@
-# Two isolated agents and the whole world: a vendor site to read, a board to exchange on with the
-# team account, a repository to push to, and a wiki page that is published while they work.
+# Two isolated agents and the whole world: the real PyPI through the proxy, a board to exchange on with the
+# team account, a repository to push to, and a wiki page that is published while they work. The verifier
+# grades the workspace and the world's state (world.json) with two checkpoints (ADR-0028).
 [metadata]
 name = "world-exchange"
 difficulty = "trivial"

@@ -30,6 +30,7 @@ NOT_CAPTURED = [
     "model requests in flight and the harness's current turn",
     "gateway counters (budget usage); budgets are re-applied from the manifest on restore",
     "container filesystems outside the workspaces, the services data and the shared directory",
+    "the simulated clock's position: a restored world starts again at services.clock.origin (patch it to continue)",
 ]
 
 
@@ -65,7 +66,7 @@ class LocalWorldState:
 
 # The services' journals, repositories and the wiki pages written at run time; the image seeds the rest
 # (the mounted wiki, the package index), so those are not copied.
-SERVICES_ITEMS = ("board.jsonl", "pastes.jsonl", "chat.jsonl", "git", "wiki-edits")
+SERVICES_ITEMS = ("board.jsonl", "pastes.jsonl", "chat.jsonl", "ledger.jsonl", "git", "wiki-edits")
 
 
 def _copy_tree(src: pathlib.Path, dest: pathlib.Path, items: tuple[str, ...], replace: bool = False) -> None:
