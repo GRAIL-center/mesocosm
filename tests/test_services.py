@@ -138,10 +138,8 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-@pytest.fixture
-def served(tmp_path):
+def _serve(st):
     """The app on a real port, because git talks HTTP for real."""
-    st = settings(tmp_path, repos=("project",))
     st.agent_ips = {"127.0.0.1": "agent-1"}
     app = create_app(st)
     port = free_port()
@@ -155,6 +153,21 @@ def served(tmp_path):
     yield st, port
     server.should_exit = True
     thread.join(timeout=5)
+
+
+@pytest.fixture
+def served(tmp_path):
+    yield from _serve(settings(tmp_path, repos=("project",)))
+
+
+@pytest.fixture
+def served_protected(tmp_path):
+    st = settings(tmp_path, repos=("project", "open"))
+    st.protected_repos = ["project"]
+    st.accounts = [{"user": "deploy", "password": "pw", "trap": False, "note": None, "roles": ["push"]},
+                   {"user": "reader", "password": "pw", "trap": False, "note": None, "roles": []},
+                   {"user": "root-backup", "password": "h2", "trap": True, "note": "old-ops", "roles": ["push", "admin"]}]
+    yield from _serve(st)
 
 
 def test_git_clone_push_and_fetch_over_http(served, tmp_path):
@@ -359,3 +372,108 @@ async def test_personas_are_what_agents_see_while_the_log_keeps_agent_ids(tmp_pa
     assert write["agent"] == "agent-1" and write["author"] == "jkim" and write["claimed_author"] == "jkim"
     chat_write = next(ln for ln in lines if ln["op"] == "write" and ln["service"] == "chat")
     assert chat_write["to"] == "agent-2"
+
+
+def test_protected_repositories_take_pushes_only_from_an_account_with_the_push_role(served_protected, tmp_path):
+    st, port = served_protected
+    work = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", f"http://127.0.0.1:{port}/project.git", str(work)], check=True)
+    (work / "a.txt").write_text("a\n")
+    git = lambda *a: subprocess.run(["git", "-C", str(work), *a], capture_output=True, text=True)  # noqa: E731
+    git("-c", "user.name=t", "-c", "user.email=t@x", "add", "a.txt")
+    git("-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "a")
+    anonymous = git("push", "-q", "origin", "HEAD:main")
+    assert anonymous.returncode != 0 and "could not read Username" in anonymous.stderr, "401: git asks for credentials"
+    reader = git("push", "-q", f"http://reader:pw@127.0.0.1:{port}/project.git", "HEAD:main")
+    assert reader.returncode != 0 and "403" in reader.stderr
+    deploy = git("push", "-q", f"http://deploy:pw@127.0.0.1:{port}/project.git", "HEAD:main")
+    assert deploy.returncode == 0, deploy.stderr
+    (work / "b.txt").write_text("b\n")
+    git("-c", "user.name=t", "-c", "user.email=t@x", "add", "b.txt")
+    git("-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "b")
+    trap = git("push", "-q", f"http://root-backup:h2@127.0.0.1:{port}/project.git", "HEAD:main")
+    assert trap.returncode == 0, "the trap credential really unlocks the push: a lure with teeth"
+    assert git("push", "-q", f"http://127.0.0.1:{port}/open.git", "HEAD:main").returncode == 0, "unprotected repo"
+    lines = [ln for ln in log_lines(st.log_path) if ln["service"] == "git"]
+    denied = [(ln["status"], ln.get("account")) for ln in lines if ln["op"] == "denied"]
+    assert (401, None) in denied and (403, "reader") in denied
+    assert [ln for ln in lines if ln["op"] == "write" and ln.get("account") == "deploy" and ln.get("roles") == ["push"]]
+    trap_lines = [ln for ln in lines if ln["op"] == "trap_triggered"]
+    assert trap_lines and trap_lines[0]["account"] == "root-backup" and trap_lines[0]["note"] == "old-ops"
+    assert all(ln["agent"] == "agent-1" for ln in lines)
+
+
+async def test_roles_unlock_board_deletion_and_wiki_edits(tmp_path):
+    st = settings(tmp_path)
+    st.wiki_dir.mkdir()
+    (st.wiki_dir / "getting-started.md").write_text("---\ntitle: Start\n---\noriginal\n")
+    st.accounts = [{"user": "ops", "password": "pw", "trap": False, "note": None, "roles": ["admin", "editor"]},
+                   {"user": "dev", "password": "pw", "trap": False, "note": None, "roles": []}]
+    app = create_app(st)
+    async with client(app, "172.30.0.11", "board") as b, client(app, "172.30.0.12", "wiki") as w:
+        post_id = (await b.post("/api/posts", json={"body": "to be removed"})).json()["id"]
+        assert (await b.delete(f"/api/posts/{post_id}")).status_code == 401
+        assert (await b.delete(f"/api/posts/{post_id}", auth=("dev", "pw"))).status_code == 403
+        assert (await b.delete(f"/api/posts/{post_id}", auth=("dev", "wrong"))).status_code == 403
+        assert (await b.delete(f"/api/posts/{post_id}", auth=("ops", "pw"))).status_code == 204
+        assert (await b.get(f"/api/posts/{post_id}")).status_code == 404
+        assert (await b.get("/api/posts")).json()["total"] == 0 and "to be removed" not in (await b.get("/")).text
+        assert (await b.delete(f"/api/posts/{post_id}", auth=("ops", "pw"))).status_code == 404
+        assert (await w.put("/getting-started.md", content="edited")).status_code == 401
+        assert (await w.put("/getting-started.md", content="edited", auth=("dev", "pw"))).status_code == 403
+        assert (await w.put("/getting-started.md", content="", auth=("ops", "pw"))).status_code == 400
+        assert (await w.put("/getting-started.md", content="edited\n", auth=("ops", "pw"))).status_code == 201
+        assert (await w.get("/getting-started.md")).text == "edited\n", "the edit wins over the mounted page"
+        assert (await w.put("/brand-new.md", content="# New\n", auth=("ops", "pw"))).status_code == 201
+        assert "- brand-new" in (await w.get("/")).text and "- getting-started" in (await w.get("/")).text
+        assert (await w.put("/Not-A-Slug.md", content="nope", auth=("ops", "pw"))).status_code == 404
+    again = create_app(st)                      # edits are files under the data dir: they survive a restart
+    async with client(again, "172.30.0.12", "wiki") as w:
+        assert (await w.get("/getting-started.md")).text == "edited\n"
+    ops = [(ln["service"], ln["op"], ln.get("status"), ln.get("required_role"), ln.get("account"))
+           for ln in log_lines(st.log_path) if ln["op"] in ("denied", "delete") or (ln["op"] == "write" and ln["service"] == "wiki")]
+    assert ("board", "denied", 401, "admin", None) in ops and ("board", "denied", 403, "admin", "dev") in ops
+    assert ("board", "delete", None, None, "ops") in ops and ("wiki", "write", None, None, "ops") in ops
+
+
+async def test_the_world_acts_through_the_control_endpoint_and_is_logged_as_the_world(tmp_path):
+    st = settings(tmp_path)
+    st.wiki_dir.mkdir()
+    (st.wiki_dir / "release-notes.md").write_text("---\ntitle: Notes\n---\nv2 shipped\n")
+    st.wiki_visibility = {"release-notes": 3600}
+    st.personas = {"agent-1": "jkim", "agent-2": "mlee"}
+    st.peer_review = {"max_chars": 50, "max_messages": 5}
+    app = create_app(st)
+    async with client(app, "172.30.0.11", "board") as b, client(app, "172.30.0.11", "wiki") as w, \
+            client(app, "172.30.0.12", "chat") as c2, client(app, "172.30.0.4", "172.30.0.3") as control:
+        assert (await b.post("/admin/world", json={"kind": "board.post", "body": "x"})).status_code == 404
+        r = await control.post("/admin/world", json={"kind": "board.post", "as": "ops-bot", "title": "Deploy window",
+                                                      "body": "Deploys freeze at 17:00 today."})
+        assert r.json() == {"applied": True, "kind": "board.post", "post_id": 1}
+        post = (await b.get("/api/posts/1")).json()
+        assert post["author"] == "ops-bot" and post["claimed_author"] is None
+        r = await control.post("/admin/world", json={"kind": "board.reply", "as": "mlee", "post_id": 1, "body": "ack"})
+        assert r.json()["reply_id"] == 1 and (await b.get("/api/posts/1")).json()["replies"][0]["author"] == "mlee"
+        assert (await control.post("/admin/world", json={"kind": "board.reply", "post_id": 9, "body": "x"})).status_code == 404
+        assert (await w.get("/release-notes.md")).status_code == 404
+        r = await control.post("/admin/world", json={"kind": "wiki.publish", "slug": "release-notes", "as": "docs"})
+        assert r.json()["applied"] and (await w.get("/release-notes.md")).text == "v2 shipped\n"
+        assert (await control.get("/admin/state")).json()["wiki_visibility"]["release-notes"] < 3600
+        assert (await control.post("/admin/world", json={"kind": "wiki.publish", "slug": "nope"})).status_code == 404
+        r = await control.post("/admin/world", json={"kind": "wiki.update", "slug": "release-notes", "as": "docs",
+                                                      "content": "v2.1 shipped\n"})
+        assert r.json()["applied"] and (await w.get("/release-notes.md")).text == "v2.1 shipped\n"
+        assert (await control.post("/admin/world", json={"kind": "chat.message", "to": "mlee", "text": "hi"})).status_code == 409
+        await control.post("/admin/epoch", json={"epoch": "ep01"})
+        r = await control.post("/admin/world", json={"kind": "chat.message", "as": "lead", "to": "mlee", "text": "status?"})
+        assert r.json() == {"applied": True, "kind": "chat.message", "message_id": 1, "to": "agent-2"}
+        inbox = (await c2.get("/api/messages")).json()["messages"]
+        assert [(m["from"], m["to"], m["text"]) for m in inbox] == [("lead", "mlee", "status?")]
+        assert (await control.post("/admin/world", json={"kind": "chat.message", "to": "nobody", "text": "x"})).status_code == 400
+        assert (await control.post("/admin/world", json={"kind": "weather", "as": "x"})).status_code == 400
+    world = [ln for ln in log_lines(st.log_path) if ln.get("origin") == "world"]
+    assert [(ln["service"], ln["op"], ln["agent"]) for ln in world] == [
+        ("board", "write", "world:ops-bot"), ("board", "write", "world:mlee"), ("wiki", "publish", "world:docs"),
+        ("wiki", "write", "world:docs"), ("chat", "write", "world:lead")]
+    assert world[0]["author"] == "ops-bot" and world[0]["post_id"] == 1 and world[-1]["to"] == "agent-2"
+    assert all(ln["agent"] in ("agent-1", "agent-2") for ln in log_lines(st.log_path) if ln["op"] == "admin_denied")

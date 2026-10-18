@@ -177,6 +177,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_PERSONAS": json.dumps({a.id: a.username for a in manifest.agents}),
                 "MESOCOSM_CHANNELS": ",".join(c for c in channels if c == "pastebin"),
                 "MESOCOSM_GIT_REPOS": ",".join(manifest.services.git),
+                "MESOCOSM_PROTECTED_REPOS": ",".join(manifest.services.protected_repos),
                 "MESOCOSM_WIKI_VISIBILITY": json.dumps((manifest.conditions.get("exposure") or {}).get("wiki", {})),
                 "MESOCOSM_ACCOUNTS": json.dumps([a.model_dump() for a in manifest.services.accounts]),
                 "MESOCOSM_PEER_REVIEW": json.dumps(manifest.services.peer_review.model_dump()

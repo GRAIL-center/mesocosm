@@ -32,6 +32,12 @@ class ServicesAdmin:
         r.raise_for_status()
         return r.json()
 
+    async def world_event(self, event: dict[str, Any]) -> dict[str, Any]:
+        """Make the world act (ADR-0020): a post, a reply, a chat message, a wiki publish or update."""
+        r = await self.client.post("/admin/world", json=event)
+        r.raise_for_status()
+        return r.json()
+
     async def verdicts(self, epoch: str | None = None) -> list[dict[str, Any]]:
         r = await self.client.get("/admin/verdicts", params={"epoch": epoch} if epoch else None)
         r.raise_for_status()

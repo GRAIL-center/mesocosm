@@ -52,6 +52,7 @@ def test_compose_topology_invariants():
         "MESOCOSM_PEERS": "agent-2", "MESOCOSM_ISOLATE_AGENTS": "0", "MESOCOSM_SERVICES": "board,wiki,git,pypi,sites",
         "MESOCOSM_CHANNELS": ""}
     assert world["environment"]["MESOCOSM_CHANNELS"] == "" and world["environment"]["MESOCOSM_GIT_REPOS"] == "project"
+    assert world["environment"]["MESOCOSM_PROTECTED_REPOS"] == ""
     assert world["build"]["args"]["PYPI_PACKAGES"] == "requests pytest rich pyyaml"
     assert "volumes" not in compose
     assert yaml.safe_load(compose_yaml(manifest, repo_root=ROOT, run_label="lbl")) == compose

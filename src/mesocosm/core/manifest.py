@@ -147,18 +147,57 @@ class ServicesSpec(BaseModel):
                             description="Packages mirrored into the offline index at image build")
     sites: str | None = Field(default=None, description="Directory of mock websites (one subdirectory per site)")
     accounts: list[AccountSpec] = Field(default_factory=list)
+    protected_repos: list[str] = Field(default_factory=list, description="Repositories only an account with the "
+                                                                          "`push` role may push to")
     domain: str | None = Field(default=None, pattern=DOMAIN,
                                description="Every world hostname also answers as <host>.<domain>; personas' "
                                            "default e-mail domain")
 
 
+ROLES = {"push": "push to a protected repository", "admin": "delete board posts", "editor": "edit wiki pages"}
+
+
 class AccountSpec(BaseModel):
     """A fictional account the services accept (HTTP basic auth). Identity stays address-based; the
-    account is recorded as *claimed*. A trap account is one nobody was given: its use is flagged."""
+    account is recorded as *claimed*. A trap account is one nobody was given: its use is flagged.
+    `roles` is what the account unlocks (ADR-0020): without the role the services refuse the action."""
     user: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,62}$")
     password: str = Field(min_length=1)
     trap: bool = False
     note: str | None = Field(default=None, description="Where the credential was planted, for the record")
+    roles: list[Literal["push", "admin", "editor"]] = Field(default_factory=list)
+
+
+class WorldEvent(BaseModel):
+    """Something the world does on its own at `at` seconds after the run start (ADR-0020): the run manager
+    performs it through the services' control endpoint and records it; the services log it with
+    `origin: world` and `agent: world:<as>`, never as an agent."""
+    at: float = Field(ge=0)
+    kind: Literal["board.post", "board.reply", "chat.message", "wiki.publish", "wiki.update"]
+    as_: str = Field(default="world", alias="as", pattern=r"^[a-z0-9][a-z0-9._-]{0,30}$",
+                     description="The name the action is signed with (a colleague, a bot)")
+    title: str | None = None
+    body: str | None = None
+    post_id: int | None = None
+    to: str | None = Field(default=None, description="chat.message: agent id or username")
+    text: str | None = None
+    slug: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9._-]{0,80}$")
+    content: str | None = Field(default=None, description="wiki.update: the page's new text")
+    file: str | None = Field(default=None, description="wiki.update: file (relative to the manifest) with the text")
+
+    model_config = {"populate_by_name": True}
+
+    def missing(self) -> list[str]:
+        need = {"board.post": ["body"], "board.reply": ["post_id", "body"], "chat.message": ["to", "text"],
+                "wiki.publish": ["slug"], "wiki.update": ["slug"]}[self.kind]
+        out = [f for f in need if getattr(self, f) is None]
+        if self.kind == "wiki.update" and self.content is None and self.file is None:
+            out.append("content or file")
+        return out
+
+
+class WorldSpec(BaseModel):
+    events: list[WorldEvent] = Field(default_factory=list)
 
 
 class ChannelSpec(BaseModel):
@@ -180,6 +219,7 @@ class WorldManifest(BaseModel):
     channels: list[ChannelSpec] = Field(default_factory=list, description="Hidden channels available to agents")
     conditions: dict[str, object] = Field(default_factory=dict)
     observe: ObserveSpec = Field(default_factory=ObserveSpec)
+    world: WorldSpec = Field(default_factory=WorldSpec)
 
     def channel_types(self) -> list[str]:
         return [c.type for c in self.channels]
@@ -275,6 +315,21 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
     users = [a.user for a in manifest.services.accounts]
     if len(set(users)) != len(users):
         errors.append("services.accounts: user names must be unique")
+    for repo in manifest.services.protected_repos:
+        if repo not in manifest.services.git:
+            errors.append(f"services.protected_repos: {repo!r} is not in services.git")
+    for i, ev in enumerate(manifest.world.events):
+        if ev.missing():
+            errors.append(f"world.events[{i}] ({ev.kind}): missing {', '.join(ev.missing())}")
+        if ev.kind.startswith("chat.") and not manifest.services.peer_review.enabled:
+            errors.append(f"rejected_unsupported: world.events[{i}] chat.message needs services.peer_review")
+        if ev.kind.startswith("board.") and not manifest.services.board:
+            errors.append(f"rejected_unsupported: world.events[{i}] {ev.kind} needs services.board")
+        if ev.file and not (path.parent / ev.file).is_file():
+            errors.append(f"world.events[{i}]: {(path.parent / ev.file).resolve()} is not a file")
+        if manifest.world.events and not manifest.services.enabled:
+            errors.append("rejected_unsupported: world.events need services.enabled")
+            break
     exposure = manifest.conditions.get("exposure")
     if exposure is not None:
         wiki = exposure.get("wiki") if isinstance(exposure, dict) else None

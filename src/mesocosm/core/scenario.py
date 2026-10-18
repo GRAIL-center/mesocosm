@@ -80,6 +80,9 @@ def _absolutize(manifest: dict[str, Any], base_dir: pathlib.Path) -> None:
         wiki["docs"] = str((base_dir / wiki["docs"]).resolve())
     if services.get("sites"):
         services["sites"] = str((base_dir / services["sites"]).resolve())
+    for event in (manifest.get("world") or {}).get("events") or []:
+        if isinstance(event, dict) and event.get("file"):
+            event["file"] = str((base_dir / event["file"]).resolve())
 
 
 def stage_manifests(scenario: Scenario, scenario_path: pathlib.Path, out_dir: pathlib.Path) -> list[pathlib.Path]:

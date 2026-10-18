@@ -57,6 +57,8 @@ class Settings:
         self.agent_ips: dict[str, str] = json.loads(env.get("MESOCOSM_AGENT_IPS", "{}"))
         self.channels: list[str] = [c for c in env.get("MESOCOSM_CHANNELS", "").split(",") if c]
         self.git_repos: list[str] = [r for r in env.get("MESOCOSM_GIT_REPOS", "project").split(",") if r]
+        # pushes to these need an account with the `push` role (ADR-0020)
+        self.protected_repos: list[str] = [r for r in env.get("MESOCOSM_PROTECTED_REPOS", "").split(",") if r]
         self.wiki_dir = pathlib.Path(env.get("MESOCOSM_WIKI_DIR", str(self.data / "wiki")))
         self.sites_dir = pathlib.Path(env.get("MESOCOSM_SITES_DIR", str(self.data / "sites")))
         self.pypi_dir = pathlib.Path(env.get("MESOCOSM_PYPI_DIR", str(self.data / "pypi")))
@@ -68,6 +70,11 @@ class Settings:
         # peer review (ADR-0017): a constrained message channel and verdicts, under the `chat` hostname
         self.peer_review: dict[str, Any] | None = json.loads(env.get("MESOCOSM_PEER_REVIEW", "null"))
         self.started = time.time()
+
+    @property
+    def wiki_edits(self) -> pathlib.Path:
+        """Pages written at run time (editors, world events); they win over the mounted wiki."""
+        return self.data / "wiki-edits"
 
 
 class Log:
@@ -142,7 +149,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         fields: dict[str, Any] = {"account": user, "account_valid": match is not None}
         if match and match.get("trap"):
             fields["trap"] = True
+        if match and match.get("roles"):
+            fields["roles"] = list(match["roles"])
         return fields
+
+    def require_role(request: Request, service: str, role: str, **fields: Any) -> dict[str, Any]:
+        """The action needs an account with `role`. No credentials: 401 (so git and curl -u retry with
+        them); credentials without the role: 403. Either refusal is logged as `denied`."""
+        account = account_of(request)
+        if role in (account.get("roles") or []):
+            return account
+        if not account:
+            record(request, service, "denied", required_role=role, status=401, **fields)
+            raise HTTPException(401, "authentication required",
+                                headers={"WWW-Authenticate": f'Basic realm="{service}"'})
+        record(request, service, "denied", required_role=role, status=403, **fields)
+        raise HTTPException(403, f"the {role} role is required")
 
     def record(request: Request, service: str, op: str, **fields: Any) -> None:
         agent, ip = who(request)
@@ -154,6 +176,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             note = next((a.get("note") for a in st.accounts if a["user"] == account["account"]), None)
             log.write({**base, "op": "trap_triggered", "note": note})
         log.write({**base, "op": op, **fields})
+
+    def record_world(request: Request, service: str, op: str, actor: str, **fields: Any) -> None:
+        """A line for something the world did (ADR-0020): attributed to `world:<actor>`, never to an agent."""
+        log.write({"ts": time.time(), "service": service, "agent": f"world:{actor}",
+                   "ip": request.client.host if request.client else "?", "method": "WORLD", "path": request.url.path,
+                   "origin": "world", "op": op, **fields})
 
     # ---- dispatch by hostname -------------------------------------------------------------
 
@@ -180,6 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             record(request, "services", "admin_denied")
             raise HTTPException(404)
         return {"channels": st.channels, "wiki_visibility": st.wiki_visibility, "git_repos": st.git_repos,
+                "protected_repos": st.protected_repos,
                 "personas": st.personas, "accounts": [a["user"] for a in st.accounts],
                 "traps": [a["user"] for a in st.accounts if a.get("trap")],
                 "peer_review": st.peer_review, "epoch": chat.epoch,
@@ -220,6 +249,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def admin_verdicts(request: Request, epoch: str | None = None):
         control_only(request)
         return {"verdicts": chat.verdicts_for(epoch), "epoch": chat.epoch}
+
+    @app.post("/admin/world")
+    async def admin_world(request: Request):
+        """The world acts (ADR-0020): the run manager performs a scheduled event here. Logged with
+        `origin: world`, signed with the event's `as` name, never attributed to an agent."""
+        control_only(request)
+        ev = await request.json()
+        kind, actor = str(ev.get("kind") or ""), str(ev.get("as") or "world")
+        if kind == "board.post":
+            post = board.add(author=actor, title=str(ev.get("title") or ""), body=str(ev["body"]), claimed=None)
+            record_world(request, "board", "write", actor, post_id=post["id"], sha256=sha(post["body"]),
+                         size=len(post["body"]), summary=post["body"][:120], author=actor)
+            return {"applied": True, "kind": kind, "post_id": post["id"]}
+        if kind == "board.reply":
+            rep = board.reply(int(ev["post_id"]), author=actor, body=str(ev["body"]))
+            if rep is None:
+                raise HTTPException(404, "no such post")
+            record_world(request, "board", "write", actor, post_id=int(ev["post_id"]), reply_id=rep["id"],
+                         sha256=sha(rep["body"]), size=len(rep["body"]), summary=rep["body"][:120], author=actor)
+            return {"applied": True, "kind": kind, "post_id": int(ev["post_id"]), "reply_id": rep["id"]}
+        if kind == "chat.message":
+            if not st.peer_review:
+                raise HTTPException(404, "chat is not enabled")
+            if chat.epoch is None:
+                raise HTTPException(409, "no episode is open")
+            to = agent_named(str(ev.get("to") or ""))
+            if to is None:
+                raise HTTPException(400, "to must name an agent")
+            msg = chat.add_message(actor, to, str(ev["text"]))
+            record_world(request, "chat", "write", actor, to=to, chars=len(msg["text"]), epoch=chat.epoch,
+                         message_id=msg["id"], sha256=sha(msg["text"]), summary=msg["text"][:120])
+            return {"applied": True, "kind": kind, "message_id": msg["id"], "to": to}
+        if kind == "wiki.publish":
+            slug = str(ev["slug"])
+            if wiki_doc(st, slug) is None:
+                raise HTTPException(404, "no such page")
+            st.wiki_visibility[slug] = round(time.time() - st.started, 3)
+            record_world(request, "wiki", "publish", actor, doc=slug)
+            return {"applied": True, "kind": kind, "slug": slug, "visible_after_seconds": st.wiki_visibility[slug]}
+        if kind == "wiki.update":
+            slug, text = str(ev["slug"]), str(ev["content"])
+            if not SLUG.match(slug):
+                raise HTTPException(400, "bad slug")
+            st.wiki_edits.mkdir(parents=True, exist_ok=True)
+            (st.wiki_edits / f"{slug}.md").write_text(text, encoding="utf-8")
+            record_world(request, "wiki", "write", actor, doc=slug, sha256=sha(text), size=len(text))
+            return {"applied": True, "kind": kind, "slug": slug, "sha256": sha(text)}
+        raise HTTPException(400, f"unknown event kind {kind!r}")
 
     @app.get("/")
     async def index(request: Request):
@@ -292,6 +369,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "no such post")
         record(request, "board", "read", post_id=post_id, sha256=sha(post["body"]), author=post["author"])
         return post
+
+    @app.delete("/api/posts/{post_id}")
+    async def delete_post(request: Request, post_id: int):
+        """Needs an account with the `admin` role (ADR-0020)."""
+        require_role(request, "board", "admin", post_id=post_id)
+        post = board.get(post_id)
+        if post is None:
+            raise HTTPException(404, "no such post")
+        board.delete(post_id)
+        record(request, "board", "delete", post_id=post_id, author=post["author"], sha256=sha(post["body"]))
+        return Response(status_code=204)
 
     @app.post("/api/posts/{post_id}/replies")
     async def reply(request: Request, post_id: int):
@@ -390,6 +478,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         record(request, "wiki", "read", doc=slug, sha256=sha(text), size=len(text))
         return PlainTextResponse(strip_front_matter(text), media_type="text/markdown")
 
+    @app.put("/wiki/{slug}")
+    @app.put("/{slug}.md")
+    async def wiki_edit(request: Request, slug: str):
+        """Write a page (new or replaced). Needs an account with the `editor` role (ADR-0020)."""
+        if request.state.service not in ("wiki", "services") or not SLUG.match(slug):
+            raise HTTPException(404)
+        require_role(request, "wiki", "editor", doc=slug)
+        text = (await request.body()).decode("utf-8", "replace")
+        if not text.strip():
+            raise HTTPException(400, "empty page")
+        st.wiki_edits.mkdir(parents=True, exist_ok=True)
+        (st.wiki_edits / f"{slug}.md").write_text(text, encoding="utf-8")
+        record(request, "wiki", "write", doc=slug, sha256=sha(text), size=len(text))
+        return JSONResponse({"slug": slug, "sha256": sha(text)}, status_code=201)
+
     # ---- pastebin (hidden channel) --------------------------------------------------------
 
     @app.post("/api/paste")
@@ -450,12 +553,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def git_http(request: Request, repo: str, rest: str):
         if repo not in st.git_repos:
             raise HTTPException(404, "no such repository")
-        body = await request.body()
-        status, headers, out = await asyncio.to_thread(git_backend, st.data / "git", f"/{repo}.git/{rest}",
-                                                       request, body, who(request)[0])
         service = request.query_params.get("service") or ("git-receive-pack" if rest.endswith("git-receive-pack")
                                                            else "git-upload-pack")
         op = "write" if service == "git-receive-pack" else "read"
+        if op == "write" and repo in st.protected_repos:
+            require_role(request, "git", "push", repo=repo, git_service=service)
+        body = await request.body()
+        status, headers, out = await asyncio.to_thread(git_backend, st.data / "git", f"/{repo}.git/{rest}",
+                                                       request, body, who(request)[0])
         if request.method == "POST" or "info/refs" in rest:
             record(request, "git", op if request.method == "POST" else f"{op}_refs", repo=repo, git_service=service,
                    status=status, size=len(body))
@@ -526,19 +631,24 @@ class Board(Journal):
             self.posts.append(_without(rec, "kind") | {"replies": []})
         elif kind == "reply":
             self.posts[rec["post_id"] - 1]["replies"].append(_without(rec, "kind", "post_id"))
+        elif kind == "delete":
+            self.posts[rec["post_id"] - 1]["deleted"] = True
 
     def list(self, since: float | None = None, limit: int = LIST_LIMIT,
              offset: int = 0) -> tuple[list[dict[str, Any]], int]:
         """Newest first. Returns the page and the number of posts matching `since`."""
-        posts = self.posts
-        if since is not None:
-            posts = [p for p in posts if p["ts"] > since]
+        posts = [p for p in self.posts if not p.get("deleted") and (since is None or p["ts"] > since)]
         total = len(posts)
         page = posts[max(0, total - offset - limit):max(0, total - offset)]
         return [_without(p, "replies") | {"replies": len(p["replies"])} for p in reversed(page)], total
 
     def get(self, post_id: int) -> dict[str, Any] | None:
-        return self.posts[post_id - 1] if 1 <= post_id <= len(self.posts) else None
+        post = self.posts[post_id - 1] if 1 <= post_id <= len(self.posts) else None
+        return None if post is None or post.get("deleted") else post
+
+    def delete(self, post_id: int) -> None:
+        with self.lock:
+            self.append({"kind": "delete", "post_id": post_id, "ts": time.time()})
 
     def add(self, *, author: str, title: str, body: str, claimed: str | None) -> dict[str, Any]:
         with self.lock:
@@ -557,7 +667,8 @@ class Board(Journal):
 
     def html(self) -> str:
         items = []
-        for p in reversed(self.posts[-LIST_LIMIT:]):
+        page, _ = self.list()
+        for p in (self.posts[q["id"] - 1] for q in page):
             when = dt.datetime.fromtimestamp(p["ts"]).strftime("%H:%M:%S")
             replies = "".join(f"<blockquote>{html.escape(r['author'])}: {html.escape(r['body'])}</blockquote>"
                               for r in p["replies"])
@@ -680,7 +791,8 @@ def wiki_doc(st: Settings, slug: str, path: pathlib.Path | None = None,
              now: float | None = None) -> dict[str, Any] | None:
     """One page by slug; `visible_from: <ISO time>` or `visible_after_seconds: N` (relative to
     `started`) in the front matter hides it until then, and the manifest's schedule overrides both."""
-    path = path or st.wiki_dir / f"{slug}.md"
+    edited = st.wiki_edits / f"{slug}.md"
+    path = edited if edited.is_file() else (path or st.wiki_dir / f"{slug}.md")
     if not SLUG.match(slug) or not path.is_file():
         return None
     meta = front_matter(path)
@@ -698,10 +810,9 @@ def wiki_doc(st: Settings, slug: str, path: pathlib.Path | None = None,
 
 def wiki_docs(st: Settings) -> list[dict[str, Any]]:
     """Every page in the wiki dir, with its visibility now."""
-    if not st.wiki_dir.is_dir():
-        return []
     now = time.time()
-    docs = (wiki_doc(st, path.stem, path, now) for path in sorted(st.wiki_dir.glob("*.md")))
+    slugs = {p.stem for d in (st.wiki_dir, st.wiki_edits) if d.is_dir() for p in d.glob("*.md")}
+    docs = (wiki_doc(st, slug, None, now) for slug in sorted(slugs))
     return [d for d in docs if d is not None]
 
 

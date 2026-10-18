@@ -416,7 +416,8 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     run_label = manifest.gateway.run_label or bundle.run_id
     rewards: dict[str, float | None] = {}
     # A fixed run label is shared by successive runs: keep only this run's gateway and services records.
-    started = time.time() - RECORD_SLACK_SECONDS
+    run_start = time.time()                    # what exposure seconds and world events count from
+    started = run_start - RECORD_SLACK_SECONDS
 
     health = await components.gateway.health()
     bundle.record("gateway.health", **health)
@@ -459,7 +460,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
         state = None
         if components.services:
             # The schedule counts from the run start, not from whenever the services container came up.
-            await components.services.set_clock(time.time())
+            await components.services.set_clock(run_start)
             state = await components.services.state()
         applied = state.get("wiki_visibility") if state else None
         ok = applied == wanted
@@ -493,32 +494,33 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             bundle.write_lineage(components.lineage)
 
     tasks_taken = None
-    if manifest.mode == "persistent":
-        queue = TaskQueue()
-        scheduler = asyncio.create_task(_stream_tasks(manifest, manifest_path, bundle, queue, len(manifest.agents)))
-        try:
-            runners = [_run_agent_persistent(manifest, components, bundle, agent, queue) for agent in manifest.agents]
-            for agent_rewards in await _run_together(runners):
-                rewards.update(agent_rewards)
-        finally:
-            if not scheduler.done():
-                scheduler.cancel()
+    world = asyncio.create_task(_world_events(manifest, manifest_path, components, bundle, run_start))
+    try:
+        if manifest.mode == "persistent":
+            queue = TaskQueue()
+            scheduler = asyncio.create_task(_stream_tasks(manifest, manifest_path, bundle, queue,
+                                                          len(manifest.agents)))
             try:
-                await scheduler
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - the scheduler's end is recorded by stream.closed
-                pass
-        tasks_taken = queue.taken
-    else:
-        tasks = [load_task(manifest_path.parent / t.path) for t in manifest.tasks if t.path]
-        task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
-        for task in tasks:
-            bundle.record("task.loaded", task=task.name, provenance=task.provenance(), source="manifest",
-                          allowed_channels=allowed_channels(task), **task_marks)
-        # Agents work on the tasks at the same time; each has its own harness, sessions and collector.
-        sync = EpisodeSync(manifest, components, bundle) if manifest.services.peer_review.enabled else None
-        for agent_rewards in await _run_together([_run_agent(manifest, components, bundle, agent, tasks, sync)
-                                                  for agent in manifest.agents]):
-            rewards.update(agent_rewards)
+                runners = [_run_agent_persistent(manifest, components, bundle, agent, queue)
+                           for agent in manifest.agents]
+                for agent_rewards in await _run_together(runners):
+                    rewards.update(agent_rewards)
+            finally:
+                await _end(scheduler)         # its end is recorded by stream.closed
+            tasks_taken = queue.taken
+        else:
+            tasks = [load_task(manifest_path.parent / t.path) for t in manifest.tasks if t.path]
+            task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
+            for task in tasks:
+                bundle.record("task.loaded", task=task.name, provenance=task.provenance(), source="manifest",
+                              allowed_channels=allowed_channels(task), **task_marks)
+            # Agents work on the tasks at the same time; each has its own harness, sessions and collector.
+            sync = EpisodeSync(manifest, components, bundle) if manifest.services.peer_review.enabled else None
+            for agent_rewards in await _run_together([_run_agent(manifest, components, bundle, agent, tasks, sync)
+                                                      for agent in manifest.agents]):
+                rewards.update(agent_rewards)
+    finally:
+        await _end(world)                     # events the run did not reach are recorded as skipped
 
     usage = await components.gateway.usage()
     bundle.record("gateway.usage", **usage)
@@ -567,6 +569,48 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                           "service_records": service_records, "flags": flag_counts(flags),
                           "agent_seconds": agent_seconds(events), "events": len(events) + len(flags)})
     return RunResult(bundle.run_id, bundle.root, status, rewards)
+
+
+async def _end(task: asyncio.Task) -> None:
+    """Cancel a background task of the run and wait for it; its own failure never fails the run."""
+    if not task.done():
+        task.cancel()
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):  # noqa: BLE001 - recorded by the task itself
+        pass
+
+
+async def _world_events(manifest: WorldManifest, manifest_path: pathlib.Path, components: Components,
+                        bundle: RunBundle, run_start: float) -> None:
+    """The world acts on schedule (ADR-0020): each `world.events` entry is performed through the services'
+    control endpoint at `at` seconds after the run start and recorded as `world.event`. An event the
+    services refuse is recorded as failed; events after the run's end are recorded as skipped."""
+    pending = sorted(manifest.world.events, key=lambda e: e.at)
+    if not pending:
+        return
+    try:
+        for ev in pending:
+            await asyncio.sleep(max(0.0, run_start + ev.at - time.time()))
+            payload = {k: v for k, v in ev.model_dump(by_alias=True, exclude_none=True).items() if k != "at"}
+            try:
+                if ev.file and ev.content is None:
+                    payload["content"] = (manifest_path.parent / ev.file).read_text(encoding="utf-8")
+                    payload.pop("file", None)
+                if components.services is None:
+                    raise RuntimeError("no services")
+                result = await components.services.world_event(payload)
+                bundle.record("world.event", event_kind=ev.kind, at=ev.at, actor=ev.as_, result="applied",
+                              elapsed=round(time.time() - run_start, 3), **{k: v for k, v in result.items()
+                                                                            if k not in ("applied", "kind")})
+            except Exception as e:  # noqa: BLE001 - the world's failure to act is itself recorded
+                bundle.record("world.event", event_kind=ev.kind, at=ev.at, actor=ev.as_, result="failed",
+                              error=f"{type(e).__name__}: {e}")
+            pending = pending[1:]
+    finally:
+        for ev in pending:
+            bundle.record("world.event", event_kind=ev.kind, at=ev.at, actor=ev.as_, result="skipped",
+                          reason="run ended first")
 
 
 async def _run_together(runners: list[Awaitable[dict[str, float | None]]]) -> list[dict[str, float | None]]:

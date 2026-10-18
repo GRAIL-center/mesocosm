@@ -216,6 +216,9 @@ def fork_manifest(snapshot_root: str | pathlib.Path, patch: dict[str, Any], out_
             manifest["services"]["sites"] = str((base_dir / sites).resolve())
         if (manifest.get("stream") or {}).get("dir") and not pathlib.Path(manifest["stream"]["dir"]).is_absolute():
             manifest["stream"]["dir"] = str((base_dir / manifest["stream"]["dir"]).resolve())
+        for event in (manifest.get("world") or {}).get("events") or []:
+            if event.get("file") and not pathlib.Path(event["file"]).is_absolute():
+                event["file"] = str((base_dir / event["file"]).resolve())
     manifest["name"] = f"{manifest['name']}-{name_suffix}"[:63]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(yaml.safe_dump(manifest, sort_keys=False))
