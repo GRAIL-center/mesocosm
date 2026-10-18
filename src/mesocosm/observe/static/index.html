@@ -214,7 +214,7 @@
       const x = a.x - a.r - 8, bulge = Math.max(50, Math.abs(b.y - a.y) / 3) + idx * 34, my = (a.y + b.y) / 2;
       const recent = state.last_ts && e.ts && state.last_ts - e.ts < 30 ? ' recent' : '';
       return `<path class="flow${recent}" d="M${x},${a.y} C${x - bulge},${a.y} ${x - bulge},${b.y} ${x},${b.y}" marker-end="url(#arrow)"></path>
-        <text class="flowlabel" x="${x - bulge - 4}" y="${my}" text-anchor="end">${esc(e.service)} ×${e.n}</text>`;
+        <text class="flowlabel" x="${x - bulge - 4}" y="${my + idx * 14}" text-anchor="end">${esc(e.service)} ×${e.n}</text>`;
     }).join('');
   }
 
