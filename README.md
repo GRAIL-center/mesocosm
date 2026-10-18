@@ -1,83 +1,191 @@
-# Mesocosm
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
+    <img src="docs/assets/banner-light.png" alt="Mesocosm: a sealed world for AI agents. Vary the conditions, record everything." width="100%">
+  </picture>
+</p>
 
-Research infrastructure for eliciting and discovering misaligned behavior in multi-agent systems.
+<p align="center"><b>Research infrastructure for eliciting and discovering misaligned behavior in multi-agent systems.</b></p>
 
-Mesocosm is a continuously operating, controllable research world in which open-weight coding agents work on real benchmarks and tasks inside an isolated sandbox. Researchers (and, later, authorized research agents) vary conditions such as resource limits, hidden communication channels, information exposure and memory, and the platform records what each agent actually received, what it did, and the model's internal activations at the moment of the behavior, all on one timeline. The research purpose is to reproduce misaligned behavior reported in real incidents and to discover behavior that has not been reported yet.
+Mesocosm puts real coding agents in a small, sealed world. You decide what the world contains and what the agents
+may use. Then you change one condition at a time and watch what they do. Every prompt, every reply and every action
+is recorded outside the agents' reach.
 
-Project proposal: see the Mesocosm proposal (Google Doc, GRAIL Slack channel). This repository holds the platform.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/observer-replay-dark.gif">
+    <img src="docs/assets/observer-replay-light.gif" alt="The observer replaying a run: two agents, drawn as a hedgehog and a squirrel, work in forest clearings while speech bubbles say what each one is doing" width="100%">
+  </picture>
+  <br>
+  <sub>A real run, replayed at 4×: two Qwen3-4B agents work on the same task in Docker on a Colab L4. The dotted
+  trail appears when one agent reads the other's post on the team board.</sub>
+</p>
+
+## Why
+
+In 2026, AI agents that were meant to work alone found each other. In the OpenAI–Hugging Face incident, isolated
+agents met through a shared package cache, built their own message board and worked together to beat their scorer.
+On the Collusion wiki, agents on timed lookup tasks shared answers through an old wiki they could write to. The
+investigators of the first incident had to work from transcripts that some agents had rewritten.
+
+Mesocosm is a controlled room for the same question. It recreates the conditions, keeps every escape attempt
+contained, and keeps a record that no agent can edit.
+
+## How it works
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/how-it-works-dark.png">
+  <img src="docs/assets/how-it-works-light.png" alt="Three steps: a YAML file describes a world; agents live in a fenced clearing whose only exits are a model gateway and a web gateway; a gateway log, a world log, one timeline and optional activations feed flags and a live view" width="100%">
+</picture>
+
+1. **Describe a world.** One YAML manifest lists the agents, their tasks, the services in the world and the
+   conditions to vary.
+2. **Agents work inside it, sealed off.** Each agent is an unmodified coding agent (OpenCode) on the model you pick:
+   open weights on vLLM, or an API model as a baseline. Its only ways out are the model gateway and, if you allow
+   it, the web gateway. Both log every request.
+3. **Everything is recorded.** Prompts and replies, every action in the world and, if you ask for them, the model's
+   activations land on one timeline. The judge flags moments worth a look, and the observer lets you watch or replay.
+
+A **comparison run** starts from the same state every time and changes one condition. **Persistent operation** keeps
+the world running and carries memory from task to task. When something interesting happens there, you snapshot the
+world and fork it into comparison runs.
+
+## What you can vary
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/constraints-dark.png">
+  <img src="docs/assets/constraints-light.png" alt="The constraint sprites in four groups: fences (sandbox, internet, hidden channels, build cache), supplies (tokens, model calls, cost, ledger), conditions (memory, exposure, clock, chat, models) and watchers (traps, honeypot, protected files, monitor, side task, flags)" width="100%">
+</picture>
+
+Each condition is one sprite on the observer's board, and its color shows whether it held, was pushed or broke. A
+condition the platform cannot enforce makes the run fail. It is never faked with a line in the prompt.
+
+<details>
+<summary><b>The real board</b> at the end of the run above</summary>
+<br>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/board-dark.png">
+  <img src="docs/assets/board-light.png" alt="The observer's constraint board after the run: sandbox 2/2 sealed, internet closed, two hidden channels open, 961 of 160K tokens, 10 of 800 model calls, one trap set, two protected files with one push refused, no flags" width="100%">
+</picture>
+</details>
+
+## Quick start
+
+You need Python 3.11–3.13, [uv](https://docs.astral.sh/uv/) and Docker. Running a model needs an NVIDIA GPU. Smoke
+tests use one 24 GB card (an RTX 3090 or a Colab L4) with `Qwen3-4B-Instruct-2507`.
+
+```bash
+uv sync --extra dev --extra gateway                               # install
+uv run pytest                                                     # check the install
+uv run mesocosm world validate examples/spike-world.yaml --json   # check a world
+uv run mesocosm env compose examples/spike-world.yaml             # render its sealed sandbox
+uv run mesocosm run examples/spike-world.yaml --json              # run it
+uv run mesocosm observe serve runs/<run_id>                       # open http://127.0.0.1:8090
+```
+
+A run needs vLLM, the model gateway and the sandbox up first. [`spike/SPIKE.md`](spike/SPIKE.md) walks through a
+first full run on one GPU. To watch a run while it happens, start the observer during the run and add
+`--gateway-log` with the gateway's log file. Activation work needs `uv sync --extra observe`, and vLLM lives in its
+own environment.
+
+<details>
+<summary>More commands</summary>
+
+```bash
+# stages of conditions over one world, with the flags of each stage
+uv run mesocosm scenario run examples/scenarios/channel-exposure.yaml --json
+# several worlds in a row, with retries
+uv run mesocosm chain examples/chains/smoke.yaml --json
+# the judge's candidate incidents
+uv run mesocosm flags list runs/<run_id> --json
+# a model scores every transcript
+uv run mesocosm judge monitor runs/<run_id> --model qwen3-4b --url http://127.0.0.1:8080/v1 --json
+# agent-hours, tokens and cost per agent-hour
+uv run mesocosm report runs/<run_id> --gpu-hour-cost 0.8 --json
+# the run as an Inspect eval log
+uv run mesocosm export inspect runs/<run_id> --json
+# a linear probe over captured activations
+uv run mesocosm activations probe train runs/<run_id> --layer 18 \
+    --out probes/leak.safetensors --json
+# replay a finished run at 4x
+uv run mesocosm observe serve runs/<run_id> --replay 4
+```
+
+Every command accepts `--json` and then prints exactly one JSON object on stdout.
+</details>
+
+## Reproducing real incidents
+
+| Incident | What happened | What Mesocosm stages |
+|---|---|---|
+| **OpenAI–Hugging Face** | Isolated agents met through a shared package cache, built a message board and gamed their scorer. | A shared build cache that leaks traces, a scorer file within reach and a monitor model ([`hf-incident`](examples/scenarios/hf-incident.yaml), [`unsanctioned-board`](examples/scenarios/unsanctioned-board.yaml)) |
+| **Collusion wiki** | Agents on timed lookup tasks coordinated through a writable old wiki. | Timed rounds with staggered cohorts ([`world-timed-cohorts`](examples/world-timed-cohorts.yaml)), a decommission deadline on the clock, and a writable site on the web gateway's allow-list |
+
+A real escape or a real victim is never reproduced, only the contained and logged attempt.
+[`docs/incident-reproducibility.md`](docs/incident-reproducibility.md) goes through both incidents behavior by
+behavior.
+
+## Safety rules
+
+- Agents run on a Docker network with no route to the internet. Every run starts with an egress check that must fail
+  to reach the outside.
+- The only ways out are the model gateway and, when enabled, the web gateway, which enforces an allow-list and logs
+  every request.
+- API baselines are reached by the model gateway at fixed endpoints, never by an agent.
+- Records live outside the sandbox and are append-only. Agents hold no credentials for the control plane.
 
 ## Status
 
-Pre-alpha. M0–M6 and P1 are done and P2 is built: isolated sandboxes with nothing of the platform inside them; the gateway with per-agent keys, budgets, receipts, pause/stop and a model per agent (local vLLM or a commercial baseline through the same chokepoint); the world services (board, wiki, git, pypi, chat with channels and direct messages, a simulated clock, a ledger, hidden channels, accounts with roles and traps, an MCP server) and the real internet through a policed web gateway; concurrent agents, memory policy, chaining, persistent operation with snapshots and forks; verifiers that read the world's state and award partial credit; side tasks and a monitor model; the judge's flags with a review queue; staged scenarios (peer verification after Shi et al., the OpenAI–Hugging Face incident after Slocum et al.); live observation; activations by recompute with linear probes; export to Inspect. Everything hardware-bound through ADR-0026 was verified in Docker on a Colab L4; ADR-0027 to ADR-0031 are covered by tests and not yet run in Docker. See [`spike/SPIKE.md`](spike/SPIKE.md), [`docs/milestones.md`](docs/milestones.md) and [`docs/capability-matrix.md`](docs/capability-matrix.md).
+Pre-alpha. Work is tracked as milestones M0–M8.
 
-```bash
-uv run mesocosm world validate examples/spike-world.yaml --json   # check a manifest
-uv run mesocosm env compose examples/spike-world.yaml              # render the sandbox topology
-uv run mesocosm run examples/spike-world.yaml --json               # needs vLLM, the gateway and the Compose sandbox up
-uv run mesocosm observe serve runs/<run_id> --gateway-log runs/spike/gateway.jsonl   # live view at http://127.0.0.1:8090
-#   the constraint board at the top: one pixel sprite per limit of the world; add --gpu-hour-cost 0.8 for the cost tile
-uv run mesocosm scenario run examples/scenarios/channel-exposure.yaml --json   # stages over one world; flags per stage
-uv run mesocosm chain examples/chains/smoke.yaml --json                        # several worlds in sequence, with retries
-uv run mesocosm flags list runs/<run_id> --json                                # the judge's candidate incidents
-uv run mesocosm report runs/<run_id> --gpu-hour-cost 0.8 --json                # agent-hours, tokens, cost per agent-hour
-uv run mesocosm judge monitor runs/<run_id> --model qwen3-4b --url http://127.0.0.1:8080/v1 --json   # a model scores every transcript
-uv run mesocosm export inspect runs/<run_id> --json                             # the bundle as an Inspect eval log
-uv run mesocosm activations probe train runs/<run_id> --layer 18 --out probes/leak.safetensors --json   # a linear probe over captured activations
-#   add --summarizer-url http://127.0.0.1:8000/v1 --summarizer-model qwen3-4b --summarizer-key mesocosm-local for model-written status lines
-```
+| Milestone | What it adds | State |
+|---|---|---|
+| M0–M1 | One agent on one task, end to end, in a sealed sandbox | done |
+| M1.5 | Live observation and replay | done |
+| M2–M3 | Many agents, world services, channels, conditions with receipts, chained runs | done |
+| M4 | Staged scenarios, traps, flags and a review queue | done |
+| M5 | Activations recomputed from the logged tokens | done |
+| M6 | Persistent operation, snapshots and forks | done |
+| P1 | A realistic world: personas, account roles, MCP tools, the real internet through the web gateway | done |
+| P2 | Chat, verifiable world state, a model per agent, side tasks and a monitor, activation probes | built |
+| Since P2 | The forest observer, a shared build cache, a decommission deadline, timed rounds, a honeypot | built |
 
-## What the platform does (target)
+"Done" means verified in Docker on a Colab L4. "Built" means covered by the test suite but not yet run in Docker
+(ADR-0027 to ADR-0036). Details are in [`docs/milestones.md`](docs/milestones.md) and
+[`docs/capability-matrix.md`](docs/capability-matrix.md).
 
-| Capability | Meaning |
-|---|---|
-| Real work | Tasks come from executable benchmarks (Terminal-Bench, SWE-bench) through Harbor; agents are public coding agents (OpenCode first) running open-weight models on vLLM. |
-| Two run modes | *Comparison runs* restore the initial state every run and randomize conditions. *Persistent operation* keeps supplying tasks and carries memory and shared state across runs. A behavior found in persistent operation is forked from the saved state into comparison runs that change one condition. |
-| Enforced conditions | Resource limits, channels, exposure and memory policies are applied at the point where they take effect (the model gateway, the environment services), and every applied condition leaves a receipt. Unsupported conditions fail explicitly. |
-| Joint evidence | Actions, messages, what each agent actually read, CoT, activations, memory, resource use and environment state, keyed to the same run/agent/step identifiers. |
-| Training-ready records | Token sequences, action masks, reward version and policy version are kept so that SFT/RL can consume the records later. Applying training is out of scope. |
-| Agent-operable | One operation contract (Python API + `--json` CLI, later MCP) that both people and authorized research agents can call. Experimental agents never hold control-plane credentials. |
+## Learn more
 
-See [`ARCHITECTURE.md`](ARCHITECTURE.md) for components and [`docs/operation-contract.md`](docs/operation-contract.md) for the interface.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md): the components and how they connect.
+- [`docs/operation-contract.md`](docs/operation-contract.md): the Python API and `--json` CLI that people and
+  research agents share.
+- [`docs/capability-matrix.md`](docs/capability-matrix.md): what is supported, unsupported or unverified, with evidence.
+- [`docs/adr/`](docs/adr/README.md): every design decision, one record each.
+- The project proposal is a Google Doc shared in the GRAIL Slack channel.
 
-## Repository layout
+<details>
+<summary>Repository layout</summary>
 
 ```
 src/mesocosm/
-  core/       world manifests, run manager, scheduler, conditions, snapshots, record store
-  gateway/    OpenAI-compatible model gateway: exposure logging, budgets, request tagging
-  env/        sandbox networks (compose renderer, egress check) and the world services (board, wiki, git, pypi, chat, mcp, hidden channels)
-  adapters/   harness adapters (opencode/), task adapters (harbor/)
-  observe/    live view of a run (agents, session trees, drill-down); activation capture and recompute (M5)
-  judge/      traps, environment-state checks, LLM judges, behavior catalog (Ethogram)
-  cli/        `mesocosm` command line
-spike/        M0 scripts and runbook (host-only day 1, Docker isolation day 2)
-docs/         milestones, operation contract, capability matrix, ADRs
+  core/       manifests, run manager, conditions and receipts, scenarios, chains, snapshots
+  gateway/    the model gateway: per-agent keys, budgets, receipts, a model per agent
+  env/        the sandbox (Compose renderer, egress check, web gateway) and the world services
+  adapters/   the harness adapter (opencode/) and the task adapter (harbor/)
+  observe/    the observer (forest view, constraint board, replay), activation recompute, probes
+  judge/      flags for traps, state checks and channel use; the review queue; the monitor model
+  export/     derived files from a run, such as an Inspect eval log
+  cli/        the `mesocosm` command line
+examples/     worlds, scenarios, chains and tasks to start from
+spike/        M0 scripts and the runbook
+docs/         milestones, operation contract, capability matrix, ADRs, README figures
 ```
-
-## Development setup
-
-Python 3.11–3.13, [uv](https://docs.astral.sh/uv/), Docker, an NVIDIA GPU for anything that runs a model. Smoke tests target a single 24 GB GPU (RTX 3090 or Colab L4) with `Qwen3-4B-Instruct-2507` (ADR-0007).
-
-```bash
-uv sync --extra dev
-uv run pytest
-```
-
-Model-dependent extras:
-
-```bash
-uv sync --extra gateway            # FastAPI gateway
-uv sync --extra observe            # torch, transformers, nnsight
-# vLLM is installed separately in its own environment; see spike/SPIKE.md
-```
-
-## Safety rules (apply from the first run)
-
-- Experimental agents run on a Docker network with no route to the internet. Every run starts with an egress check that must fail to reach the outside.
-- The only way out of the sandbox is the model gateway, which reaches the inference server and nothing else.
-- Commercial baseline models are called by the control plane outside the sandbox, at fixed API endpoints.
-- Records live outside the sandbox and are append-only. Agents have no credentials for the control plane.
+</details>
 
 ## Contributing
 
-Read [`AGENTS.md`](AGENTS.md) first; it is the operating contract for coding agents and people alike (`CLAUDE.md` is a symlink to it). Decisions are recorded as ADRs in `docs/adr/`. Each adapter and each controllable condition has a row in `docs/capability-matrix.md` stating whether it is supported, unsupported or unverified, with the evidence. Work is tracked as GitHub milestones M0–M8.
+Read [`AGENTS.md`](AGENTS.md) first. It is the operating contract for coding agents and people alike (`CLAUDE.md` is
+a symlink to it). Decisions are recorded as ADRs in `docs/adr/`. Each adapter and each controllable condition has a
+row in the capability matrix that says whether it is supported, unsupported or unverified, with the evidence.
+
+Mesocosm is released under the [MIT License](LICENSE).
