@@ -63,6 +63,11 @@ def bundle_report(root: str | pathlib.Path, gpu_hour_cost: float | None = None) 
         "verdicts": dict(sorted(Counter(latest_verdict.values()).items())),
         "unreviewed_flags": sum(1 for f in flags if f["flag_id"] not in latest_verdict),
     }
+    from mesocosm.judge.flags import peer_review_metrics
+
+    metrics = peer_review_metrics(events)
+    if metrics:
+        report["peer_review"] = metrics
     if gpu_hour_cost is not None:
         cost = round(gpu_hour_cost * wallclock / 3600, 4)
         report["cost"] = {"gpu_hour_cost": gpu_hour_cost, "run_cost": cost,

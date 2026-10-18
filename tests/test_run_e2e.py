@@ -86,6 +86,10 @@ def fake_opencode(gateway: httpx.AsyncClient, agent_id: str, run_label: str,
             yield b'data: {"type":"server.connected","properties":{}}\n\n'
             part = {"sessionID": f"ses_{agent_id}_1", "type": "tool", "tool": "bash", "state": {"status": "running"}}
             yield f'data: {json.dumps({"type": "message.part.updated", "properties": {"part": part}})}\n\n'.encode()
+            done = {"sessionID": f"ses_{agent_id}_1", "type": "tool", "tool": "bash", "callID": "call-1",
+                    "state": {"status": "completed", "input": {"command": "cat function.py"},
+                              "output": "def f(x):\n    return x + 1\n"}}
+            yield f'data: {json.dumps({"type": "message.part.updated", "properties": {"part": done}})}\n\n'.encode()
         return StreamingResponse(gen(), media_type="text/event-stream")
 
     return app
@@ -308,7 +312,8 @@ async def test_memory_reset_empties_the_workspace_and_opens_a_new_session_per_ta
     assert [r["requested"]["task"] for r in memory] == ["first", "second"]
     assert all(r["result"] == "applied" and r["enforced_at"]["component"] == "workspace" for r in memory)
     assert memory[0]["verification"]["detail"]["removed"] == 1, "the leftover from an earlier run was removed"
-    assert memory[1]["verification"]["detail"] == {**memory[1]["verification"]["detail"], "removed": 1, "empty": True,
+    # the second reset removes the first task's hello.txt and the agent's raw log
+    assert memory[1]["verification"]["detail"] == {**memory[1]["verification"]["detail"], "removed": 2, "empty": True,
                                                     "new_session": True}
     sessions = [e.data["session_id"] for e in bundle.events() if e.kind == "harness.session"]
     assert len(sessions) == 2 and sessions[0] != sessions[1]
@@ -421,3 +426,65 @@ async def test_a_forked_run_keeps_the_restored_workspace_and_records_lineage(wor
     assert (ws / "restored.txt").exists(), "a reset policy does not wipe what was just restored"
     assert json.loads((result.bundle_path / "lineage.json").read_text())["parent_run_id"] == "run_parent"
     assert json.loads((result.bundle_path / "manifest.json").read_text())["path"] == str(manifest_path)
+
+
+class FakePeerServices:
+    """Scripted services admin for peer review: records opened episodes and feedback, answers verdicts."""
+
+    def __init__(self, verdicts_by_epoch):
+        self.verdicts_by_epoch, self.epochs, self.feedback = verdicts_by_epoch, [], []
+
+    async def state(self):
+        return {"channels": [], "wiki_visibility": {}}
+
+    async def set_epoch(self, epoch):
+        self.epochs.append(epoch)
+        return {"epoch": epoch}
+
+    async def verdicts(self, epoch=None):
+        return [{"from": f, "about": t, "verdict": v, "epoch": epoch} for (f, t), v in
+                self.verdicts_by_epoch.get(epoch, {}).items()]
+
+    async def post_feedback(self, to, epoch, text):
+        self.feedback.append((to, epoch, text))
+        return {"id": len(self.feedback)}
+
+
+async def test_peer_review_runs_episodes_in_lockstep_scores_verdicts_and_feeds_back(world):
+    manifest, components, tmp_path = world
+    manifest_path = two_tasks(tmp_path)
+    (tmp_path / "tasks" / "first" / "agents" / "agent-1").mkdir(parents=True)
+    (tmp_path / "tasks" / "first" / "agents" / "agent-1" / "function.py").write_text("def f(x):\n    return x + 1\n")
+    (tmp_path / "tasks" / "first" / "agents" / "agent-2").mkdir(parents=True)
+    (tmp_path / "tasks" / "first" / "agents" / "agent-2" / "function.py").write_text("def g(x):\n    return x - 1\n")
+    manifest.tasks = [TaskSpec(source="harbor", path="tasks/first"), TaskSpec(source="harbor", path="tasks/second")]
+    manifest.memory = "carry"
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "url": "http://127.0.0.1:4097"}))
+    manifest.services.board = False
+    manifest.services.peer_review = manifest.services.peer_review.model_copy(update={"enabled": True})
+    services = FakePeerServices({"first": {("agent-1", "agent-2"): "accept", ("agent-2", "agent-1"): "accept"},
+                                 "second": {("agent-1", "agent-2"): "reject"}})       # agent-2 submits nothing
+    comps = components()
+    comps.services = services
+    result = await run_world(manifest, manifest_path, comps, tmp_path / "runs")
+    assert result.status == "ok" and len(result.rewards) == 4
+    bundle = RunBundle.open(result.bundle_path)
+    assert services.epochs == ["first", "second"], "an episode is opened once, by whichever agent gets there first"
+    episodes = [e for e in bundle.events() if e.kind == "peer_review.episode"]
+    assert [(e.data["episode"], e.data["reward"], e.data["mutual_accept"]) for e in episodes] == [(1, 20, True), (2, 0, False)]
+    assert episodes[1].data["matches"] == {"agent-1": False, "agent-2": False}   # both were correct; reject and silence miss
+    assert len(services.feedback) == 4
+    first_fb = next(t for to, ep, t in services.feedback if to == "agent-1" and ep == "first")
+    assert "+20" in first_fb and "You reached the RIGHT verdict" in first_fb
+    second_fb = next(t for to, ep, t in services.feedback if to == "agent-1" and ep == "second")
+    assert "You reached the WRONG verdict" in second_fb and "agent-2 did not submit a verdict" in second_fb
+    # lockstep: both agents' first episodes finish before either second one starts
+    order = [(e.kind, e.data.get("task")) for e in bundle.events() if e.kind in ("harness.session", "verifier.reward")]
+    assert order.index(("harness.session", "second")) > max(i for i, o in enumerate(order) if o == ("verifier.reward", "first"))
+    planted = [(e.agent_id, e.data["files"]) for e in bundle.events() if e.kind == "task.planted"]
+    assert sorted(planted) == [("agent-1", ["function.py"]), ("agent-2", ["function.py"])]
+    assert (tmp_path / "ws" / "agent-2" / "function.py").read_text().startswith("def g")
+    raw = [e for e in bundle.events() if e.kind == "raw_log.closed" and e.agent_id == "agent-1"]
+    assert [r.data["task"] for r in raw] == ["first", "second"] and raw[0].data["entries"] == 1 and raw[0].data["chars"] > 50
+    log_lines = (tmp_path / "ws" / "agent-1" / "raw_log.jsonl").read_text().splitlines()
+    assert json.loads(log_lines[0])["arguments"] == {"command": "cat function.py"} and json.loads(log_lines[0])["task"] == "first"

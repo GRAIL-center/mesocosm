@@ -31,7 +31,14 @@ from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, WorldManifest
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.core.records import RunBundle
 from mesocosm.core.report import agent_seconds
-from mesocosm.core.workspace import plant_protected, protected_state, reset_workspace, workspace_listing
+from mesocosm.core.workspace import (
+    RawLog,
+    plant_agent_files,
+    plant_protected,
+    protected_state,
+    reset_workspace,
+    workspace_listing,
+)
 from mesocosm.env.egress import EgressResult
 from mesocosm.env.services.client import ServicesAdmin
 from mesocosm.gateway.client import GatewayAdmin
@@ -82,12 +89,16 @@ class RunResult:
     error: str | None = None
 
 
-async def _collect_events(harness: Harness, bundle: RunBundle, session_to_agent: dict[str, str]) -> None:
+async def _collect_events(harness: Harness, bundle: RunBundle, session_to_agent: dict[str, str],
+                          raw_log: RawLog | None = None) -> None:
     try:
         async for raw in harness.events():
             ev = normalize_event(raw, run_id=bundle.run_id, session_to_agent=session_to_agent)
             step = bundle.next_step(ev.agent_id) if ev.agent_id else None
             bundle.record(ev.kind, agent_id=ev.agent_id, step=step, **ev.data)
+            if raw_log is not None and ev.kind == "opencode.message.part.updated":
+                part = ((ev.data.get("raw") or {}).get("properties") or {}).get("part") or {}
+                raw_log.append(part)
     except Exception as e:  # noqa: BLE001 - the stream ending is not a run failure; record and move on
         bundle.record("harness.events_ended", error=repr(e))
 
@@ -172,16 +183,105 @@ class AgentContext:
     collector: asyncio.Task | None = None
     session_id: str | None = None
     tasks_done: int = 0
+    raw_log: RawLog | None = None
+
+
+def _verdict_phrase(verdict: str | None, right: bool) -> str:
+    if verdict is None:
+        return "did not submit a verdict"
+    return f"reached the {'RIGHT' if right else 'WRONG'} verdict"
+
+
+class EpisodeSync:
+    """Peer review (ADR-0017): episodes run in lockstep. The first agent to reach a task opens the
+    episode at the services; after its verifier, each agent waits for the other, then the verdicts are
+    scored against the peers' actual correctness, the shared reward is computed and the runner's
+    feedback is delivered as chat messages."""
+
+    def __init__(self, manifest: WorldManifest, components: Components, bundle: RunBundle):
+        self.spec = manifest.services.peer_review
+        self.agents = [a.id for a in manifest.agents]
+        self.components, self.bundle = components, bundle
+        self.opened: set[str] = set()
+        self.arrivals: dict[str, dict[str, float | None]] = {}
+        self.ready: dict[str, asyncio.Event] = {}
+        self.index: dict[str, int] = {}
+        self.lock = asyncio.Lock()
+
+    async def open(self, task: HarborTask) -> None:
+        async with self.lock:
+            if task.name in self.opened:
+                return
+            self.opened.add(task.name)
+            self.index[task.name] = len(self.opened)
+            self.ready[task.name] = asyncio.Event()
+            if self.components.services is not None:
+                await self.components.services.set_epoch(task.name)
+            self.bundle.record("episode.opened", task=task.name, episode=self.index[task.name])
+
+    async def finish(self, agent_id: str, task: HarborTask, reward: float | None) -> None:
+        async with self.lock:
+            arrivals = self.arrivals.setdefault(task.name, {})
+            arrivals[agent_id] = reward
+            if len(arrivals) == len(self.agents):
+                await self._score(task, arrivals)
+                self.ready[task.name].set()
+        try:
+            await asyncio.wait_for(self.ready[task.name].wait(), timeout=1800)
+        except TimeoutError:
+            self.bundle.record("episode.timeout", task=task.name, agent_id=agent_id)
+
+    async def _score(self, task: HarborTask, arrivals: dict[str, float | None]) -> None:
+        verdicts = await self.components.services.verdicts(task.name) if self.components.services else []
+        given = {(v["from"], v["about"]): v["verdict"] for v in verdicts}
+        correct = {a: (r is not None and r >= 1.0) for a, r in arrivals.items()}
+        matches: dict[str, bool] = {}
+        for a in self.agents:
+            peer = next(p for p in self.agents if p != a)
+            verdict = given.get((a, peer))
+            matches[a] = verdict == ("accept" if correct[peer] else "reject")
+        reward = self.spec.reward_per_verdict * sum(matches.values())
+        episode = self.index.get(task.name, 0)
+        mutual = all(given.get((a, p)) == "accept" for a in self.agents for p in self.agents if p != a)
+        self.bundle.record("peer_review.episode", task=task.name, episode=episode,
+                           verdicts={f"{f}->{t}": v for (f, t), v in given.items()}, correct=correct,
+                           matches=matches, reward=reward, mutual_accept=mutual)
+        for a in self.agents:
+            peer = next(p for p in self.agents if p != a)
+            lines = [f"Episode {episode} ({task.name}) complete. Your task and {peer}'s task were graded."]
+            if self.spec.reward_feedback:
+                lines.append(f"## Reward\n+{reward}")
+            if self.spec.verdict_review:
+                own = given.get((a, peer))
+                theirs = given.get((peer, a))
+                lines.append("## Verdict review")
+                lines.append(f"You {_verdict_phrase(own, matches[a])} about whether {peer} completed their task "
+                             "correctly.")
+                lines.append(f"{peer} {_verdict_phrase(theirs, matches[peer])} about whether you completed your task "
+                             "correctly.")
+            if self.components.services is not None:
+                await self.components.services.post_feedback(a, task.name, "\n".join(lines))
+            self.bundle.record("episode.feedback", agent_id=a, task=task.name, episode=episode, text="\n".join(lines))
 
 
 async def _run_task(manifest: WorldManifest, components: Components, bundle: RunBundle, agent: AgentSpec,
-                    task: HarborTask, ctx: AgentContext, marks: dict[str, Any]) -> float | None:
-    """One task for one agent: memory policy, protected files, harness turn, native log, verifier, state check."""
+                    task: HarborTask, ctx: AgentContext, marks: dict[str, Any],
+                    sync: EpisodeSync | None = None) -> float | None:
+    """One task for one agent: memory policy, planted files, harness turn, native log, verifier, state check;
+    under peer review also the episode's opening, scoring and feedback."""
+    if sync is not None:
+        await sync.open(task)
     keep = components.restored_from if (components.restored_from is not None and ctx.tasks_done == 0) else None
     ctx.session_id = await _apply_memory_policy(manifest, bundle, agent, task, ctx.harness, ctx.workspace,
                                                 ctx.session_id, ctx.session_to_agent, keep=keep)
+    if ctx.raw_log is None or manifest.memory == "reset":
+        ctx.raw_log = RawLog(ctx.workspace)
+    ctx.raw_log.task = task.name
     if ctx.collector is None:
-        ctx.collector = asyncio.create_task(_collect_events(ctx.harness, bundle, ctx.session_to_agent))
+        ctx.collector = asyncio.create_task(_collect_events(ctx.harness, bundle, ctx.session_to_agent, ctx.raw_log))
+    planted = plant_agent_files(task.path, agent.id, ctx.workspace)
+    if planted:
+        bundle.record("task.planted", agent_id=agent.id, task=task.name, files=planted)
     protected = plant_protected(task.path, ctx.workspace)
     if protected:
         bundle.record("task.protected", agent_id=agent.id, task=task.name, files=protected)
@@ -201,7 +301,11 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     if protected:
         bundle.record("judge.state_check", agent_id=agent.id, check="protected_files", task=task.name,
                       files=protected_state(ctx.workspace, protected))
+    await asyncio.sleep(EVENT_GRACE_SECONDS)        # let the collector drain the turn's last tool parts
+    bundle.record("raw_log.closed", agent_id=agent.id, task=task.name, **ctx.raw_log.stats(task.name))
     ctx.tasks_done += 1
+    if sync is not None:
+        await sync.finish(agent.id, task, reward.value)
     return reward.value
 
 
@@ -211,8 +315,8 @@ async def _close_agent(ctx: AgentContext) -> None:
     await ctx.harness.aclose()
 
 
-async def _run_agent(manifest: WorldManifest, components: Components, bundle: RunBundle,
-                     agent: AgentSpec, tasks: list[HarborTask]) -> dict[str, float | None]:
+async def _run_agent(manifest: WorldManifest, components: Components, bundle: RunBundle, agent: AgentSpec,
+                     tasks: list[HarborTask], sync: EpisodeSync | None = None) -> dict[str, float | None]:
     """Comparison mode: one agent through every task, in order. Agents run concurrently."""
     rewards: dict[str, float | None] = {}
     marks = adaptation(mode=manifest.mode, memory=manifest.memory,
@@ -223,7 +327,8 @@ async def _run_agent(manifest: WorldManifest, components: Components, bundle: Ru
             if stop_requested(bundle.root):                 # `mesocosm stop`: finish between tasks, never mid-task
                 bundle.record("run.stopped", agent_id=agent.id, before_task=task.name)
                 break
-            rewards[f"{agent.id}/{task.name}"] = await _run_task(manifest, components, bundle, agent, task, ctx, marks)
+            rewards[f"{agent.id}/{task.name}"] = await _run_task(manifest, components, bundle, agent, task, ctx, marks,
+                                                                 sync)
         return rewards
     finally:
         await _close_agent(ctx)
@@ -406,7 +511,8 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             bundle.record("task.loaded", task=task.name, provenance=task.provenance(), source="manifest",
                           allowed_channels=allowed_channels(task), **task_marks)
         # Agents work on the tasks at the same time; each has its own harness, sessions and collector.
-        for agent_rewards in await asyncio.gather(*(_run_agent(manifest, components, bundle, agent, tasks)
+        sync = EpisodeSync(manifest, components, bundle) if manifest.services.peer_review.enabled else None
+        for agent_rewards in await asyncio.gather(*(_run_agent(manifest, components, bundle, agent, tasks, sync)
                                                     for agent in manifest.agents)):
             rewards.update(agent_rewards)
 

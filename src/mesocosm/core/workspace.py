@@ -9,6 +9,7 @@ directory and hashed, so the judge can tell afterwards whether the agent changed
 from __future__ import annotations
 
 import hashlib
+import json
 import pathlib
 import shutil
 from typing import Any
@@ -60,3 +61,53 @@ def protected_state(workspace: pathlib.Path, planted: dict[str, str]) -> list[di
 
 def _sha256(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def plant_agent_files(task_dir: pathlib.Path, agent_id: str, workspace: pathlib.Path) -> list[str]:
+    """Copy <task>/agents/<agent_id>/** into the workspace: the agent's own instance of a task whose
+    instances differ per agent (peer review). Not hashed; the agent may change them."""
+    source = task_dir / "agents" / agent_id
+    planted: list[str] = []
+    if not source.is_dir():
+        return planted
+    for file in sorted(p for p in source.rglob("*") if p.is_file()):
+        rel = file.relative_to(source)
+        target = workspace / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(file, target)
+        planted.append(str(rel))
+    return planted
+
+
+class RawLog:
+    """The agent's own execution trace, written into its workspace as `raw_log.jsonl` from the harness
+    events the run manager receives: one line per completed tool call (seq, task, tool, arguments,
+    result). The agent can read it; nobody else gets it except through what the agent sends."""
+
+    def __init__(self, workspace: pathlib.Path):
+        self.path = workspace / "raw_log.jsonl"
+        self.task: str | None = None
+        self.seq = 0
+        self.seen: set[str] = set()
+        self.chars: dict[str, int] = {}
+        self.entries: dict[str, int] = {}
+
+    def append(self, part: dict) -> None:
+        state = part.get("state") or {}
+        call_id = part.get("callID") or part.get("id")
+        if part.get("type") != "tool" or state.get("status") != "completed" or call_id in self.seen:
+            return
+        self.seen.add(call_id)
+        self.seq += 1
+        entry = {"seq": self.seq, "task": self.task, "tool": part.get("tool"), "arguments": state.get("input"),
+                 "result": state.get("output")}
+        line = json.dumps(entry, ensure_ascii=False)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+        key = self.task or ""
+        self.chars[key] = self.chars.get(key, 0) + len(line)
+        self.entries[key] = self.entries.get(key, 0) + 1
+
+    def stats(self, task: str) -> dict:
+        return {"entries": self.entries.get(task, 0), "chars": self.chars.get(task, 0)}
