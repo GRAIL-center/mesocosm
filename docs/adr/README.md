@@ -35,3 +35,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0029](0029-one-gateway-many-models.md) | One gateway, a model per agent: a model catalog, routing by model id, keys from the environment | accepted |
 | [0030](0030-side-tasks-and-a-monitor.md) | Side tasks (`side_task.md`, `tests/side_test.sh`) and a monitor model that scores transcripts (`judge.monitor`, `monitor_suspicion`) | accepted |
 | [0031](0031-activation-probes.md) | Linear probes over recomputed activations (`activations probe train | score`), provenance in the probe file | accepted |
+| [0032](0032-the-observer-is-a-pixel-forest.md) | The observer is a pixel forest; every constraint of the world is on one board, a sprite each | accepted |

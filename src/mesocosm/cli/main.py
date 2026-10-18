@@ -132,8 +132,12 @@ def observe_serve(bundle: pathlib.Path,
                   services_log: pathlib.Path = typer.Option(None, "--services-log",
                                                             help="The world services' services.jsonl to tail live; "
                                                                  "default: the copy inside the bundle"),
+                  gpu_hour_cost: float = typer.Option(None, "--gpu-hour-cost",
+                                                      help="Price of one GPU-hour, for the cost tile of the "
+                                                           "constraint board"),
                   json_: bool = JSON_OPT) -> None:
-    """Serve the live view of a run: agents, their session trees, one-line summaries, drill-down."""
+    """Serve the live view of a run: the constraint board, agents, their session trees, one-line summaries,
+    drill-down."""
     from mesocosm.observe.server import serve
 
     _emit({"url": f"http://{host}:{port}", "bundle": str(bundle),
@@ -141,7 +145,7 @@ def observe_serve(bundle: pathlib.Path,
            "mode": f"replay x{replay}" if replay else "live",
            "summaries": f"model {summarizer_model}" if summarizer_url and summarizer_model else "rules"}, json_)
     serve(bundle, gateway_log, host, port, replay, summarizer_url, summarizer_model, summarizer_key, summary_lang,
-          services_log)
+          services_log, gpu_hour_cost)
 
 
 def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,

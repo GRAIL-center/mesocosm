@@ -496,13 +496,16 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             return RunResult(bundle.run_id, bundle.root, "failed_channel_verification", rewards,
                              f"channel {channel}: enabled={wanted} not confirmed by every agent")
 
+    if components.services:
+        # The exposure schedule and the simulated clock (ADR-0028) count from the run start, not from whenever
+        # the services container came up; the observer reads the anchor from this event.
+        await components.services.set_clock(run_start)
+        bundle.record("services.clock_set", started=run_start)
     exposure = manifest.conditions.get("exposure")
     if exposure is not None:
         wanted = exposure.get("wiki", {}) if isinstance(exposure, dict) else {}
         state = None
         if components.services:
-            # The schedule counts from the run start, not from whenever the services container came up.
-            await components.services.set_clock(run_start)
             state = await components.services.state()
         applied = state.get("wiki_visibility") if state else None
         ok = applied == wanted

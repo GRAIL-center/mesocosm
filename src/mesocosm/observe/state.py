@@ -16,6 +16,8 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass, field
 from typing import Any
 
+from mesocosm.observe.constraints import ConstraintFacts, board
+
 TIMELINE_MAX = 2000      # text/status/file items kept per session
 TOOLS_MAX = 500          # tool calls kept per session (latest state per call id)
 REQUESTS_MAX = 1000      # model-request summaries kept per agent
@@ -188,6 +190,9 @@ class Observer:
         self._live_services = False              # set by the server when it tails services.jsonl directly
         self.run_conditions: dict[str, Any] = {} # conditions enforced at run level (channels), not per agent
         self.run_started: float | None = None    # first bundle event; older shared-log records are earlier runs
+        self.spec: dict[str, Any] = {}           # the manifest as run (manifest.json), for the constraint board
+        self.facts = ConstraintFacts()           # what the board counts beyond the per-agent state (ADR-0032)
+        self.gpu_hour_cost: float | None = None  # the operator's rate, for the cost tile
 
     # -- ingestion ------------------------------------------------------------------------
 
@@ -203,6 +208,7 @@ class Observer:
         kind = ev.get("kind") or ""
         data = ev.get("data") or {}
         agent_id = ev.get("agent_id")
+        self.facts.on_event(kind, agent_id, ts, data)
         if kind.startswith("opencode."):
             self._apply_opencode(kind[len("opencode."):], data, agent_id, ts)
         elif kind == "harness.session":
@@ -267,6 +273,7 @@ class Observer:
         if self.known_agents and agent_id not in self.known_agents:
             self.ignored_records += 1
             return
+        self.facts.on_service(agent_id, rec)
         agent = self._agent(agent_id)
         item = {"ts": ts, "kind": "service", "service": service, "op": op, "key": key,
                 "summary": rec.get("summary"), "sha256": rec.get("sha256"), "account": rec.get("account"),
@@ -314,6 +321,7 @@ class Observer:
     def apply_manifest(self, manifest_json: dict[str, Any]) -> None:
         """manifest.json of the bundle: the agents that belong to this run."""
         spec = manifest_json.get("manifest") or manifest_json
+        self.spec = spec
         self.known_agents = {a.get("id") for a in spec.get("agents") or [] if a.get("id")}
         for agent_id in sorted(self.known_agents):
             self._agent(agent_id)
@@ -324,6 +332,7 @@ class Observer:
 
     def apply_receipt(self, receipt: dict[str, Any]) -> None:
         self.ingested += 1
+        self.facts.on_receipt(receipt)
         ts = (receipt.get("enforced_at") or {}).get("wallclock")
         self._tick(ts)
         requested = receipt.get("requested") or {}
@@ -355,6 +364,7 @@ class Observer:
             if len(self._seen_requests) > REQUESTS_MAX * 4:
                 self._seen_requests = set(list(self._seen_requests)[-REQUESTS_MAX * 2:])
         agent = self._agent(agent_id)
+        self.facts.on_gateway(agent_id, rec)
         resp = rec.get("response") or {}
         summary = rec.get("request_summary") or {}
         usage = resp.get("usage") or {}
@@ -438,6 +448,8 @@ class Observer:
             "service_records": self.service_records, "interactions": list(self.interactions),
             "run_conditions": self.run_conditions, "run_flags": list(self.run_flags),
             "paused": self.paused, "stop_requested": self.stop_requested,
+            "constraints": board(self.spec, self.facts, self.agents, self.run_conditions, self.last_ts,
+                                 self.gpu_hour_cost),
             "agents": agents,
             "sessions": {sid: n.to_dict() for sid, n in self.sessions.items()},
         }

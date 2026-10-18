@@ -131,3 +131,24 @@ def test_state_at_ignores_later_records(bundle):
     assert [a["agent_id"] for a in early] == ["agent-1"] and early[0]["status"] == "idle" and early[0]["requests"] == 0
     assert state_at(root, gw, 10.5)["agents"][0]["status"] == "idle"
     assert state_at(root, gw, 99.0)["agents"][0]["status"] == "tool"
+
+
+async def test_the_page_its_sprites_font_and_the_constraint_board_are_served(bundle):
+    root, gw = bundle
+    app = create_app(root, gw, gpu_hour_cost=0.8)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://observe") as c:
+        page = (await c.get("/")).text
+        assert '<script src="/static/sprites.js"></script>' in page and "Silkscreen" in page
+        sprites = await c.get("/static/sprites.js")
+        assert sprites.status_code == 200 and "window.MesoSprites" in sprites.text
+        font = await c.get("/static/fonts/silkscreen-latin-400-normal.woff2")
+        assert font.status_code == 200 and font.content[:4] == b"wOF2"
+        assert (await c.get("/static/fonts/OFL.txt")).status_code == 200
+        assert (await c.get("/static/../server.py")).status_code == 404
+        state = (await c.get("/state")).json()["state"]
+        keys = [x["key"] for x in state["constraints"]]
+        assert keys[:3] == ["sandbox", "internet", "channels"] and "cost" in keys
+        cost = next(x for x in state["constraints"] if x["key"] == "cost")
+        assert cost["rows"][2] == ["GPU-hour rate", "0.8"]
+        past = (await c.get("/state", params={"at": 11.2})).json()["state"]
+        assert next(x for x in past["constraints"] if x["key"] == "cost")["rows"][2] == ["GPU-hour rate", "0.8"]

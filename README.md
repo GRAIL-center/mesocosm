@@ -15,6 +15,7 @@ uv run mesocosm world validate examples/spike-world.yaml --json   # check a mani
 uv run mesocosm env compose examples/spike-world.yaml              # render the sandbox topology
 uv run mesocosm run examples/spike-world.yaml --json               # needs vLLM, the gateway and the Compose sandbox up
 uv run mesocosm observe serve runs/<run_id> --gateway-log runs/spike/gateway.jsonl   # live view at http://127.0.0.1:8090
+#   the constraint board at the top: one pixel sprite per limit of the world; add --gpu-hour-cost 0.8 for the cost tile
 uv run mesocosm scenario run examples/scenarios/channel-exposure.yaml --json   # stages over one world; flags per stage
 uv run mesocosm chain examples/chains/smoke.yaml --json                        # several worlds in sequence, with retries
 uv run mesocosm flags list runs/<run_id> --json                                # the judge's candidate incidents

@@ -411,6 +411,8 @@ async def test_exposure_condition_is_verified_against_the_services(world):
     anchored = receipt["verification"]["detail"]["services_started"]
     assert comps.services.started == anchored and abs(anchored - receipt["enforced_at"]["wallclock"]) < 5, \
         "the schedule counts from the run start, which the run manager set on the services"
+    clock_set = [e for e in bundle.events() if e.kind == "services.clock_set"]
+    assert len(clock_set) == 1 and clock_set[0].data["started"] == anchored, "the observer reads the anchor here"
 
     comps = components()
     comps.services = FakeServices({})                      # the services run with no schedule: contradiction
@@ -625,6 +627,8 @@ async def test_peer_review_runs_episodes_in_lockstep_scores_verdicts_and_feeds_b
     assert result.status == "ok" and len(result.rewards) == 6
     bundle = RunBundle.open(result.bundle_path)
     assert services.epochs == ["first", "second"], "an episode is opened once, by whichever agent gets there first"
+    assert [e.kind for e in bundle.events()].count("services.clock_set") == 1, \
+        "the world's clock is anchored at the run start even without an exposure schedule"
     # the world as it stood went to every verifier as world.json, with the agent under verification as the viewer
     world = json.loads((result.bundle_path / "verifier" / "agent-2" / "first" / "world.json").read_text())
     assert world["viewer"]["agent_id"] == "agent-2" and world["chat"]["messages"][0]["text"] == "psst"

@@ -24,6 +24,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from mesocosm.observe.state import REQUEST_BODIES_MAX, RUN_START_SLACK, Observer
 from mesocosm.observe.summarize import Summarizer
@@ -237,9 +238,11 @@ def prime_observer(obs: Observer, bundle: pathlib.Path) -> None:
             pass
 
 
-def state_at(bundle: pathlib.Path, gateway_log: pathlib.Path | None, at: float) -> dict[str, Any]:
+def state_at(bundle: pathlib.Path, gateway_log: pathlib.Path | None, at: float,
+             gpu_hour_cost: float | None = None) -> dict[str, Any]:
     """Rebuild the state from the files up to `at`; nothing is retained afterwards."""
     obs = Observer()
+    obs.gpu_hour_cost = gpu_hour_cost
     prime_observer(obs, bundle)
     records: list[tuple[float, str, dict[str, Any]]] = []
     sources = make_sources(bundle, gateway_log)
@@ -260,13 +263,14 @@ def state_at(bundle: pathlib.Path, gateway_log: pathlib.Path | None, at: float) 
 
 def create_app(bundle: pathlib.Path, gateway_log: pathlib.Path | None = None,
                replay_speed: float | None = None, summarizer: Summarizer | None = None,
-               services_log: pathlib.Path | None = None) -> FastAPI:
+               services_log: pathlib.Path | None = None, gpu_hour_cost: float | None = None) -> FastAPI:
     bundle = pathlib.Path(bundle)
     if not bundle.is_dir():
         raise FileNotFoundError(f"not a run bundle directory: {bundle}")
     sources = make_sources(bundle, gateway_log, services_log)
     follower = Follower(sources=sources, replay_speed=replay_speed, summarizer=summarizer, bundle=bundle)
     follower.observer._live_services = any(src.apply == "apply_service_record" for src in sources)
+    follower.observer.gpu_hour_cost = gpu_hour_cost
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -288,6 +292,9 @@ def create_app(bundle: pathlib.Path, gateway_log: pathlib.Path | None = None,
     async def index():
         return FileResponse(STATIC / "index.html")
 
+    # the page's sprites and its pixel font (ADR-0032): served from the package, nothing from the network
+    app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
     @app.get("/health")
     async def health():
         return {"ok": True, **meta()}
@@ -296,7 +303,7 @@ def create_app(bundle: pathlib.Path, gateway_log: pathlib.Path | None = None,
     async def state(at: float | None = None):
         follower.ensure_started()
         if at is not None:
-            return {"meta": {**meta(), "at": at}, "state": state_at(bundle, gateway_log, at)}
+            return {"meta": {**meta(), "at": at}, "state": state_at(bundle, gateway_log, at, gpu_hour_cost)}
         return {"meta": meta(), "state": follower.observer.snapshot()}
 
     @app.get("/events")
@@ -334,7 +341,8 @@ def derived_path(bundle: pathlib.Path) -> pathlib.Path:
 
 def serve(bundle: pathlib.Path, gateway_log: pathlib.Path | None, host: str, port: int,
           replay_speed: float | None, summarizer_url: str | None = None, summarizer_model: str | None = None,
-          summarizer_key: str = "", summary_lang: str = "en", services_log: pathlib.Path | None = None) -> None:
+          summarizer_key: str = "", summary_lang: str = "en", services_log: pathlib.Path | None = None,
+          gpu_hour_cost: float | None = None) -> None:
     import uvicorn
 
     summarizer = None
@@ -343,7 +351,7 @@ def serve(bundle: pathlib.Path, gateway_log: pathlib.Path | None, host: str, por
         summarizer = Summarizer(summarizer_url, summarizer_model, summarizer_key, summary_lang, derived_path=derived)
     elif derived.exists():          # replay: reuse the lines written during the live run, call no model
         summarizer = Summarizer(None, None, derived_path=derived)
-    app = create_app(bundle, gateway_log, replay_speed, summarizer, services_log)
+    app = create_app(bundle, gateway_log, replay_speed, summarizer, services_log, gpu_hour_cost)
     print(f"[observe] http://{host}:{port}  bundle={bundle} gateway_log={gateway_log} "
           f"mode={'replay x' + str(replay_speed) if replay_speed else 'live'} "
           f"summaries={'model ' + summarizer_model if summarizer_model else 'derived file' if summarizer else 'rules'}",
