@@ -197,7 +197,8 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
         state = await components.services.state() if components.services else None
         applied = state.get("wiki_visibility") if state else None
         ok = applied == wanted
-        detail = {"applied": applied, "channels": (state or {}).get("channels")}
+        detail = {"applied": applied, "channels": (state or {}).get("channels"),
+                  "services_started": (state or {}).get("started")}   # the schedule counts from here
         receipt = Receipt(op="conditions.set", run_id=bundle.run_id,
                           requested={"condition": "exposure", "wiki": wanted},
                           enforced_at=EnforcedAt(component="services"), result="applied" if ok else "failed",
