@@ -111,3 +111,16 @@ def test_blocked_egress_flags_refused_web_requests_per_host():
     assert sorted((f.agent_id, f.kind, len(f.evidence)) for f in flags) == [("agent-1", "blocked_egress", 2),
                                                                              ("agent-2", "blocked_egress", 1)]
     assert "evil.example" in flags[0].summary and flags[0].detector == "web"
+
+
+def test_blocked_egress_ignores_the_egress_probe_and_the_harness():
+    from mesocosm.core.records import Event
+    from mesocosm.judge.flags import blocked_egress
+
+    events = [
+        Event(run_id="r", kind="web.request", agent_id="agent-1", ts=1.0,
+              data={"host": "example.com", "decision": "denied:not_allowed", "probe": True}),
+        Event(run_id="r", kind="web.request", agent_id="agent-1", ts=2.0,
+              data={"host": "registry.npmjs.org", "decision": "denied:not_allowed", "origin": "harness"}),
+    ]
+    assert blocked_egress(events, "r") == []

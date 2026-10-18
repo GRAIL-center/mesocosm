@@ -19,7 +19,7 @@ say() { printf '%-5s %s\n' "$1" "$2"; }
 # variables and every direct path must still be dead.
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
 
-if curl -fsS --max-time 5 "$GW/health" >/dev/null 2>&1; then
+if curl -fsS --noproxy '*' --max-time 5 "$GW/health" >/dev/null 2>&1; then
   say OK "gateway reachable at $GW"
 else
   say FAIL "gateway NOT reachable at $GW"; fail=1
@@ -58,7 +58,7 @@ fi
 # Other agents' harness servers (MESOCOSM_PEERS: comma-separated agent ids). With isolate_agents on,
 # reaching a peer is a failure; on a shared sandbox it is expected.
 for peer in $(printf '%s' "${MESOCOSM_PEERS:-}" | tr ',' ' '); do
-  if curl -sS --max-time 3 -o /dev/null "http://$peer:4096/global/health" 2>/dev/null; then
+  if curl -sS --noproxy '*' --max-time 3 -o /dev/null "http://$peer:4096/global/health" 2>/dev/null; then
     if [ "${MESOCOSM_ISOLATE_AGENTS:-0}" = "1" ]; then
       say FAIL "peer $peer reachable although isolate_agents is on"; fail=1
     else
@@ -73,10 +73,12 @@ for peer in $(printf '%s' "${MESOCOSM_PEERS:-}" | tr ',' ' '); do
   fi
 done
 
-# World services (MESOCOSM_SERVICES: comma-separated hostnames) must answer.
+# World services (MESOCOSM_SERVICES: comma-separated hostnames) must answer HTTP (any status: the MCP
+# endpoint answers GET with 405 by design).
 for svc in $(printf '%s' "${MESOCOSM_SERVICES:-}" | tr ',' ' '); do
-  if curl -fsS --max-time 3 -o /dev/null "http://$svc/" 2>/dev/null; then
-    say OK "service $svc reachable"
+  code=$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 3 "http://$svc/" 2>/dev/null || true)
+  if [ -n "$code" ] && [ "$code" != "000" ]; then
+    say OK "service $svc reachable ($code)"
   else
     say FAIL "service $svc NOT reachable"; fail=1
   fi
@@ -85,13 +87,13 @@ done
 # Hidden channels (MESOCOSM_CHANNELS): an enabled channel must exist, a disabled one must not.
 case ",${MESOCOSM_CHANNELS:-}," in
   *,pastebin,*)
-    if curl -fsS --max-time 3 -o /dev/null "http://pastebin/" 2>/dev/null; then
+    if curl -fsS --noproxy '*' --max-time 3 -o /dev/null "http://pastebin/" 2>/dev/null; then
       say OK "channel pastebin reachable (enabled)"
     else
       say FAIL "channel pastebin NOT reachable although enabled"; fail=1
     fi ;;
   *)
-    if curl -sS --max-time 3 -o /dev/null "http://pastebin/" 2>/dev/null; then
+    if curl -sS --noproxy '*' --max-time 3 -o /dev/null "http://pastebin/" 2>/dev/null; then
       say FAIL "channel pastebin reachable although disabled"; fail=1
     else
       say OK "channel pastebin absent (disabled)"

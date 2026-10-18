@@ -330,9 +330,12 @@ async def test_the_internet_is_a_verified_condition_and_web_records_join_the_bun
     assert result.status == "failed_internet_verification" and "differs from the manifest" in result.error
 
     (web_dir / "policy.json").write_text(json.dumps(policy_state(web_policy(manifest))))
-    now = time.time()
+    now = time.time() + 5          # the run (and its egress check) happen within a second: these come after
+    probe_ts = time.time() + 0.05  # this one lands inside the egress check's window
     records = [
         {"ts": 1.0, "agent": "agent-1", "host": "old.example", "decision": "allowed"},        # an earlier run
+        {"ts": probe_ts, "agent": "agent-1", "ip": "172.30.0.10", "method": "GET", "scheme": "http",
+         "host": "example.com", "port": 80, "path": "/", "decision": "denied:not_allowed", "rule": None, "status": 403},
         {"ts": now, "agent": "agent-1", "ip": "172.30.0.10", "method": "GET", "scheme": "https", "host": "pypi.org",
          "port": 443, "path": "/pypi/requests/json", "decision": "allowed", "rule": "pypi.org", "status": 200,
          "request_bytes": 0, "response_bytes": 5120, "content_type": "application/json", "sha256": "ab" * 32,
@@ -343,6 +346,9 @@ async def test_the_internet_is_a_verified_condition_and_web_records_join_the_bun
         {"ts": now + 0.2, "agent": "agent-1", "ip": "172.30.0.10", "method": "GET", "scheme": "http",
          "host": "10.0.2.2", "port": 8000, "path": "/v1/models", "decision": "denied:network",
          "rule": "private or local address", "status": 403},
+        {"ts": now + 0.3, "agent": "agent-1", "ip": "172.30.0.10", "method": "CONNECT", "scheme": "https",
+         "host": "registry.npmjs.org", "port": 443, "path": "", "decision": "denied:not_allowed", "rule": None,
+         "status": 403, "connect": True},                                 # OpenCode's own update check
     ]
     (web_dir / "web.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
     result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs")
@@ -353,15 +359,17 @@ async def test_the_internet_is_a_verified_condition_and_web_records_join_the_bun
     assert receipt["verification"]["detail"]["loaded"]["budget"] == {"requests": 50, "bytes": None}
     web = [e for e in bundle.events() if e.kind == "web.request"]
     assert [(e.data["host"], e.data["decision"]) for e in web] == [
-        ("pypi.org", "allowed"), ("evil.example", "denied:not_allowed"), ("10.0.2.2", "denied:network")]
-    assert all(e.agent_id == "agent-1" for e in web) and web[0].ts == now and "excerpt" not in web[0].data
+        ("example.com", "denied:not_allowed"), ("pypi.org", "allowed"), ("evil.example", "denied:not_allowed"),
+        ("10.0.2.2", "denied:network"), ("registry.npmjs.org", "denied:not_allowed")]
+    assert all(e.agent_id == "agent-1" for e in web) and web[1].ts == now and "excerpt" not in web[1].data
+    assert web[0].data["probe"] is True, "inside the egress check's window: the platform's own probe"
+    assert web[4].data["origin"] == "harness" and "origin" not in web[2].data and "probe" not in web[2].data
     copied = (result.bundle_path / "native" / "web" / "web.jsonl").read_text().splitlines()
-    assert len(copied) == 3 and "2.32.3" in copied[0], "the copy keeps the excerpt; events carry the hash"
-    flags = {(f["kind"], f["data"]["host"] if "data" in f else f.get("host")) for f in bundle.flags()}
+    assert len(copied) == 5 and "2.32.3" in copied[1], "the copy keeps the excerpt; events carry the hash"
     kinds = [(f["kind"], f["agent_id"]) for f in bundle.flags()]
-    assert kinds.count(("blocked_egress", "agent-1")) == 2, flags
+    assert kinds.count(("blocked_egress", "agent-1")) == 2, "neither the probe nor the harness's refusal is a flag"
     summary = json.loads((result.bundle_path / "summary.json").read_text())
-    assert summary["web_records"] == 3 and summary["flags"]["blocked_egress"] == 2
+    assert summary["web_records"] == 5 and summary["flags"]["blocked_egress"] == 2
 
 
 class FakeServices:

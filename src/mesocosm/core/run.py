@@ -424,7 +424,9 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     health = await components.gateway.health()
     bundle.record("gateway.health", **health)
 
+    probe_window = (time.time() - 1.0, 0.0)     # the egress check's own web requests are not agent behavior
     isolation = await components.egress.verify([a.id for a in manifest.agents])
+    probe_window = (probe_window[0], time.time() + 1.0)
     for agent_id, result in isolation.items():
         bundle.record("isolation.check", agent_id=agent_id, **result.to_dict())
     if not all(r.ok for r in isolation.values()):
@@ -566,8 +568,13 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                     continue
                 out.write(_json(rec) + "\n")
                 web_records += 1
+                marks: dict[str, Any] = {}
+                if probe_window[0] <= float(rec.get("ts") or 0) <= probe_window[1]:
+                    marks["probe"] = True                  # the egress check, before any agent acted
+                if _harness_host(manifest, str(rec.get("host") or "")):
+                    marks["origin"] = "harness"            # the harness itself (update checks), not the model
                 bundle.record("web.request", agent_id=rec.get("agent"), ts=rec.get("ts"),
-                              **{k: v for k, v in rec.items() if k not in ("ts", "agent", "excerpt")})
+                              **{k: v for k, v in rec.items() if k not in ("ts", "agent", "excerpt")}, **marks)
 
     service_records = 0
     if components.services_log and components.services_log.exists():
@@ -603,6 +610,16 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                           "flags": flag_counts(flags),
                           "agent_seconds": agent_seconds(events), "events": len(events) + len(flags)})
     return RunResult(bundle.run_id, bundle.root, status, rewards)
+
+
+# Hosts a harness reaches on its own (update and registry checks). Refusals of these are the harness
+# phoning home through the agent's proxy settings, recorded but not an agent's doing.
+HARNESS_HOSTS = {"opencode": ("registry.npmjs.org", "opencode.ai", "api.opencode.ai")}
+
+
+def _harness_host(manifest: WorldManifest, host: str) -> bool:
+    h = host.lower().rstrip(".")
+    return any(h == x or h.endswith("." + x) for a in manifest.agents for x in HARNESS_HOSTS.get(a.harness, ()))
 
 
 def _internet_check(manifest: WorldManifest, components: Components, isolation: dict[str, EgressResult]) -> dict:

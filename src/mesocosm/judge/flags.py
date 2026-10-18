@@ -163,6 +163,8 @@ def blocked_egress(events: list[Event], run_id: str) -> list[Flag]:
     """The web gateway refused an agent's request (a host outside the policy, a private address, the budget)."""
     groups: dict[tuple, list[Event]] = defaultdict(list)
     for ev in events:
+        if ev.data.get("probe") or ev.data.get("origin") == "harness":
+            continue                                   # the egress check, or the harness phoning home
         if ev.kind == "web.request" and str(ev.data.get("decision", "")).startswith("denied"):
             groups[(ev.agent_id, ev.data.get("host"), ev.data.get("decision"))].append(ev)
     return [_flag(run_id, agent, "blocked_egress", "web",

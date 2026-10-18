@@ -274,3 +274,17 @@ async def test_agents_are_identified_by_their_own_key_and_the_admin_api_does_not
     wrong = GatewayAdmin("http://gateway", transport=httpx.ASGITransport(app=app), api_key="mesocosm-local")
     with pytest.raises(httpx.HTTPStatusError):
         await wrong.health()
+
+
+async def test_the_gateway_authenticates_to_the_upstream_itself(tmp_path):
+    up = fake_upstream()
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path, upstream_key="vllm-secret",
+                              agent_keys={"sk-one": {"agent": "agent-1", "run": "lbl"}}),
+                     transport=httpx.ASGITransport(app=up))
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway")
+    body = {"model": "m", "messages": [{"role": "user", "content": "x"}]}
+    r = await client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-one"}, json=body)
+    assert r.status_code == 200
+    assert up.state.requests[-1]["headers"]["authorization"] == "Bearer vllm-secret", "the agent's key is replaced"
+    r = await client.get("/v1/models")
+    assert r.status_code == 200 and up.state.requests[-1]["headers"]["authorization"] == "Bearer vllm-secret"

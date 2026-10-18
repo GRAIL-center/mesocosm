@@ -115,6 +115,8 @@ class GatewaySpec(BaseModel):
                          "endpoints; every agent gets its own key derived from it (ADR-0019)")
     run_label: str | None = Field(default=None, description="Run label the agents' keys are bound to "
                                   "(set when containers start); default = the run id")
+    upstream_key: str | None = Field(default=None, description="The inference server's API key, sent by the gateway; "
+                                                                "default = api_key (the spike serves vLLM with it)")
     provider_id: str = Field(default="internal", pattern=r"^[a-z0-9][a-z0-9-]{0,30}$",
                              description="Provider id in the harness config (model `<provider_id>/<model id>`)")
     provider_name: str = "Internal LLM API"

@@ -210,6 +210,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_GATEWAY_HOST": "0.0.0.0",
                 "MESOCOSM_CONTROL_KEY": manifest.gateway.api_key,
                 "MESOCOSM_AGENT_KEYS": json.dumps(agent_keys(manifest, run_label)),
+                "MESOCOSM_UPSTREAM_KEY": manifest.gateway.upstream_key or manifest.gateway.api_key,
             },
             "volumes": [f"{runs}:/runs"],
             "healthcheck": {

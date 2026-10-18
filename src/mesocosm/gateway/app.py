@@ -45,6 +45,7 @@ class Settings:
     max_hold_seconds: float = 600.0   # a paused run's requests wait this long at most, then get 503
     control_key: str = "mesocosm-local"                    # bearer key of the /admin endpoints (the control plane)
     agent_keys: dict[str, dict[str, str]] = field(default_factory=dict)   # bearer key -> {agent, run} (ADR-0019)
+    upstream_key: str | None = None                        # the inference server's key; agents never hold it
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -56,6 +57,7 @@ class Settings:
             max_hold_seconds=float(os.environ.get("MESOCOSM_MAX_HOLD_SECONDS", "600")),
             control_key=os.environ.get("MESOCOSM_CONTROL_KEY", cls.control_key),
             agent_keys=json.loads(os.environ.get("MESOCOSM_AGENT_KEYS", "{}") or "{}"),
+            upstream_key=os.environ.get("MESOCOSM_UPSTREAM_KEY") or None,
         )
 
 
@@ -457,6 +459,8 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         headers = {k: v for k, v in request.headers.items()
                    if k.lower() not in HOP_BY_HOP and k.lower() not in ("authorization", "x-mesocosm-agent",
                                                                           "x-mesocosm-run")}
+        if gw.settings.upstream_key:            # the gateway authenticates to the inference server itself
+            headers["authorization"] = f"Bearer {gw.settings.upstream_key}"
         headers["x-mesocosm-request-id"] = request_id
         if is_chat:
             headers["content-length"] = str(len(body_bytes))
