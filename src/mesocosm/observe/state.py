@@ -19,6 +19,8 @@ from typing import Any
 TIMELINE_MAX = 2000      # text/status/file items kept per session
 TOOLS_MAX = 500          # tool calls kept per session (latest state per call id)
 REQUESTS_MAX = 1000      # model-request summaries kept per agent
+INTERACTIONS_MAX = 500   # read-after-write pairs between agents kept per run
+WRITERS_MAX = 5000       # (service, key) -> writer entries kept for joining reads to writes
 REQUEST_BODIES_MAX = 50  # full request/response records kept per agent
 SESSIONS_MAX = 5000      # sessions kept per run; finished ones are evicted first
 LIVE_TEXT_MAX = 2000     # characters of streaming text kept per session
@@ -172,6 +174,10 @@ class Observer:
         self.known_agents: set[str] = set()      # from manifest.json; empty = accept every caller
         self.ignored_records = 0                 # gateway records from callers outside the manifest
         self._seen_requests: set[str] = set()
+        self.interactions: deque = deque(maxlen=INTERACTIONS_MAX)   # who read whose writing, through which service
+        self._writers: OrderedDict = OrderedDict()                  # (service, key) -> writer agent id
+        self.service_records = 0
+        self._live_services = False              # set by the server when it tails services.jsonl directly
 
     # -- ingestion ------------------------------------------------------------------------
 
@@ -208,11 +214,39 @@ class Observer:
             pass
         elif kind in ("run.failed", "run.aborted"):
             self.status = "failed" if kind == "run.failed" else data.get("reason") or "aborted"
-        elif kind.startswith("gateway.") and data.get("request_id") is None and ev.get("request_id"):
-            # end-of-run copy of a gateway record: ignored if the live log already delivered it
-            pass
+        elif kind.startswith("service."):
+            if not self._live_services:          # the end-of-run copy counts only when no live log is tailed
+                self.apply_service_record({"ts": ts, "agent": agent_id, "op": kind[len("service."):], **data})
         if kind == "harness.events_ended" and agent_id:
             pass
+
+    def apply_service_record(self, rec: dict[str, Any]) -> None:
+        """One line of the world services' services.jsonl (or a `service.*` bundle event)."""
+        self.ingested += 1
+        self.service_records += 1
+        ts = rec.get("ts")
+        self._tick(ts)
+        agent_id = rec.get("agent") or "unknown"
+        service, op = rec.get("service") or "?", rec.get("op") or "?"
+        key = rec.get("post_id") or rec.get("paste_id") or rec.get("doc") or rec.get("repo") or rec.get("package") \
+            or rec.get("file") or rec.get("site")
+        if self.known_agents and agent_id not in self.known_agents:
+            self.ignored_records += 1
+            return
+        agent = self._agent(agent_id)
+        item = {"ts": ts, "kind": "service", "service": service, "op": op, "key": key,
+                "summary": rec.get("summary"), "sha256": rec.get("sha256")}
+        session = self._active_session(agent)
+        node = self.sessions.get(session) if session else None
+        if node is not None:
+            node.items.append(item)
+        if key is not None and op == "write":
+            _put(self._writers, (service, str(key)), agent_id, WRITERS_MAX)
+        elif key is not None and op == "read":
+            writer = self._writers.get((service, str(key)))
+            if writer and writer != agent_id:
+                self.interactions.append({"ts": ts, "from": writer, "to": agent_id, "service": service, "key": str(key),
+                                          "sha256": rec.get("sha256")})
 
     def apply_manifest(self, manifest_json: dict[str, Any]) -> None:
         """manifest.json of the bundle: the agents that belong to this run."""
@@ -333,6 +367,7 @@ class Observer:
         return {
             "run_id": self.run_id, "status": self.status, "started_ts": self.started_ts,
             "last_ts": self.last_ts, "ingested": self.ingested, "ignored_records": self.ignored_records,
+            "service_records": self.service_records, "interactions": list(self.interactions),
             "agents": agents,
             "sessions": {sid: n.to_dict() for sid, n in self.sessions.items()},
         }

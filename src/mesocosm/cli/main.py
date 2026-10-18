@@ -82,7 +82,7 @@ def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "
     from mesocosm.env.compose import compose_yaml
 
     text = compose_yaml(load_manifest(manifest), repo_root=pathlib.Path.cwd(), run_label=run_label,
-                        vllm_port=vllm_port, vllm_host=vllm_host)
+                        vllm_port=vllm_port, vllm_host=vllm_host, manifest_dir=manifest.resolve().parent)
     if out:
         out.write_text(text)
         _emit({"written": str(out), "run_label": run_label}, json_)
@@ -105,6 +105,9 @@ def observe_serve(bundle: pathlib.Path,
                   summarizer_model: str = typer.Option(None, "--summarizer-model"),
                   summarizer_key: str = typer.Option("", "--summarizer-key"),
                   summary_lang: str = typer.Option("en", "--summary-lang", help="en or ko"),
+                  services_log: pathlib.Path = typer.Option(None, "--services-log",
+                                                            help="The world services' services.jsonl to tail live; "
+                                                                 "default: the copy inside the bundle"),
                   json_: bool = JSON_OPT) -> None:
     """Serve the live view of a run: agents, their session trees, one-line summaries, drill-down."""
     from mesocosm.observe.server import serve
@@ -113,7 +116,8 @@ def observe_serve(bundle: pathlib.Path,
            "gateway_log": str(gateway_log) if gateway_log else None,
            "mode": f"replay x{replay}" if replay else "live",
            "summaries": f"model {summarizer_model}" if summarizer_url and summarizer_model else "rules"}, json_)
-    serve(bundle, gateway_log, host, port, replay, summarizer_url, summarizer_model, summarizer_key, summary_lang)
+    serve(bundle, gateway_log, host, port, replay, summarizer_url, summarizer_model, summarizer_key, summary_lang,
+          services_log)
 
 
 @app.command()
@@ -141,6 +145,7 @@ def run(manifest: pathlib.Path,
         egress=DockerEgressVerifier(compose_file),
         verifier=DockerVerifier(verifier_image),
         workspace_for=lambda a: workspace_root / a.id,
+        services_log=runs_root / (spec.gateway.run_label or "spike-docker") / "services.jsonl",
     )
     result = asyncio.run(run_world(spec, manifest.resolve(), components, runs_root))
     _emit({"run_id": result.run_id, "status": result.status, "bundle": str(result.bundle_path),

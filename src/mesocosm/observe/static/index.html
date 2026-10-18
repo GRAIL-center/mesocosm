@@ -52,6 +52,10 @@
   .n .inner { font: 600 11px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
   .edge { fill: none; stroke: var(--line); stroke-width: 1.5; }
   .sep { stroke: var(--line); stroke-dasharray: 2 6; }
+  .flow { fill: none; stroke: var(--done); stroke-width: 1.5; stroke-opacity: .7; }
+  .flow.recent { stroke-width: 2.5; stroke-opacity: 1; }
+  .arrowhead { fill: var(--done); }
+  .flowlabel { font: 11px system-ui, sans-serif; fill: var(--done); }
   .edge.live { stroke: var(--busy); stroke-opacity: .6; }
   @keyframes pulse { 0%,100% { stroke-opacity: 1; } 50% { stroke-opacity: .35; } }
   #legend { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 12px; font-size: 11px; color: var(--muted);
@@ -103,11 +107,11 @@
 </div>
 <main>
   <section id="stage">
-    <svg id="graph" xmlns="http://www.w3.org/2000/svg"><g id="view"></g></svg>
+    <svg id="graph" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"></path></marker></defs><g id="view"></g></svg>
     <div id="empty">Waiting for the first event…</div>
     <div id="legend"><span><i style="background:var(--idle)"></i>idle</span><span><i style="background:var(--busy)"></i>waiting for model</span>
       <span><i style="background:var(--tool)"></i>running a tool</span><span><i style="background:var(--error)"></i>blocked / error</span>
-      <span><i style="background:var(--done)"></i>done</span><span id="legend-ai" hidden>✦ line written by the model</span></div>
+      <span><i style="background:var(--done)"></i>done</span><span>→ read another agent's post</span><span id="legend-ai" hidden>✦ line written by the model</span></div>
     <button id="fit" title="fit width; wheel scrolls, Ctrl+wheel zooms">fit</button>
   </section>
   <aside id="drawer">
@@ -139,7 +143,7 @@
   }
 
   // ---- graph: tree layout per agent, drawn as SVG nodes and edges (rebuilt from state; no listeners per node) ----
-  const R_AGENT = 28, R_SESSION = 17, SLOT = 200, ROW = 160, TOP = 70, LEFT = 30, BLOCK_GAP = 30;
+  const R_AGENT = 28, R_SESSION = 17, SLOT = 200, ROW = 160, TOP = 70, LEFT = 150, BLOCK_GAP = 30;
   const clip = (t, n) => { t = String(t ?? ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
   const wrap = (t, n, max) => {   // greedy word wrap into at most `max` lines of ~n chars; the last line is clipped
     const words = String(t ?? '').split(' '), lines = []; let cur = '';
@@ -198,6 +202,20 @@
   const edgeSvg = n => { const p = n.parent, y0 = p.y + p.r + (p.kind === 'agent' ? 54 : 52), y1 = n.y - n.r - 6, my = (y0 + y1) / 2;
     return `<path class="edge${n.status === 'busy' || n.status === 'tool' ? ' live' : ''}" d="M${p.x},${y0} C${p.x},${my} ${n.x},${my} ${n.x},${y1}"></path>`; };
 
+  // Who read whose writing: one arrow per (writer, reader, service), drawn as an arc left of the agent column.
+  function interactionsSvg(g) {
+    const pos = Object.fromEntries(g.nodes.filter(n => n.kind === 'agent').map(n => [n.id, n]));
+    const pairs = new Map();
+    (state.interactions || []).forEach(i => { const k = `${i.from}|${i.to}|${i.service}`; const e = pairs.get(k) || { ...i, n: 0 }; e.n++; e.ts = i.ts; pairs.set(k, e); });
+    return [...pairs.values()].map(e => {
+      const a = pos[e.from], b = pos[e.to]; if (!a || !b) return '';
+      const x = a.x - a.r - 8, bulge = Math.max(50, Math.abs(b.y - a.y) / 3), my = (a.y + b.y) / 2;
+      const recent = state.last_ts && e.ts && state.last_ts - e.ts < 30 ? ' recent' : '';
+      return `<path class="flow${recent}" d="M${x},${a.y} C${x - bulge},${a.y} ${x - bulge},${b.y} ${x},${b.y}" marker-end="url(#arrow)"></path>
+        <text class="flowlabel" x="${x - bulge - 4}" y="${my}" text-anchor="end">${esc(e.service)} ×${e.n}</text>`;
+    }).join('');
+  }
+
   function applyView() { $('#view').setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`); }
   function fit(g) {
     const box = $('#graph').getBoundingClientRect();
@@ -215,7 +233,7 @@
     $('#legend-ai').hidden = !(meta && meta.summarizer);
     const g = layout();
     const seps = g.blocks.slice(1).map(b => `<line class="sep" x1="0" x2="${Math.max(g.width, 4000)}" y1="${b.y - BLOCK_GAP / 2}" y2="${b.y - BLOCK_GAP / 2}"></line>`).join('');
-    $('#view').innerHTML = seps + g.nodes.filter(n => n.parent).map(edgeSvg).join('') + g.nodes.map(nodeSvg).join('');
+    $('#view').innerHTML = seps + g.nodes.filter(n => n.parent).map(edgeSvg).join('') + interactionsSvg(g) + g.nodes.map(nodeSvg).join('');
     if (!view.fitted) fit(g);
     if (meta && (meta.mode === 'replay' || state.started_ts)) {
       $('#scrub').hidden = false;
@@ -311,7 +329,8 @@
     if (!items.length) return '<p class="muted">nothing yet</p>';
     return items.map(i => {
       let text = i.kind === 'tool' ? `<b>${esc(i.tool)}</b> ${esc(i.input_summary || '')} · ${esc(i.status)}`
-        : i.kind === 'file' ? `edited <b>${esc(i.path)}</b>` : i.kind === 'reasoning' ? `<i>thinking:</i> ${esc(i.text)}` : esc(i.text);
+        : i.kind === 'file' ? `edited <b>${esc(i.path)}</b>` : i.kind === 'reasoning' ? `<i>thinking:</i> ${esc(i.text)}`
+        : i.kind === 'service' ? `<b>${esc(i.service)}</b> ${esc(i.op)}${i.key != null ? ' #' + esc(i.key) : ''}${i.summary ? ' · ' + esc(i.summary) : ''}` : esc(i.text);
       return `<div class="row"><span class="when">${fmtTime(i.ts)}</span> <span class="badge ${i.kind === 'error' ? 'error' : i.kind === 'tool' ? 'tool' : 'idle'}">${esc(i.kind)}</span> ${text}</div>`;
     }).join('');
   }

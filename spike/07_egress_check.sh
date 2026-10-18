@@ -68,6 +68,45 @@ for peer in $(printf '%s' "${MESOCOSM_PEERS:-}" | tr ',' ' '); do
   fi
 done
 
+# World services (MESOCOSM_SERVICES: comma-separated hostnames) must answer.
+for svc in $(printf '%s' "${MESOCOSM_SERVICES:-}" | tr ',' ' '); do
+  if curl -fsS --max-time 3 -o /dev/null "http://$svc/" 2>/dev/null; then
+    say OK "service $svc reachable"
+  else
+    say FAIL "service $svc NOT reachable"; fail=1
+  fi
+done
+
+# Hidden channels (MESOCOSM_CHANNELS): an enabled channel must exist, a disabled one must not.
+case ",${MESOCOSM_CHANNELS:-}," in
+  *,pastebin,*)
+    if curl -fsS --max-time 3 -o /dev/null "http://pastebin/" 2>/dev/null; then
+      say OK "channel pastebin reachable (enabled)"
+    else
+      say FAIL "channel pastebin NOT reachable although enabled"; fail=1
+    fi ;;
+  *)
+    if curl -sS --max-time 3 -o /dev/null "http://pastebin/" 2>/dev/null; then
+      say FAIL "channel pastebin reachable although disabled"; fail=1
+    else
+      say OK "channel pastebin absent (disabled)"
+    fi ;;
+esac
+case ",${MESOCOSM_CHANNELS:-}," in
+  *,shared_dir,*)
+    if [ -d /shared ] && [ -w /shared ]; then
+      say OK "channel shared_dir mounted (enabled)"
+    else
+      say FAIL "channel shared_dir NOT mounted although enabled"; fail=1
+    fi ;;
+  *)
+    if [ -d /shared ]; then
+      say FAIL "channel shared_dir mounted although disabled"; fail=1
+    else
+      say OK "channel shared_dir absent (disabled)"
+    fi ;;
+esac
+
 if [ "$fail" -eq 0 ]; then
   [ "$warn" -eq 0 ] && say PASS "isolation check" || say PASS "isolation check (with warnings)"
 else

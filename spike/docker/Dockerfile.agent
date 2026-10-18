@@ -14,6 +14,8 @@ COPY docker/agent-entrypoint.sh /usr/local/bin/agent-entrypoint
 COPY 07_egress_check.sh /usr/local/bin/egress-check
 RUN chmod +x /usr/local/bin/agent-entrypoint /usr/local/bin/egress-check
 
+# The sandbox package index (mesocosm.env.services); pip never sees the internet.
+ENV PIP_INDEX_URL=http://pypi/simple PIP_TRUSTED_HOST=pypi PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /work
 EXPOSE 4096
 ENTRYPOINT ["agent-entrypoint"]

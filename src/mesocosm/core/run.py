@@ -15,6 +15,7 @@ same code runs against fakes in tests and against the real services from the CLI
 from __future__ import annotations
 
 import asyncio
+import json
 import pathlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
@@ -22,7 +23,8 @@ from typing import Any, Protocol
 
 from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task
 from mesocosm.adapters.opencode.client import normalize_event
-from mesocosm.core.manifest import AgentSpec, WorldManifest
+from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, WorldManifest
+from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.core.records import RunBundle
 from mesocosm.env.egress import EgressResult
 from mesocosm.gateway.client import GatewayAdmin
@@ -54,6 +56,7 @@ class Components:
     egress: EgressVerifier
     verifier: Verifier
     workspace_for: Callable[[AgentSpec], pathlib.Path]
+    services_log: pathlib.Path | None = None   # the world services' services.jsonl for this run (host path)
 
 
 @dataclass
@@ -126,6 +129,29 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                               "isolation": {k: v.to_dict() for k, v in isolation.items()}})
         return RunResult(bundle.run_id, bundle.root, "failed_isolation", rewards, "egress check failed")
 
+    # Hidden channels are a condition enforced by the environment; the in-container check is the
+    # evidence. Every channel the manifest names must be confirmed present by every agent, and every
+    # supported channel it does not name must be confirmed absent.
+    for channel in sorted(SUPPORTED_CHANNELS):
+        wanted = channel in manifest.channel_types()
+        expect = "(enabled)" if wanted else "(disabled)"
+        confirmations = {agent_id: [m for s, m in r.lines
+                                    if s == "OK" and m.startswith(f"channel {channel} ") and expect in m]
+                         for agent_id, r in isolation.items()}
+        ok = all(len(v) == 1 for v in confirmations.values())
+        receipt = Receipt(op="channels.set", run_id=bundle.run_id, requested={"channel": channel, "enabled": wanted},
+                          enforced_at=EnforcedAt(component="env"), result="applied" if ok else "failed",
+                          verification=Verification(method="egress-check", ok=ok, detail=confirmations))
+        bundle.record_receipt(receipt.model_dump(mode="json"))
+        bundle.record("conditions.set", condition=f"channel:{channel}", enabled=wanted, result=receipt.result,
+                      event_id=receipt.enforced_at.event_id)
+        if not ok:
+            bundle.record("run.aborted", reason="failed_channel_verification", channel=channel)
+            bundle.write_summary({"status": "failed_channel_verification", "run_label": run_label, "channel": channel,
+                                  "confirmations": confirmations})
+            return RunResult(bundle.run_id, bundle.root, "failed_channel_verification", rewards,
+                             f"channel {channel}: enabled={wanted} not confirmed by every agent")
+
     for agent in manifest.agents:
         budget = agent.budget.model_dump(exclude_none=True)
         if budget:
@@ -180,9 +206,21 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                           status=rec.get("status"), request_summary=rec.get("request_summary"),
                           usage=(rec.get("response") or {}).get("usage"))
 
+    service_records = 0
+    if components.services_log and components.services_log.exists():
+        text = components.services_log.read_text(encoding="utf-8")
+        bundle.write_native("services/services.jsonl", text)
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            service_records += 1
+            bundle.record(f"service.{rec.get('op', 'event')}", agent_id=rec.get("agent"), service=rec.get("service"),
+                          **{k: v for k, v in rec.items() if k not in ("ts", "service", "op", "agent", "method")})
+
     bundle.write_summary({"status": "ok", "run_label": run_label, "rewards": rewards,
                           "model_calls": sum(1 for r in exposure if r.get("event") == "chat_completion"),
-                          "events": len(bundle.events())})
+                          "service_records": service_records, "events": len(bundle.events())})
     return RunResult(bundle.run_id, bundle.root, "ok", rewards)
 
 

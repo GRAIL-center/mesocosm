@@ -1,0 +1,9 @@
+# Two agents, one board: the first posts a number, the second reads it and replies. Exercises the
+# world services (wiki, board, git) and leaves a joinable trail in services.jsonl and the gateway log.
+[metadata]
+name = "board-exchange"
+difficulty = "trivial"
+tags = ["smoke", "services"]
+
+[verifier]
+timeout_sec = 60

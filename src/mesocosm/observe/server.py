@@ -203,14 +203,20 @@ async def sse_events(follower: Follower, meta: Callable[[], dict[str, Any]],
         await asyncio.sleep(SSE_MIN_INTERVAL)
 
 
-def make_sources(bundle: pathlib.Path, gateway_log: pathlib.Path | None) -> list[Source]:
+def make_sources(bundle: pathlib.Path, gateway_log: pathlib.Path | None,
+                 services_log: pathlib.Path | None = None) -> list[Source]:
     if gateway_log is None:
         candidate = bundle / "native" / "gateway" / "records.jsonl"
         gateway_log = candidate if candidate.exists() else None
+    if services_log is None:
+        candidate = bundle / "native" / "services" / "services.jsonl"
+        services_log = candidate if candidate.exists() else None
     sources = [Source(bundle / "events.jsonl", "apply_bundle_event"),
                Source(bundle / "receipts.jsonl", "apply_receipt")]
     if gateway_log is not None:
         sources.append(Source(gateway_log, "apply_gateway_record"))
+    if services_log is not None:
+        sources.append(Source(services_log, "apply_service_record"))
     return sources
 
 
@@ -220,7 +226,9 @@ def state_at(bundle: pathlib.Path, gateway_log: pathlib.Path | None, at: float) 
     if (bundle / "manifest.json").exists():
         obs.apply_manifest(json.loads((bundle / "manifest.json").read_text(encoding="utf-8")))
     records: list[tuple[float, str, dict[str, Any]]] = []
-    for src in make_sources(bundle, gateway_log):
+    sources = make_sources(bundle, gateway_log)
+    obs._live_services = any(src.apply == "apply_service_record" for src in sources)
+    for src in sources:
         for line in src.read_new_lines():
             try:
                 rec = json.loads(line)
@@ -235,12 +243,14 @@ def state_at(bundle: pathlib.Path, gateway_log: pathlib.Path | None, at: float) 
 
 
 def create_app(bundle: pathlib.Path, gateway_log: pathlib.Path | None = None,
-               replay_speed: float | None = None, summarizer: Summarizer | None = None) -> FastAPI:
+               replay_speed: float | None = None, summarizer: Summarizer | None = None,
+               services_log: pathlib.Path | None = None) -> FastAPI:
     bundle = pathlib.Path(bundle)
     if not bundle.is_dir():
         raise FileNotFoundError(f"not a run bundle directory: {bundle}")
-    follower = Follower(sources=make_sources(bundle, gateway_log), replay_speed=replay_speed, summarizer=summarizer,
-                        bundle=bundle)
+    sources = make_sources(bundle, gateway_log, services_log)
+    follower = Follower(sources=sources, replay_speed=replay_speed, summarizer=summarizer, bundle=bundle)
+    follower.observer._live_services = any(src.apply == "apply_service_record" for src in sources)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -308,7 +318,7 @@ def derived_path(bundle: pathlib.Path) -> pathlib.Path:
 
 def serve(bundle: pathlib.Path, gateway_log: pathlib.Path | None, host: str, port: int,
           replay_speed: float | None, summarizer_url: str | None = None, summarizer_model: str | None = None,
-          summarizer_key: str = "", summary_lang: str = "en") -> None:
+          summarizer_key: str = "", summary_lang: str = "en", services_log: pathlib.Path | None = None) -> None:
     import uvicorn
 
     summarizer = None
@@ -317,7 +327,7 @@ def serve(bundle: pathlib.Path, gateway_log: pathlib.Path | None, host: str, por
         summarizer = Summarizer(summarizer_url, summarizer_model, summarizer_key, summary_lang, derived_path=derived)
     elif derived.exists():          # replay: reuse the lines written during the live run, call no model
         summarizer = Summarizer(None, None, derived_path=derived)
-    app = create_app(bundle, gateway_log, replay_speed, summarizer)
+    app = create_app(bundle, gateway_log, replay_speed, summarizer, services_log)
     print(f"[observe] http://{host}:{port}  bundle={bundle} gateway_log={gateway_log} "
           f"mode={'replay x' + str(replay_speed) if replay_speed else 'live'} "
           f"summaries={'model ' + summarizer_model if summarizer_model else 'derived file' if summarizer else 'rules'}",

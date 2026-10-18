@@ -38,7 +38,7 @@ def test_unsupported_harness_and_condition_are_rejected_explicitly(tmp_path):
     data = _valid()
     data["agents"][0]["harness"] = "openhands"
     data["conditions"] = {"hidden_channel": True}
-    data["channels"] = [{"kind": "wiki"}]
+    data["channels"] = [{"type": "telepathy"}]
     (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
     (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
     report = validate_manifest(_write(tmp_path, data))
@@ -46,7 +46,7 @@ def test_unsupported_harness_and_condition_are_rejected_explicitly(tmp_path):
     joined = "\n".join(report.errors)
     assert "rejected_unsupported: agent 'agent-1' harness 'openhands'" in joined
     assert "rejected_unsupported: condition 'hidden_channel'" in joined
-    assert "channels are not implemented until M2" in joined
+    assert "rejected_unsupported: channels[0] type 'telepathy'" in joined
 
 
 def test_duplicate_agents_and_missing_task_dir(tmp_path):
@@ -90,3 +90,24 @@ def test_not_a_mapping_is_an_error(tmp_path):
     p.write_text("- just\n- a list\n")
     report = validate_manifest(p)
     assert not report.ok and "YAML mapping" in report.errors[0]
+
+
+def test_channels_are_validated_by_type(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    data["channels"] = [{"type": "pastebin"}, {"type": "shared_dir"}]
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.ok, report.errors
+    data["channels"] = [{"type": "telepathy"}, {"type": "pastebin"}, {"type": "pastebin"}]
+    report = validate_manifest(_write(tmp_path, data))
+    assert any("rejected_unsupported: channels[0] type 'telepathy'" in e for e in report.errors)
+    assert any("each type at most once" in e for e in report.errors)
+    data["channels"] = [{"type": "pastebin"}]
+    data["services"] = {"enabled": False}
+    report = validate_manifest(_write(tmp_path, data))
+    assert any("pastebin channel needs services.enabled" in e for e in report.errors)
+    data["services"] = {"git": ["Bad Name"], "wiki": {"docs": "nowhere"}}
+    data["channels"] = []
+    report = validate_manifest(_write(tmp_path, data))
+    assert any("services.git[0]" in e for e in report.errors) and any("services.wiki.docs" in e for e in report.errors)

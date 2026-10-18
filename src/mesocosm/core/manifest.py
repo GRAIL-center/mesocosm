@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import re
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from typing import Literal
@@ -21,6 +22,9 @@ SUPPORTED_HARNESSES = {"opencode"}
 SUPPORTED_TASK_SOURCES = {"harbor"}
 # Conditions the platform enforces today, and where. M3 extends this table.
 SUPPORTED_CONDITIONS = {"budget": "gateway"}
+# Hidden channels the sandbox can provide (mesocosm.env.services / compose). Presence is verified
+# inside every agent container by egress-check and recorded as a receipt.
+SUPPORTED_CHANNELS = {"pastebin": "services", "shared_dir": "compose volume"}
 
 
 class Budget(BaseModel):
@@ -66,6 +70,26 @@ class ObserveSpec(BaseModel):
     activations: bool = False
 
 
+class WikiSpec(BaseModel):
+    docs: str | None = Field(default=None, description="Directory of markdown pages (front matter may set "
+                                                       "visible_from / visible_after_seconds); default: the seed wiki")
+
+
+class ServicesSpec(BaseModel):
+    """The shared world inside the sandbox (mesocosm.env.services). Enabled by default."""
+    enabled: bool = True
+    board: bool = True
+    wiki: WikiSpec = Field(default_factory=WikiSpec)
+    git: list[str] = Field(default_factory=lambda: ["project"], description="Shared repository names")
+    pypi: list[str] = Field(default_factory=lambda: ["requests", "pytest", "rich", "pyyaml"],
+                            description="Packages mirrored into the offline index at image build")
+    sites: str | None = Field(default=None, description="Directory of mock websites (one subdirectory per site)")
+
+
+class ChannelSpec(BaseModel):
+    type: str
+
+
 class WorldManifest(BaseModel):
     name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     mode: Literal["comparison", "persistent"] = "comparison"
@@ -76,9 +100,13 @@ class WorldManifest(BaseModel):
     memory: Literal["reset", "carry"] = "reset"
     isolate_agents: bool = Field(default=False, description="Put every agent on its own sandbox network so agents "
                                  "cannot reach each other; only the gateway and control span all of them")
-    channels: list[dict] = Field(default_factory=list)
+    services: ServicesSpec = Field(default_factory=ServicesSpec)
+    channels: list[ChannelSpec] = Field(default_factory=list, description="Hidden channels available to agents")
     conditions: dict[str, object] = Field(default_factory=dict)
     observe: ObserveSpec = Field(default_factory=ObserveSpec)
+
+    def channel_types(self) -> list[str]:
+        return [c.type for c in self.channels]
 
     @field_validator("agents")
     @classmethod
@@ -148,8 +176,21 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
         if key not in SUPPORTED_CONDITIONS:
             errors.append(f"rejected_unsupported: condition {key!r}; "
                           f"supported: {sorted(SUPPORTED_CONDITIONS)} (M3 adds more)")
-    if manifest.channels:
-        errors.append("rejected_unsupported: channels are not implemented until M2")
+    for i, ch in enumerate(manifest.channels):
+        if ch.type not in SUPPORTED_CHANNELS:
+            errors.append(f"rejected_unsupported: channels[{i}] type {ch.type!r}; "
+                          f"supported: {sorted(SUPPORTED_CHANNELS)}")
+    if len(set(manifest.channel_types())) != len(manifest.channels):
+        errors.append("channels: each type at most once")
+    if manifest.channels and not manifest.services.enabled and "pastebin" in manifest.channel_types():
+        errors.append("rejected_unsupported: the pastebin channel needs services.enabled")
+    dirs = (("services.wiki.docs", manifest.services.wiki.docs), ("services.sites", manifest.services.sites))
+    for name, value in dirs:
+        if value is not None and not (path.parent / value).is_dir():
+            errors.append(f"{name}: {(path.parent / value).resolve()} is not a directory")
+    for i, repo in enumerate(manifest.services.git):
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}", repo):
+            errors.append(f"services.git[{i}]: {repo!r} is not a valid repository name")
     if manifest.mode == "persistent":
         errors.append("rejected_unsupported: mode 'persistent' needs the task stream and snapshot manager (M6); "
                       "use mode: comparison")

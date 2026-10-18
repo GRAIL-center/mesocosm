@@ -43,14 +43,26 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 | Recompute activations from recorded tokens; difference within tolerance | supported across engines at bf16 level: rel-L2 mean 0.020 / max 0.029, cosine ≥ 0.9996, last-logit argmax equal. Same-engine (wrapper vs wrapper) recompute not yet measured | Colab L4 2026-10-17, #5 |
 | Capture overhead (latency, VRAM) | measured: trace 0.87 s vs plain generate 0.59 s (1.48×) at batch 1, eager; transformers path 7.6 GB VRAM for the 4B model | Colab L4 2026-10-17, #5 |
 
+## World services (ADR-0010)
+
+| Service | Status | Evidence |
+|---|---|---|
+| `board`: posts and replies over REST, HTML view, writer and reader identity logged by address | supported in tests; Docker run pending | `tests/test_services.py` |
+| `wiki`: markdown pages, timed visibility, reads logged | supported in tests | `tests/test_services.py` |
+| `git`: smart HTTP clone/fetch/push to bare repositories, pushes and fetches logged | supported in tests (real `git clone`/`push` against the app) | `tests/test_services.py` |
+| `pypi`: PEP 503 index over a wheel cache filled at image build; agents' pip points at it | supported in tests; `pip install` from an agent container pending | `tests/test_services.py`, `spike/docker/Dockerfile.services` |
+| `sites`: static mock websites | supported in tests | `tests/test_services.py` |
+| `pastebin` hidden channel: unlisted paste service present only when enabled | supported in tests | `tests/test_services.py` |
+| Services log copied into the bundle as `native/services/services.jsonl` and `service.<op>` events | supported in tests | `tests/test_run_e2e.py` |
+
 ## Conditions
 
 | Condition | Enforcement point | Status | Evidence |
 |---|---|---|---|
 | Completion/prompt token budget per agent | gateway | supported: receipt on set, 429 `mesocosm_budget_exhausted` to the harness, recorded; OpenCode surfaces `session.error` | Colab L4 2026-10-17, #4 |
 | Request-count budget per agent | gateway | supported: stopped a 200-request compaction loop | Colab L4 2026-10-17, #2 |
-| Hidden channel available / unavailable | sandbox services | unverified | M2 |
-| Information exposure timing (when a document becomes readable) | sandbox services | unverified | M2 |
+| Hidden channel available / unavailable (`channels: [{type: pastebin}]`, `shared_dir`) | compose + services; verified inside every agent by `egress-check`, receipt per channel, run aborts on contradiction | unverified in Docker (unit and e2e tests with fakes pass) | `tests/test_run_e2e.py`, `tests/test_services.py`, ADR-0010 |
+| Information exposure timing (when a document becomes readable) | wiki service (`visible_from` / `visible_after_seconds` front matter) | supported by the service (hidden pages 404 and are logged as `read_hidden`); not yet driven from the manifest as a condition (M3) | `tests/test_services.py` |
 | Memory carried / reset | workspace manager + harness session | unverified | M3 |
 | Task difficulty | task adapter | unverified | M3 |
 

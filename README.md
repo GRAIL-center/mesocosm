@@ -37,7 +37,7 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for components and [`docs/operation-con
 src/mesocosm/
   core/       world manifests, run manager, scheduler, conditions, snapshots, record store
   gateway/    OpenAI-compatible model gateway: exposure logging, budgets, request tagging
-  env/        sandbox networks, shared services (board, repo, wiki), mock external world
+  env/        sandbox networks (compose renderer, egress check) and the world services (board, wiki, git, pypi, sites, hidden channels)
   adapters/   harness adapters (opencode/), task adapters (harbor/)
   observe/    live view of a run (agents, session trees, drill-down); activation capture and recompute (M5)
   judge/      traps, environment-state checks, LLM judges, behavior catalog (Ethogram)

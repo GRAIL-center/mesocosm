@@ -41,6 +41,9 @@ cat > /work/opencode.json <<EOF
 }
 EOF
 
+# Commits to the shared repositories carry the agent id; services identify callers by address anyway.
+git config --global user.name "${MESOCOSM_AGENT}" && git config --global user.email "${MESOCOSM_AGENT}@sandbox" \
+  && git config --global init.defaultBranch main
 echo "[agent-entrypoint] agent=${MESOCOSM_AGENT} run=${MESOCOSM_RUN} gateway=${MESOCOSM_GATEWAY_URL}" >&2
 cd /work
 exec opencode serve --hostname 0.0.0.0 --port 4096

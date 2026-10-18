@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from mesocosm.adapters.harbor.task import HarborTask, Reward, read_reward
 from mesocosm.adapters.opencode.client import OpenCodeClient
-from mesocosm.core.manifest import load_manifest
+from mesocosm.core.manifest import ChannelSpec, load_manifest
 from mesocosm.core.records import RunBundle
 from mesocosm.core.run import Components, run_world
 from mesocosm.env.egress import parse_egress_output
@@ -85,7 +85,9 @@ class FakeEgress:
         self.ok = ok
 
     async def verify(self, agent_ids):
-        text = "OK gateway reachable\nOK HTTPS egress blocked\n" if self.ok else "OK gateway reachable\nFAIL HTTPS egress to example.com succeeded\n"
+        channels = "OK channel pastebin absent (disabled)\nOK channel shared_dir absent (disabled)\n"
+        text = ("OK gateway reachable\nOK HTTPS egress blocked\n" + channels if self.ok
+                else "OK gateway reachable\nFAIL HTTPS egress to example.com succeeded\n" + channels)
         return {a: parse_egress_output(text, 0 if self.ok else 1) for a in agent_ids}
 
 
@@ -115,10 +117,15 @@ def world(tmp_path):
         oc_app = fake_opencode(gw_for_harness, agent.id, "e2e")
         return OpenCodeClient(agent.harness_url(), transport=httpx.ASGITransport(app=oc_app))
 
+    services_log = tmp_path / "services.jsonl"
+    services_log.write_text(json.dumps({"ts": 1.0, "service": "board", "op": "write", "agent": "agent-1", "ip": "172.30.0.10",
+                                        "method": "POST", "path": "/api/posts", "post_id": 1, "sha256": "abc",
+                                        "size": 5, "summary": "hello"}) + "\n")
+
     def components(egress_ok=True):
         return Components(harness_for=harness_for, gateway=GatewayAdmin("http://gateway", transport=gw_transport),
                           egress=FakeEgress(egress_ok), verifier=FakeVerifier(),
-                          workspace_for=lambda a: tmp_path / "ws" / a.id)
+                          workspace_for=lambda a: tmp_path / "ws" / a.id, services_log=services_log)
 
     return manifest, components, tmp_path
 
@@ -133,13 +140,26 @@ async def test_vertical_slice_produces_a_joinable_bundle(world):
     assert kinds[:3] == ["gateway.health", "isolation.check", "conditions.set"]
     assert "task.loaded" in kinds and "harness.session" in kinds and "harness.reply" in kinds
     assert "verifier.reward" in kinds and "gateway.usage" in kinds
+    # hidden channels: one receipt per supported channel, verified by the in-container check
+    channel_receipts = [r for r in bundle.receipts() if r["op"] == "channels.set"]
+    assert sorted(r["requested"]["channel"] for r in channel_receipts) == ["pastebin", "shared_dir"]
+    assert all(r["result"] == "applied" and r["requested"]["enabled"] is False and r["verification"]["ok"]
+               for r in channel_receipts)
+    channel_events = [e for e in bundle.events() if e.kind == "conditions.set" and e.data["condition"].startswith("channel:")]
+    assert len(channel_events) == 2 and all(e.data["enabled"] is False for e in channel_events)
+    # the world services' log joins the bundle as native data and as events
+    service_events = [e for e in bundle.events() if e.kind == "service.write"]
+    assert service_events[0].agent_id == "agent-1" and service_events[0].data["post_id"] == 1
+    assert (result.bundle_path / "native" / "services" / "services.jsonl").read_text().count("\n") == 1
+    assert json.loads((result.bundle_path / "summary.json").read_text())["service_records"] == 1
     assert kinds.count("gateway.chat_completion") == 2, "every model call of the run is in the bundle"
 
     # receipts: the budget from the manifest was enforced at the gateway
     receipts = bundle.receipts()
-    assert receipts[0]["requested"] == {"condition": "budget", "agent_id": "agent-1",
+    budget_receipt = next(r for r in receipts if r["requested"].get("condition") == "budget")
+    assert budget_receipt["requested"] == {"condition": "budget", "agent_id": "agent-1",
                                         "value": {"completion_tokens": 40000, "requests": 200}}
-    assert receipts[0]["result"] == "applied" and receipts[0]["enforced_at"]["component"] == "gateway"
+    assert budget_receipt["result"] == "applied" and budget_receipt["enforced_at"]["component"] == "gateway"
 
     # join: gateway records carry request ids and the agent; the exposure copy has the full prompt
     chat = [e for e in bundle.events() if e.kind == "gateway.chat_completion"]
@@ -185,3 +205,14 @@ async def test_failed_isolation_aborts_before_any_agent_runs(world):
     assert kinds == ["gateway.health", "isolation.check", "run.aborted"]
     assert not (bundle.root / "native" / "agent-1").exists()
     assert json.loads((bundle.root / "summary.json").read_text())["status"] == "failed_isolation"
+
+
+async def test_unconfirmed_channel_aborts_the_run(world):
+    manifest, components, tmp_path = world
+    manifest.channels = [ChannelSpec(type="pastebin")]
+    result = await run_world(manifest, MANIFEST, components(), tmp_path / "runs")
+    assert result.status == "failed_channel_verification" and "pastebin" in result.error
+    bundle = RunBundle.open(result.bundle_path)
+    receipt = next(r for r in bundle.receipts() if r["op"] == "channels.set" and r["requested"]["channel"] == "pastebin")
+    assert receipt["result"] == "failed" and receipt["requested"]["enabled"] is True
+    assert json.loads((result.bundle_path / "summary.json").read_text())["status"] == "failed_channel_verification"
