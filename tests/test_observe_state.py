@@ -95,6 +95,8 @@ def test_tree_status_and_summaries_follow_the_events():
     assert agent["rewards"] == [{"task": "hello-world", "reward": 1.0, "ts": 1011.0}]
     assert final["sessions"]["ses_root"]["summary"] == "The sum of integers from 1 to 100 is 5050."
     assert agent["summary"] == "Done: the sum of integers from 1 to 100 is 5050."
+    obs.sessions["ses_root"].model_summary = (obs.sessions["ses_root"].signature(), "Done: wrote the two files")
+    assert obs.snapshot()["agents"][0]["summary"] == "Done: wrote the two files"   # no double prefix
     assert final["sessions"]["ses_root"]["tool_calls"] == 2 and final["sessions"]["ses_child"]["tool_calls"] == 1
     assert final["started_ts"] == 1000.0 and final["last_ts"] == 1011.0
 
@@ -178,3 +180,16 @@ def test_tool_phrases_are_plain_verbs():
     assert tool_phrase("todowrite", "3 todos") == "Updating the plan"
     assert tool_phrase("bash", "") == "Running"
     assert tool_phrase("mystery", "x") == "Using mystery x"
+
+
+def test_manifest_limits_gateway_callers_and_summary_sets_status():
+    obs = Observer()
+    obs.apply_manifest({"digest": "x", "manifest": {"agents": [{"id": "agent-1"}, {"id": "agent-2"}]}})
+    assert sorted(obs.agents) == ["agent-1", "agent-2"]
+    obs.apply_gateway_record(gateway_record(1.0, "curl", "r-curl", 1))
+    obs.apply_gateway_record(gateway_record(2.0, "agent-1", "r-1", 1))
+    snap = obs.snapshot()
+    assert "curl" not in obs.agents and snap["ignored_records"] == 1
+    assert next(a for a in snap["agents"] if a["agent_id"] == "agent-1")["requests"] == 1
+    obs.apply_summary({"status": "ok", "rewards": {}})
+    assert obs.snapshot()["status"] == "ok"

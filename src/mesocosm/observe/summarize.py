@@ -81,9 +81,10 @@ def clean(text: str) -> str:
 
 
 class Summarizer:
-    def __init__(self, url: str, model: str, api_key: str = "", lang: str = "en",
+    def __init__(self, url: str | None, model: str | None, api_key: str = "", lang: str = "en",
                  derived_path: pathlib.Path | None = None, client: httpx.AsyncClient | None = None):
-        self.url = url.rstrip("/")
+        """With url=None the summarizer only serves lines already in the derived file (replay without a model)."""
+        self.url = url.rstrip("/") if url else None
         self.model = model
         self.lang = lang if lang in LANGUAGES else "en"
         self.derived_path = derived_path
@@ -117,6 +118,9 @@ class Summarizer:
     def due(self, observer: S.Observer, now: float | None = None) -> list[S.SessionNode]:
         now = now or time.time()
         out = []
+        if not self.url:
+            self.apply_cached(observer)
+            return out
         for node in observer.sessions.values():
             sig = signature(node)
             if node.model_summary and node.model_summary[0] == sig:
@@ -132,6 +136,8 @@ class Summarizer:
         return out
 
     async def summarize(self, node: S.SessionNode, task: str | None) -> str | None:
+        if not self.url:
+            return None
         sig = signature(node)
         self.pending.add(node.session_id)
         try:

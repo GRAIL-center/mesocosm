@@ -105,3 +105,14 @@ def test_clean_and_signature():
                               **tool_part("s", "c1", "bash", "completed", {"command": "git reflog | head"}, "abc")))
     assert signature(obs.sessions["s"]) != s1
     assert "oldest first" in context_for(obs.sessions["s"], "fix-git")
+
+
+def test_cache_only_summarizer_serves_the_derived_file_without_a_model(tmp_path):
+    derived = tmp_path / "x.observe" / "summaries.jsonl"
+    obs = observer_with_tool()
+    sig = signature(obs.sessions["s"])
+    derived.parent.mkdir()
+    derived.write_text(json.dumps({"session_id": "s", "signature": sig, "text": "Looking for lost commits"}) + "\n")
+    sm = Summarizer(None, None, derived_path=derived)
+    assert sm.due(obs) == [] and obs.sessions["s"].summary() == "Looking for lost commits"
+    assert sm.stats()["model"] is None

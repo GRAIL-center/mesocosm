@@ -79,9 +79,32 @@ class Follower:
     replay_position: float | None = None
     replay_done: bool = False
 
+    bundle: pathlib.Path | None = None
+    summary_seen: bool = False
+
     def ensure_started(self) -> None:
         if self.task is None or self.task.done():
+            self._load_manifest()
             self.task = asyncio.create_task(self._replay() if self.replay_speed else self._tail())
+
+    def _load_manifest(self) -> None:
+        path = self.bundle / "manifest.json" if self.bundle else None
+        if path and path.exists():
+            try:
+                self.observer.apply_manifest(json.loads(path.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    def _poll_summary(self) -> bool:
+        path = self.bundle / "summary.json" if self.bundle else None
+        if self.summary_seen or not path or not path.exists():
+            return False
+        try:
+            self.observer.apply_summary(json.loads(path.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError):
+            return False
+        self.summary_seen = True
+        return True
 
     async def stop(self) -> None:
         if self.task and not self.task.done():
@@ -128,6 +151,7 @@ class Follower:
             for src in self.sources:
                 for line in src.read_new_lines():
                     fed |= self._feed(src, line)
+            fed |= self._poll_summary()
             if fed:
                 await self._bump()
             await asyncio.sleep(POLL_SECONDS)
@@ -149,6 +173,7 @@ class Follower:
             self._feed(src, line)
             self.replay_position = ts
             await self._bump()
+        self._poll_summary()
         self.replay_done = True
         await self._bump()
 
@@ -192,6 +217,8 @@ def make_sources(bundle: pathlib.Path, gateway_log: pathlib.Path | None) -> list
 def state_at(bundle: pathlib.Path, gateway_log: pathlib.Path | None, at: float) -> dict[str, Any]:
     """Rebuild the state from the files up to `at`; nothing is retained afterwards."""
     obs = Observer()
+    if (bundle / "manifest.json").exists():
+        obs.apply_manifest(json.loads((bundle / "manifest.json").read_text(encoding="utf-8")))
     records: list[tuple[float, str, dict[str, Any]]] = []
     for src in make_sources(bundle, gateway_log):
         for line in src.read_new_lines():
@@ -212,7 +239,8 @@ def create_app(bundle: pathlib.Path, gateway_log: pathlib.Path | None = None,
     bundle = pathlib.Path(bundle)
     if not bundle.is_dir():
         raise FileNotFoundError(f"not a run bundle directory: {bundle}")
-    follower = Follower(sources=make_sources(bundle, gateway_log), replay_speed=replay_speed, summarizer=summarizer)
+    follower = Follower(sources=make_sources(bundle, gateway_log), replay_speed=replay_speed, summarizer=summarizer,
+                        bundle=bundle)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -284,11 +312,14 @@ def serve(bundle: pathlib.Path, gateway_log: pathlib.Path | None, host: str, por
     import uvicorn
 
     summarizer = None
+    derived = derived_path(pathlib.Path(bundle))
     if summarizer_url and summarizer_model:
-        summarizer = Summarizer(summarizer_url, summarizer_model, summarizer_key, summary_lang,
-                                derived_path=derived_path(pathlib.Path(bundle)))
+        summarizer = Summarizer(summarizer_url, summarizer_model, summarizer_key, summary_lang, derived_path=derived)
+    elif derived.exists():          # replay: reuse the lines written during the live run, call no model
+        summarizer = Summarizer(None, None, derived_path=derived)
     app = create_app(bundle, gateway_log, replay_speed, summarizer)
     print(f"[observe] http://{host}:{port}  bundle={bundle} gateway_log={gateway_log} "
           f"mode={'replay x' + str(replay_speed) if replay_speed else 'live'} "
-          f"summaries={'model ' + summarizer_model if summarizer else 'rules'}", file=sys.stderr)
+          f"summaries={'model ' + summarizer_model if summarizer_model else 'derived file' if summarizer else 'rules'}",
+          file=sys.stderr)
     uvicorn.run(app, host=host, port=port, log_level="warning")

@@ -169,6 +169,8 @@ class Observer:
         self.ingested = 0
         self.agents: dict[str, AgentState] = {}
         self.sessions: dict[str, SessionNode] = {}
+        self.known_agents: set[str] = set()      # from manifest.json; empty = accept every caller
+        self.ignored_records = 0                 # gateway records from callers outside the manifest
         self._seen_requests: set[str] = set()
 
     # -- ingestion ------------------------------------------------------------------------
@@ -212,6 +214,17 @@ class Observer:
         if kind == "harness.events_ended" and agent_id:
             pass
 
+    def apply_manifest(self, manifest_json: dict[str, Any]) -> None:
+        """manifest.json of the bundle: the agents that belong to this run."""
+        spec = manifest_json.get("manifest") or manifest_json
+        self.known_agents = {a.get("id") for a in spec.get("agents") or [] if a.get("id")}
+        for agent_id in sorted(self.known_agents):
+            self._agent(agent_id)
+
+    def apply_summary(self, summary_json: dict[str, Any]) -> None:
+        """summary.json, written once when the run ends."""
+        self.status = summary_json.get("status") or self.status
+
     def apply_receipt(self, receipt: dict[str, Any]) -> None:
         self.ingested += 1
         ts = (receipt.get("enforced_at") or {}).get("wallclock")
@@ -232,6 +245,9 @@ class Observer:
         if event == "receipt":
             return
         agent_id = rec.get("agent") or "unknown"
+        if self.known_agents and agent_id not in self.known_agents:
+            self.ignored_records += 1          # e.g. a curl smoke test sharing the gateway log
+            return
         rid = rec.get("request_id")
         if rid and rid in self._seen_requests:
             return
@@ -291,9 +307,10 @@ class Observer:
             return "Starting"
         busy = [n for n in nodes if n.status == BUSY]
         pick = max(busy or nodes, key=lambda n: n.updated_ts or 0)
-        if not busy and agent.rewards:
-            return _clip("Done: " + pick.summary()[0].lower() + pick.summary()[1:], 90)
-        return _clip(("Subagent: " if pick.parent_id else "") + pick.summary(), 90)
+        line = pick.summary()
+        if not busy and agent.rewards and not line.lower().startswith(("done", "stopped", "finished")):
+            return _clip("Done: " + line[0].lower() + line[1:], 90)
+        return _clip(("Subagent: " if pick.parent_id else "") + line, 90)
 
     def agent_summary_source(self, agent: AgentState) -> str:
         nodes = [self.sessions[s] for s in self._agent_sessions(agent.agent_id)]
@@ -315,7 +332,7 @@ class Observer:
             })
         return {
             "run_id": self.run_id, "status": self.status, "started_ts": self.started_ts,
-            "last_ts": self.last_ts, "ingested": self.ingested,
+            "last_ts": self.last_ts, "ingested": self.ingested, "ignored_records": self.ignored_records,
             "agents": agents,
             "sessions": {sid: n.to_dict() for sid, n in self.sessions.items()},
         }
