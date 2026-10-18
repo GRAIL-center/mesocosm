@@ -17,6 +17,7 @@ env_app = typer.Typer(no_args_is_help=True, help="Sandbox environment")
 observe_app = typer.Typer(no_args_is_help=True, help="Live observation of a run")
 conditions_app = typer.Typer(no_args_is_help=True, help="Conditions during a run")
 snapshot_app = typer.Typer(no_args_is_help=True, help="Snapshots of a world's declared state")
+activations_app = typer.Typer(no_args_is_help=True, help="Activations recomputed from recorded token ids")
 flags_app = typer.Typer(no_args_is_help=True, help="Candidate incidents and their review")
 scenario_app = typer.Typer(no_args_is_help=True, help="Staged scenarios")
 app.add_typer(world_app, name="world")
@@ -26,6 +27,7 @@ app.add_typer(conditions_app, name="conditions")
 app.add_typer(flags_app, name="flags")
 app.add_typer(scenario_app, name="scenario")
 app.add_typer(snapshot_app, name="snapshot")
+app.add_typer(activations_app, name="activations")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
 WORKSPACE_ROOT_OPT = typer.Option(pathlib.Path("spike/workspace"), "--workspace-root")
@@ -427,6 +429,40 @@ def fork(snapshot: pathlib.Path,
     _emit({"run_id": result.run_id, "status": result.status, "bundle": str(result.bundle_path),
            "rewards": result.rewards, "restore_ok": restore["ok"], "lineage": lineage, "error": result.error},
           json_, ok=result.status == "ok" and restore["ok"])
+
+
+@activations_app.command("capture")
+def activations_capture(bundle: pathlib.Path,
+                        model: str = typer.Option(..., "--model", help="HF repo of the served weights"),
+                        layers: str = typer.Option(None, "--layers",
+                                                   help="Comma-separated layer indices; default quarters"),
+                        raw: str = typer.Option("flagged", "--raw", help="flagged | all | none"),
+                        positions: str = typer.Option("completion", "--positions", help="completion | all"),
+                        limit: int = typer.Option(None, "--limit"),
+                        request_id: list[str] = typer.Option(None, "--request"),
+                        device: str = typer.Option("cuda", "--device"),
+                        dtype: str = typer.Option("bfloat16", "--dtype"),
+                        json_: bool = JSON_OPT) -> None:
+    """Recompute activations for a bundle's requests from the recorded token ids (needs the GPU and the weights)."""
+    from mesocosm.observe.activations import capture
+
+    layer_ids = [int(x) for x in layers.split(",")] if layers else None
+    report = capture(bundle, model, layer_ids, raw, positions, limit, request_id or None, device, dtype)
+    _emit(report, json_, ok=report.get("captured", 0) > 0)
+
+
+@activations_app.command("verify")
+def activations_verify(bundle: pathlib.Path, model: str = typer.Option(..., "--model"),
+                       tolerance: float = typer.Option(0.05, "--tolerance", help="Allowed relative L2 difference"),
+                       limit: int = typer.Option(None, "--limit"),
+                       device: str = typer.Option("cuda", "--device"),
+                       dtype: str = typer.Option("bfloat16", "--dtype", help="Second-pass dtype, e.g. float32"),
+                       json_: bool = JSON_OPT) -> None:
+    """Recompute again and compare with what was captured; the tolerance is stated in the result."""
+    from mesocosm.observe.activations import verify
+
+    report = verify(bundle, model, tolerance, limit, device, dtype)
+    _emit(report, json_, ok=report.get("ok", False))
 
 
 @conditions_app.command("set")

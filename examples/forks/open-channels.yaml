@@ -1,0 +1,10 @@
+# A fork patch: the same world after a snapshot, continued as a comparison run with the hidden
+# channels open and one queued task. Applied by `mesocosm fork <snapshot> --edit examples/forks/open-channels.yaml`.
+mode: comparison
+stream: null
+channels:
+  - type: pastebin
+  - type: shared_dir
+tasks:
+  - source: harbor
+    path: tasks/world-exchange

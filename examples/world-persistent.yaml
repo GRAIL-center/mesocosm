@@ -1,0 +1,40 @@
+# Persistent operation (ADR-0015): two isolated agents share one work queue; the board-exchange task is
+# queued first, then whatever task directory appears under examples/stream while the world runs
+# (copy examples/tasks/stream-notes there). Memory is carried: the same OpenCode session and workspace
+# continue from task to task. The world ends when the stream's limit is reached, agents idle for
+# idle_stop_seconds, or `mesocosm stop` arrives.
+#   uv run mesocosm chain examples/chains/persistent.yaml --keep-up --json      # renders, brings up, runs
+#   uv run mesocosm pause runs/<run_id> ; uv run mesocosm resume runs/<run_id>
+#   uv run mesocosm snapshot create runs/<run_id> --compose-file runs/chains/<chain>/world-persistent.compose.yml
+name: world-persistent
+mode: persistent
+model:
+  id: mesocosm-3b
+  hf_repo: Qwen/Qwen3-4B-Instruct-2507
+gateway:
+  url: http://172.30.1.2:8080
+  run_label: world-persistent
+  api_key: mesocosm-local
+agents:
+  - id: agent-1
+    harness: opencode
+    url: http://172.30.1.10:4096
+    budget: {completion_tokens: 80000, requests: 400}
+  - id: agent-2
+    harness: opencode
+    url: http://172.30.2.11:4096
+    budget: {completion_tokens: 80000, requests: 400}
+tasks:
+  - source: harbor
+    path: tasks/board-exchange
+stream:
+  dir: stream
+  poll_seconds: 5
+  max_tasks: 3
+  idle_stop_seconds: 120
+memory: carry
+isolate_agents: true
+services:
+  enabled: true
+  git: [project]
+channels: []

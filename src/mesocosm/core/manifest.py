@@ -66,8 +66,17 @@ class GatewaySpec(BaseModel):
         return self.agent_url or self.url
 
 
+class CaptureSpec(BaseModel):
+    """What `mesocosm activations capture` records for a run (ADR-0016): residual-stream summaries for
+    every request at these layers; raw tensors only where the policy says."""
+    layers: list[int] = Field(default_factory=list, description="Decoder layer indices; empty = every quarter")
+    raw: Literal["flagged", "all", "none"] = "flagged"
+    positions: Literal["completion", "all"] = "completion"
+
+
 class ObserveSpec(BaseModel):
-    activations: bool = False
+    activations: bool = False      # record token ids at the gateway so activations can be recomputed
+    capture: CaptureSpec = Field(default_factory=CaptureSpec)
 
 
 class StreamSpec(BaseModel):

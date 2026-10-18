@@ -1,0 +1,5 @@
+# One persistent world; keep the stack up afterwards to snapshot it (--keep-up).
+name: persistent
+runs:
+  - manifest: ../world-persistent.yaml
+retries: 0
