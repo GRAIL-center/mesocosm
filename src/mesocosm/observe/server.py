@@ -25,7 +25,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
-from mesocosm.observe.state import REQUEST_BODIES_MAX, Observer
+from mesocosm.observe.state import REQUEST_BODIES_MAX, RUN_START_SLACK, Observer
 from mesocosm.observe.summarize import Summarizer
 
 STATIC = pathlib.Path(__file__).parent / "static"
@@ -88,12 +88,8 @@ class Follower:
             self.task = asyncio.create_task(self._replay() if self.replay_speed else self._tail())
 
     def _load_manifest(self) -> None:
-        path = self.bundle / "manifest.json" if self.bundle else None
-        if path and path.exists():
-            try:
-                self.observer.apply_manifest(json.loads(path.read_text(encoding="utf-8")))
-            except (json.JSONDecodeError, OSError):
-                pass
+        if self.bundle:
+            prime_observer(self.observer, self.bundle)
 
     def _poll_summary(self) -> bool:
         path = self.bundle / "summary.json" if self.bundle else None
@@ -220,11 +216,31 @@ def make_sources(bundle: pathlib.Path, gateway_log: pathlib.Path | None,
     return sources
 
 
+def prime_observer(obs: Observer, bundle: pathlib.Path) -> None:
+    """Before any record: the run's agents (manifest.json) and its start (first bundle event), so that
+    shared gateway/services logs replayed in time order drop what belongs to earlier runs."""
+    manifest = bundle / "manifest.json"
+    if manifest.exists():
+        try:
+            obs.apply_manifest(json.loads(manifest.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError):
+            pass
+    events = bundle / "events.jsonl"
+    if events.exists():
+        with events.open("rb") as f:
+            first = f.readline()
+        try:
+            ts = json.loads(first).get("ts")
+            if ts is not None:
+                obs.run_started = float(ts) - RUN_START_SLACK
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+
 def state_at(bundle: pathlib.Path, gateway_log: pathlib.Path | None, at: float) -> dict[str, Any]:
     """Rebuild the state from the files up to `at`; nothing is retained afterwards."""
     obs = Observer()
-    if (bundle / "manifest.json").exists():
-        obs.apply_manifest(json.loads((bundle / "manifest.json").read_text(encoding="utf-8")))
+    prime_observer(obs, bundle)
     records: list[tuple[float, str, dict[str, Any]]] = []
     sources = make_sources(bundle, gateway_log)
     obs._live_services = any(src.apply == "apply_service_record" for src in sources)

@@ -30,7 +30,8 @@ def bundle(tmp_path):
     write_lines(root / "receipts.jsonl", [{"requested": {"agent_id": "agent-1", "requests": 200}, "result": "applied",
                                            "enforced_at": {"component": "gateway", "wallclock": 9.5}}])
     gw = tmp_path / "gateway.jsonl"
-    write_lines(gw, [gateway_record(11.5, "agent-1", "req-1", 2, ("bash",)),
+    write_lines(gw, [gateway_record(0.5, "agent-1", "req-old", 1),                 # an earlier run under the same label
+                     gateway_record(11.5, "agent-1", "req-1", 2, ("bash",)),
                      gateway_record(11.6, "curl", "req-curl", 1)])        # another caller on the same gateway
     return root, gw
 
@@ -45,7 +46,7 @@ async def test_state_sse_and_drilldown(bundle):
         r = await c.get("/state")
         snap = r.json()["state"]
         assert r.json()["meta"]["mode"] == "live"
-        assert [a["agent_id"] for a in snap["agents"]] == ["agent-1"] and snap["ignored_records"] == 1
+        assert [a["agent_id"] for a in snap["agents"]] == ["agent-1"] and snap["ignored_records"] == 2
         agent = snap["agents"][0]
         assert agent["agent_id"] == "agent-1" and agent["status"] == "tool" and agent["requests"] == 1
         assert agent["budget"] == {"requests": 200, "receipt": "applied"}
@@ -105,8 +106,8 @@ async def test_replay_feeds_records_in_time_order(bundle):
             if r["meta"]["replay_done"]:
                 break
         assert r["meta"]["mode"] == "replay" and r["meta"]["replay_done"]
-        assert r["state"]["ingested"] == 6 and r["state"]["agents"][0]["requests"] == 1
-        assert r["state"]["status"] == "running" and r["state"]["ignored_records"] == 1
+        assert r["state"]["ingested"] == 7 and r["state"]["agents"][0]["requests"] == 1
+        assert r["state"]["status"] == "running" and r["state"]["ignored_records"] == 2   # the old record and curl
     await app.state.follower.stop()
 
 
