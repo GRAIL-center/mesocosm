@@ -56,8 +56,9 @@ def _message(m: dict[str, Any]) -> dict[str, Any]:
 
 def _usage(u: dict[str, Any] | None) -> dict[str, int]:
     u = u or {}
-    return {"input_tokens": int(u.get("prompt_tokens") or 0), "output_tokens": int(u.get("completion_tokens") or 0),
-            "total_tokens": int(u.get("total_tokens") or (u.get("prompt_tokens") or 0) + (u.get("completion_tokens") or 0))}
+    prompt, completion = int(u.get("prompt_tokens") or 0), int(u.get("completion_tokens") or 0)
+    return {"input_tokens": prompt, "output_tokens": completion,
+            "total_tokens": int(u.get("total_tokens") or prompt + completion)}
 
 
 def _add_usage(total: dict[str, int], u: dict[str, int]) -> None:
@@ -80,7 +81,8 @@ def inspect_log(bundle: RunBundle) -> dict[str, Any]:
         if (bundle.root / "summary.json").exists() else {}
     events = bundle.events()
     records = [r for r in gateway_records(bundle) if r.get("event") == "chat_completion"]
-    model = f"{(spec.get('gateway') or {}).get('provider_id', 'internal')}/{(spec.get('model') or {}).get('id', 'model')}"
+    provider = (spec.get("gateway") or {}).get("provider_id", "internal")
+    model = f"{provider}/{(spec.get('model') or {}).get('id', 'model')}"
     flags = bundle.flags()
     conditions = [e.data for e in events if e.kind == "conditions.set"]
 
@@ -88,14 +90,15 @@ def inspect_log(bundle: RunBundle) -> dict[str, Any]:
     windows: list[dict[str, Any]] = []
     for e in events:
         if e.kind == "harness.session":
-            windows.append({"agent": e.agent_id, "task": e.data.get("task"), "start": e.ts, "end": None, "reward": None})
+            windows.append({"agent": e.agent_id, "task": e.data.get("task"), "start": e.ts, "end": None,
+                            "reward": None})
         elif e.kind == "verifier.reward":
             w = next((w for w in reversed(windows) if w["agent"] == e.agent_id and w["end"] is None), None)
             if w is not None:
                 w["end"], w["reward"], w["source"] = e.ts, e.data.get("reward"), e.data.get("source")
     samples = []
     run_usage: dict[str, int] = {}
-    for i, w in enumerate(windows, 1):
+    for w in windows:
         mine = [r for r in records if r.get("agent") == w["agent"] and w["start"] - 1 <= float(r.get("ts") or 0)
                 and (w["end"] is None or float(r.get("ts") or 0) <= w["end"] + 1)]
         usage: dict[str, int] = {}
@@ -129,7 +132,8 @@ def inspect_log(bundle: RunBundle) -> dict[str, Any]:
             "total_time": round((w["end"] or w["start"]) - w["start"], 3),
         })
 
-    rewards = [s["scores"]["verifier"]["value"] for s in samples if isinstance(s["scores"]["verifier"]["value"], (int, float))]
+    rewards = [s["scores"]["verifier"]["value"] for s in samples
+               if isinstance(s["scores"]["verifier"]["value"], (int, float))]
     accuracy = sum(rewards) / len(rewards) if rewards else 0.0
     started = events[0].ts if events else None
     completed = events[-1].ts if events else None
@@ -140,8 +144,8 @@ def inspect_log(bundle: RunBundle) -> dict[str, Any]:
             "run_id": bundle.run_id, "eval_id": bundle.run_id, "created": _iso(started),
             "task": spec.get("name", "world"), "task_id": str(manifest.get("digest", ""))[:16], "task_version": 0,
             "task_display_name": spec.get("name", "world"),
-            "dataset": {"name": spec.get("name", "world"), "samples": len(samples), "sample_ids": [s["id"] for s in samples],
-                        "shuffled": False},
+            "dataset": {"name": spec.get("name", "world"), "samples": len(samples),
+                        "sample_ids": [s["id"] for s in samples], "shuffled": False},
             "model": model, "config": {}, "tags": ["mesocosm"],
             "metadata": {"mesocosm": {"bundle": str(bundle.root), "run_label": summary.get("run_label"),
                                       "mode": spec.get("mode"), "conditions": conditions,
