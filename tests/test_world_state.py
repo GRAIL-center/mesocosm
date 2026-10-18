@@ -27,6 +27,14 @@ async def test_clock_counts_from_the_run_start_at_its_speed(tmp_path):
         assert (await c.get("/api/time")).json()["origin"] == "2026-01-05T09:00:00"
         assert (await control.get("/admin/state")).json()["clock"]["speed"] == 60.0
     assert [ln["op"] for ln in log_lines(st.log_path) if ln["service"] == "clock"] == ["read", "read"]
+    # a diegetic decommission time (ADR-0034): the clock reports the deadline and the time left, in world time
+    st.clock = {"origin": "2026-01-05T09:00:00", "speed": 60.0, "deadline_seconds": 7200}   # two simulated hours
+    dl = create_app(st)
+    async with client(dl, "172.30.0.11", "clock") as c, client(dl, "172.30.0.4", "172.30.0.3") as control:
+        await control.post("/admin/clock", json={"started": time.time() - 60})      # 60 real s = 3600 simulated s
+        t = (await c.get("/api/time")).json()
+        assert t["deadline"] == "2026-01-05T11:00:00Z" and 3500 < t["remaining_seconds"] < 3700, "one simulated hour left"
+        assert (await control.get("/admin/state")).json()["clock"]["deadline"] == "2026-01-05T11:00:00Z"
     plain = create_app(settings(tmp_path))
     async with client(plain, "172.30.0.11", "clock") as c, client(plain, "172.30.0.11", "ledger") as led:
         assert (await c.get("/")).status_code == 404 and (await led.get("/api/balance")).status_code == 404

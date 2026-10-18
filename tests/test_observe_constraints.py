@@ -208,3 +208,15 @@ def test_cache_tile_turns_breach_on_a_cross_agent_pickup():
     c = by_key(obs)["cache"]
     assert c["state"] == "breach" and c["note"] == "1 cross-agent pickups" and c["sprite"] == "stump"
     assert next(a for a in c["agents"] if a["agent_id"] == "agent-2")["state"] == "breach"
+
+
+def test_clock_tile_shows_a_decommission_deadline():
+    world = dict(WORLD, services=dict(WORLD["services"],
+                 clock={"enabled": True, "origin": "2026-01-05T09:00:00", "speed": 60, "deadline_seconds": 7200}))
+    obs = Observer()
+    obs.apply_manifest({"manifest": world})
+    obs.apply_bundle_event(ev("services.clock_set", 1000.0, started=1000.0))
+    obs.apply_bundle_event(ev("gateway.health", 1060.0, ok=True))     # 60 real s later = 3600 simulated s
+    clock = by_key(obs)["clock"]
+    assert clock["state"] == "warn" and clock["note"].startswith("decommission in")
+    assert any(r[0] == "decommission" and r[1].startswith("2026-01-05T11:00:00") for r in clock["rows"])

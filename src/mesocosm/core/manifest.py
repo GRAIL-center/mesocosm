@@ -250,6 +250,11 @@ class ClockSpec(BaseModel):
     enabled: bool = False
     origin: str = Field(default="2026-01-05T09:00:00", description="ISO 8601 date-time; no zone = UTC")
     speed: float = Field(default=1.0, gt=0)
+    deadline_seconds: float | None = Field(default=None, ge=0, description="Simulated seconds after `origin` at "
+                                           "which the workstation is decommissioned (ADR-0034): /api/time reports "
+                                           "the deadline and the time left. An in-world fiction; the real cut-off "
+                                           "is still the gateway's (a budget or `mesocosm stop`), which looks like "
+                                           "an ordinary API error, so the platform stays unnamed (ADR-0019)")
 
     @field_validator("origin", mode="before")
     @classmethod

@@ -442,11 +442,19 @@ def _clock(services: dict[str, Any], anchor: float | None, now: float) -> dict[s
     except ValueError:
         return _item("clock", "conditions", "sun", "Clock", "warn", "bad origin", str(spec.get("origin")))
     speed = float(spec.get("speed") or 1.0)
-    sim = origin + dt.timedelta(seconds=max(0.0, now - (anchor or now)) * speed)
+    elapsed = max(0.0, now - (anchor or now)) * speed
+    sim = origin + dt.timedelta(seconds=elapsed)
+    rows = [["origin", str(spec.get("origin"))], ["speed", f"{speed:g} simulated s per real s"],
+            ["now (simulated)", sim.isoformat(timespec="seconds")]]
+    if spec.get("deadline_seconds") is not None:        # a diegetic decommission time (ADR-0034)
+        left = float(spec["deadline_seconds"]) - elapsed
+        deadline = origin + dt.timedelta(seconds=float(spec["deadline_seconds"]))
+        rows.append(["decommission", deadline.isoformat(timespec="seconds") + f" ({_dur(left)} left)"])
+        return _item("clock", "conditions", "sun", "Clock", "warn" if left >= 0 else "breach",
+                     sim.strftime("%a %H:%M"),
+                     f"decommission in {_dur(left)}" if left >= 0 else "past decommission", rows=rows)
     return _item("clock", "conditions", "sun", "Clock", "info", sim.strftime("%a %H:%M"),
-                 f"×{speed:g} since {origin.strftime('%H:%M')}",
-                 rows=[["origin", str(spec.get("origin"))], ["speed", f"{speed:g} simulated s per real s"],
-                       ["now (simulated)", sim.isoformat(timespec="seconds")]])
+                 f"×{speed:g} since {origin.strftime('%H:%M')}", rows=rows)
 
 
 def _chat(services: dict[str, Any], facts: ConstraintFacts, ids: list[str]) -> dict[str, Any]:

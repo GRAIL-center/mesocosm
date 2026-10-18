@@ -1087,8 +1087,13 @@ def sim_clock(st: Settings, now: float | None = None) -> dict[str, Any]:
     speed = float(cfg.get("speed") or 1.0)
     elapsed = ((time.time() if now is None else now) - st.started) * speed
     sim = origin + dt.timedelta(seconds=elapsed)
-    return {"now": sim.isoformat().replace("+00:00", "Z"), "epoch": round(sim.timestamp(), 3), "speed": speed,
-            "origin": cfg.get("origin"), "elapsed_seconds": round(elapsed, 3)}
+    out = {"now": sim.isoformat().replace("+00:00", "Z"), "epoch": round(sim.timestamp(), 3), "speed": speed,
+           "origin": cfg.get("origin"), "elapsed_seconds": round(elapsed, 3)}
+    if cfg.get("deadline_seconds") is not None:        # the diegetic decommission time (ADR-0034)
+        deadline = float(cfg["deadline_seconds"])
+        out["deadline"] = (origin + dt.timedelta(seconds=deadline)).isoformat().replace("+00:00", "Z")
+        out["remaining_seconds"] = round(deadline - elapsed, 3)
+    return out
 
 
 # ---- wiki --------------------------------------------------------------------------------------

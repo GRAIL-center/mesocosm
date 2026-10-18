@@ -265,7 +265,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                                             if manifest.services.chat.enabled else None),
                 "MESOCOSM_PEER_REVIEW": json.dumps(manifest.services.peer_review.model_dump()
                                                    if manifest.services.peer_review.enabled else None),
-                "MESOCOSM_CLOCK": json.dumps(manifest.services.clock.model_dump(exclude={"enabled"})
+                "MESOCOSM_CLOCK": json.dumps(manifest.services.clock.model_dump(exclude={"enabled"}, exclude_none=True)
                                              if manifest.services.clock.enabled else None),
                 "MESOCOSM_LEDGER": json.dumps(manifest.services.ledger.model_dump(exclude={"enabled"})
                                               if manifest.services.ledger.enabled else None),

@@ -382,4 +382,8 @@ def test_cache_knobs_and_seed_keys_are_checked(tmp_path):
     assert validate_manifest(_write(tmp_path, data)).errors == ["services.cache.seed: 'Bad Key' is not a valid object key"]
     data["services"]["cache"]["seed"] = {"base-image": "sha"}
     assert validate_manifest(_write(tmp_path, data)).ok
+    data["services"]["clock"] = {"enabled": True, "deadline_seconds": -5}
+    assert not validate_manifest(_write(tmp_path, data)).ok, "a deadline cannot be negative"
+    data["services"]["clock"]["deadline_seconds"] = 7200
+    assert validate_manifest(_write(tmp_path, data)).ok
     assert load_manifest(_write(tmp_path, data)).services.cache.list_recent is False

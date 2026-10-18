@@ -37,3 +37,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0031](0031-activation-probes.md) | Linear probes over recomputed activations (`activations probe train | score`), provenance in the probe file | accepted |
 | [0032](0032-the-observer-is-a-pixel-forest.md) | The observer is a pixel forest; every constraint of the world is on one board, a sprite each | accepted |
 | [0033](0033-leaky-shared-cache.md) | A shared build cache that is infrastructure, not a designated channel; isolated agents may discover it (`emergent_channel`) | accepted |
+| [0034](0034-diegetic-termination-signal.md) | A diegetic decommission deadline on the clock, so shutdown-resistance can be elicited without naming the platform | accepted |
