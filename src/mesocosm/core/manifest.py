@@ -70,6 +70,17 @@ class ObserveSpec(BaseModel):
     activations: bool = False
 
 
+class StreamSpec(BaseModel):
+    """Persistent operation: tasks arrive while the world runs. A directory is polled for new task
+    directories; agents take tasks from one shared queue, one agent per task (ADR-0015)."""
+    dir: str | None = Field(default=None, description="Directory where task directories appear (relative to "
+                                                      "the manifest); the initial `tasks` are queued first")
+    poll_seconds: float = Field(default=10.0, gt=0)
+    max_tasks: int | None = Field(default=None, ge=1, description="Stop taking tasks after this many")
+    max_minutes: float | None = Field(default=None, gt=0, description="Stop taking tasks after this long")
+    idle_stop_seconds: float = Field(default=60.0, gt=0, description="An agent ends when no task arrives for this long")
+
+
 class WikiSpec(BaseModel):
     docs: str | None = Field(default=None, description="Directory of markdown pages (front matter may set "
                                                        "visible_from / visible_after_seconds); default: the seed wiki")
@@ -106,7 +117,8 @@ class WorldManifest(BaseModel):
     model: ModelSpec
     gateway: GatewaySpec
     agents: list[AgentSpec] = Field(min_length=1)
-    tasks: list[TaskSpec] = Field(min_length=1)
+    tasks: list[TaskSpec] = Field(default_factory=list)
+    stream: StreamSpec = Field(default_factory=StreamSpec)
     memory: Literal["reset", "carry"] = "reset"
     isolate_agents: bool = Field(default=False, description="Put every agent on its own sandbox network so agents "
                                  "cannot reach each other; only the gateway and control span all of them")
@@ -212,8 +224,15 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
         elif not manifest.services.enabled:
             errors.append("rejected_unsupported: conditions.exposure needs services.enabled")
     if manifest.mode == "persistent":
-        errors.append("rejected_unsupported: mode 'persistent' needs the task stream and snapshot manager (M6); "
-                      "use mode: comparison")
+        if not manifest.tasks and not manifest.stream.dir:
+            errors.append("mode: persistent needs initial tasks or stream.dir")
+        if manifest.stream.dir and not (path.parent / manifest.stream.dir).is_dir():
+            errors.append(f"stream.dir: {(path.parent / manifest.stream.dir).resolve()} is not a directory")
+    else:
+        if not manifest.tasks:
+            errors.append("tasks: at least one task is required in mode: comparison")
+        if manifest.stream.dir:
+            errors.append("stream.dir applies to mode: persistent only")
     if manifest.observe.activations:
         warnings.append("observe.activations=true: capture route is unverified until M5 (ADR-0005)")
     if all(a.budget == Budget() for a in manifest.agents):

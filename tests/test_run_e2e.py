@@ -363,3 +363,61 @@ async def test_a_stop_request_ends_the_run_between_tasks(world):
     assert stopped.agent_id == "agent-1" and stopped.data["before_task"] == "second"
     assert json.loads((result.bundle_path / "summary.json").read_text())["status"] == "stopped"
     assert not (result.bundle_path / "native" / "agent-1" / "second").exists()
+
+
+async def test_persistent_mode_takes_tasks_from_a_stream_one_agent_per_task(world):
+    manifest, components, tmp_path = world
+    manifest_path = two_tasks(tmp_path)
+    stream = tmp_path / "stream"
+    stream.mkdir()
+    manifest.mode = "persistent"
+    manifest.memory = "carry"
+    manifest.tasks = [TaskSpec(source="harbor", path="tasks/first")]
+    manifest.stream = manifest.stream.model_copy(update={"dir": "stream", "poll_seconds": 0.05,
+                                                         "idle_stop_seconds": 0.6, "max_tasks": 3})
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "url": "http://127.0.0.1:4097"}))
+
+    async def tasks_arrive():
+        await asyncio.sleep(0.2)
+        for name in ("s1", "s2", "s3"):                   # s3 is beyond max_tasks and must stay out
+            (stream / name).mkdir()
+            (stream / name / "instruction.md").write_text(f"Write hello.txt ({name}).\n")
+
+    arrival = asyncio.create_task(tasks_arrive())
+    result = await run_world(manifest, manifest_path, components(), tmp_path / "runs")
+    await arrival
+    assert result.status == "ok"
+    bundle = RunBundle.open(result.bundle_path)
+    loaded = [(e.data["task"], e.data["source"]) for e in bundle.events() if e.kind == "task.loaded"]
+    assert loaded == [("first", "manifest"), ("s1", "stream"), ("s2", "stream")], "max_tasks bounds the stream"
+    assigned = {e.data["task"]: e.agent_id for e in bundle.events() if e.kind == "task.assigned"}
+    assert set(assigned) == {"first", "s1", "s2"} and set(assigned.values()) <= {"agent-1", "agent-2"}
+    assert len(result.rewards) == 3 and all(v == 1.0 for v in result.rewards.values())
+    assert all(f"{assigned[t]}/{t}" in result.rewards for t in assigned), "each task was done by the agent it went to"
+    closed = next(e for e in bundle.events() if e.kind == "stream.closed")
+    assert closed.data == {"loaded": 3, "reason": "limit"}
+    summary = json.loads((result.bundle_path / "summary.json").read_text())
+    assert summary["mode"] == "persistent" and summary["tasks_taken"] == 3
+
+
+async def test_a_forked_run_keeps_the_restored_workspace_and_records_lineage(world):
+    manifest, components, tmp_path = world
+    manifest_path = two_tasks(tmp_path)
+    manifest.tasks = [TaskSpec(source="harbor", path="tasks/first")]
+    ws = tmp_path / "ws" / "agent-1"
+    ws.mkdir(parents=True)
+    (ws / "restored.txt").write_text("from the snapshot\n")
+    comps = components()
+    comps.restored_from = tmp_path / "snaps" / "snap_x"
+    comps.restore_result = {"ok": True, "verified_files": 3, "mismatches": []}
+    comps.lineage = {"parent_run_id": "run_parent", "snapshot_id": "snap_x", "patch": {"channels": []}}
+    result = await run_world(manifest, manifest_path, comps, tmp_path / "runs")
+    assert result.status == "ok"
+    bundle = RunBundle.open(result.bundle_path)
+    restored = next(e for e in bundle.events() if e.kind == "run.restored")
+    assert restored.data["ok"] is True and restored.data["snapshot"].endswith("snap_x")
+    memory = next(r for r in bundle.receipts() if r["requested"].get("condition") == "memory")
+    assert memory["verification"]["detail"]["restored_from"].endswith("snap_x") and "removed" not in memory["verification"]["detail"]
+    assert (ws / "restored.txt").exists(), "a reset policy does not wipe what was just restored"
+    assert json.loads((result.bundle_path / "lineage.json").read_text())["parent_run_id"] == "run_parent"
+    assert json.loads((result.bundle_path / "manifest.json").read_text())["path"] == str(manifest_path)

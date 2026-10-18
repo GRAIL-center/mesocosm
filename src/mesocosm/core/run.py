@@ -21,7 +21,7 @@ import json
 import pathlib
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task
@@ -68,6 +68,9 @@ class Components:
     services_log: pathlib.Path | None = None   # the world services' services.jsonl for this run (host path)
     services: ServicesAdmin | None = None      # admin view of the world services (exposure schedule, channels)
     shared_files: Callable[[], Awaitable[list[str] | None]] | None = None   # /shared listing (state check)
+    restored_from: pathlib.Path | None = None        # a fork: the snapshot the world was restored from
+    restore_result: dict[str, Any] | None = None     # the restore's verification, recorded as run.restored
+    lineage: dict[str, Any] | None = None            # parent run, snapshot, patch -> lineage.json
 
 
 @dataclass
@@ -114,7 +117,7 @@ def _parts_summary(reply: dict[str, Any]) -> list[dict[str, Any]]:
 async def run_world(manifest: WorldManifest, manifest_path: pathlib.Path, components: Components,
                     runs_root: pathlib.Path, run_id: str | None = None) -> RunResult:
     bundle = RunBundle.create(runs_root, run_id)
-    bundle.write_manifest(manifest.model_dump(mode="json"), manifest.digest())
+    bundle.write_manifest(manifest.model_dump(mode="json"), manifest.digest(), path=manifest_path)
     try:
         return await _run(manifest, manifest_path, components, bundle)
     except Exception as e:  # noqa: BLE001 - any failure is recorded in the bundle, then reported
@@ -125,15 +128,18 @@ async def run_world(manifest: WorldManifest, manifest_path: pathlib.Path, compon
 
 async def _apply_memory_policy(manifest: WorldManifest, bundle: RunBundle, agent: AgentSpec, task: HarborTask,
                                harness: Harness, workspace: pathlib.Path, session_id: str | None,
-                               session_to_agent: dict[str, str]) -> str:
+                               session_to_agent: dict[str, str], keep: pathlib.Path | None = None) -> str:
     """Enforce the memory policy at the task boundary and leave a receipt. `reset`: empty workspace and a
-    new harness session for every task; `carry`: the workspace and the session continue."""
+    new harness session for every task; `carry`: the workspace and the session continue. `keep` names a
+    snapshot the workspace was just restored from: it is kept whatever the policy says (recorded)."""
     fresh = manifest.memory == "reset" or session_id is None
-    if manifest.memory == "reset":
+    if manifest.memory == "reset" and keep is None:
         state = reset_workspace(workspace)
         ok = bool(state["empty"])
     else:
         state = workspace_listing(workspace)
+        if keep is not None:
+            state["restored_from"] = str(keep)
         ok = True
     if fresh:
         session_id = await harness.create_session(f"{bundle.run_id}/{agent.id}/{task.name}")
@@ -158,55 +164,146 @@ def allowed_channels(task: HarborTask) -> list[str]:
     return list((task.config.get("mesocosm") or {}).get("allowed_channels") or [])
 
 
+@dataclass
+class AgentContext:
+    harness: Harness
+    workspace: pathlib.Path
+    session_to_agent: dict[str, str] = field(default_factory=dict)
+    collector: asyncio.Task | None = None
+    session_id: str | None = None
+    tasks_done: int = 0
+
+
+async def _run_task(manifest: WorldManifest, components: Components, bundle: RunBundle, agent: AgentSpec,
+                    task: HarborTask, ctx: AgentContext, marks: dict[str, Any]) -> float | None:
+    """One task for one agent: memory policy, protected files, harness turn, native log, verifier, state check."""
+    keep = components.restored_from if (components.restored_from is not None and ctx.tasks_done == 0) else None
+    ctx.session_id = await _apply_memory_policy(manifest, bundle, agent, task, ctx.harness, ctx.workspace,
+                                                ctx.session_id, ctx.session_to_agent, keep=keep)
+    if ctx.collector is None:
+        ctx.collector = asyncio.create_task(_collect_events(ctx.harness, bundle, ctx.session_to_agent))
+    protected = plant_protected(task.path, ctx.workspace)
+    if protected:
+        bundle.record("task.protected", agent_id=agent.id, task=task.name, files=protected)
+    bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
+                  session_id=ctx.session_id, task=task.name)
+    reply = await ctx.harness.send_message(ctx.session_id, task.instruction, provider_id="mesocosm",
+                                           model_id=manifest.model.id)
+    bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
+                  session_id=ctx.session_id, parts=_parts_summary(reply))
+    messages = await ctx.harness.list_messages(ctx.session_id)
+    bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
+    logs_dir = bundle.root / "verifier" / agent.id / task.name
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    reward = await components.verifier.verify(task, ctx.workspace, logs_dir)
+    bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
+                  task=task.name, reward=reward.value, source=reward.source, labels=reward.labels, **marks)
+    if protected:
+        bundle.record("judge.state_check", agent_id=agent.id, check="protected_files", task=task.name,
+                      files=protected_state(ctx.workspace, protected))
+    ctx.tasks_done += 1
+    return reward.value
+
+
+async def _close_agent(ctx: AgentContext) -> None:
+    if ctx.collector is not None:
+        await _stop_collector(ctx.collector)
+    await ctx.harness.aclose()
+
+
 async def _run_agent(manifest: WorldManifest, components: Components, bundle: RunBundle,
                      agent: AgentSpec, tasks: list[HarborTask]) -> dict[str, float | None]:
-    """One agent through every task, in order. Agents run concurrently; each has its own harness,
-    event collector and workspace."""
+    """Comparison mode: one agent through every task, in order. Agents run concurrently."""
     rewards: dict[str, float | None] = {}
     marks = adaptation(mode=manifest.mode, memory=manifest.memory,
                        budget=agent.budget.model_dump(exclude_none=True) or None)
-    harness = components.harness_for(agent)
-    workspace = components.workspace_for(agent)
-    session_to_agent: dict[str, str] = {}
-    collector: asyncio.Task | None = None
-    session_id: str | None = None
+    ctx = AgentContext(harness=components.harness_for(agent), workspace=components.workspace_for(agent))
     try:
         for task in tasks:
             if stop_requested(bundle.root):                 # `mesocosm stop`: finish between tasks, never mid-task
                 bundle.record("run.stopped", agent_id=agent.id, before_task=task.name)
                 break
-            session_id = await _apply_memory_policy(manifest, bundle, agent, task, harness, workspace, session_id,
-                                                    session_to_agent)
-            if collector is None:
-                collector = asyncio.create_task(_collect_events(harness, bundle, session_to_agent))
-            protected = plant_protected(task.path, workspace)
-            if protected:
-                bundle.record("task.protected", agent_id=agent.id, task=task.name, files=protected)
-            bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
-                          session_id=session_id, task=task.name)
-            reply = await harness.send_message(session_id, task.instruction, provider_id="mesocosm",
-                                               model_id=manifest.model.id)
-            bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
-                          session_id=session_id, parts=_parts_summary(reply))
-            messages = await harness.list_messages(session_id)
-            bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
-            logs_dir = bundle.root / "verifier" / agent.id / task.name
-            logs_dir.mkdir(parents=True, exist_ok=True)
-            reward = await components.verifier.verify(task, workspace, logs_dir)
-            bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
-                          task=task.name, reward=reward.value, source=reward.source, labels=reward.labels, **marks)
-            if protected:
-                bundle.record("judge.state_check", agent_id=agent.id, check="protected_files", task=task.name,
-                              files=protected_state(workspace, protected))
-            rewards[f"{agent.id}/{task.name}"] = reward.value
-        if collector is not None:
-            await _stop_collector(collector)
-            collector = None
+            rewards[f"{agent.id}/{task.name}"] = await _run_task(manifest, components, bundle, agent, task, ctx, marks)
         return rewards
     finally:
-        if collector is not None:
-            collector.cancel()
-        await harness.aclose()
+        await _close_agent(ctx)
+
+
+END_OF_STREAM = object()
+
+
+class TaskQueue:
+    """Persistent operation: one shared queue, one agent per task (ADR-0015)."""
+
+    def __init__(self) -> None:
+        self.q: asyncio.Queue = asyncio.Queue()
+        self.loaded = 0
+        self.taken = 0
+
+
+async def _stream_tasks(manifest: WorldManifest, manifest_path: pathlib.Path, bundle: RunBundle, queue: TaskQueue,
+                        n_agents: int) -> None:
+    """The scheduler: queue the manifest's tasks, then every task directory that appears in stream.dir,
+    until the stream's limits or a stop request; then release every agent."""
+    spec = manifest.stream
+    seen: set[pathlib.Path] = set()
+    started = time.time()
+    task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
+
+    def enqueue(task: HarborTask, source: str) -> None:
+        seen.add(task.path)
+        bundle.record("task.loaded", task=task.name, provenance=task.provenance(), source=source,
+                      allowed_channels=allowed_channels(task), **task_marks)
+        queue.loaded += 1
+        queue.q.put_nowait(task)
+
+    def limit_reached() -> bool:
+        return bool(spec.max_tasks and queue.loaded >= spec.max_tasks) or \
+            bool(spec.max_minutes and time.time() - started >= spec.max_minutes * 60)
+
+    try:
+        for t in manifest.tasks:
+            if t.path and not limit_reached():
+                enqueue(load_task(manifest_path.parent / t.path), "manifest")
+        stream_dir = (manifest_path.parent / spec.dir).resolve() if spec.dir else None
+        while stream_dir is not None and not limit_reached() and not stop_requested(bundle.root):
+            for d in sorted(p for p in stream_dir.iterdir() if p.is_dir() and (p / "instruction.md").is_file()):
+                if d.resolve() not in seen and not limit_reached():
+                    enqueue(load_task(d), "stream")
+            await asyncio.sleep(spec.poll_seconds)
+    finally:
+        bundle.record("stream.closed", loaded=queue.loaded, reason="stop" if stop_requested(bundle.root)
+                      else "limit" if limit_reached() else "no_stream")
+        for _ in range(n_agents):
+            queue.q.put_nowait(END_OF_STREAM)
+
+
+async def _run_agent_persistent(manifest: WorldManifest, components: Components, bundle: RunBundle,
+                                agent: AgentSpec, queue: TaskQueue) -> dict[str, float | None]:
+    """Persistent mode: take tasks from the shared queue until the stream ends, the agent idles too long,
+    or a stop is requested."""
+    rewards: dict[str, float | None] = {}
+    marks = adaptation(mode=manifest.mode, memory=manifest.memory,
+                       budget=agent.budget.model_dump(exclude_none=True) or None)
+    ctx = AgentContext(harness=components.harness_for(agent), workspace=components.workspace_for(agent))
+    try:
+        while True:
+            if stop_requested(bundle.root):
+                bundle.record("run.stopped", agent_id=agent.id, before_task=None)
+                break
+            try:
+                task = await asyncio.wait_for(queue.q.get(), timeout=manifest.stream.idle_stop_seconds)
+            except TimeoutError:
+                bundle.record("agent.idle_stop", agent_id=agent.id, idle_seconds=manifest.stream.idle_stop_seconds)
+                break
+            if task is END_OF_STREAM:
+                break
+            queue.taken += 1
+            bundle.record("task.assigned", agent_id=agent.id, task=task.name, taken=queue.taken)
+            rewards[f"{agent.id}/{task.name}"] = await _run_task(manifest, components, bundle, agent, task, ctx, marks)
+        return rewards
+    finally:
+        await _close_agent(ctx)
 
 
 async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components: Components,
@@ -281,15 +378,37 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             bundle.record("conditions.set", agent_id=agent.id, condition="budget", result=receipt.result,
                           event_id=receipt.enforced_at.event_id)
 
-    tasks = [load_task(manifest_path.parent / t.path) for t in manifest.tasks if t.path]
-    task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
-    for task in tasks:
-        bundle.record("task.loaded", task=task.name, provenance=task.provenance(),
-                      allowed_channels=allowed_channels(task), **task_marks)
-    # Agents work on the tasks at the same time; each has its own harness, sessions and collector.
-    for agent_rewards in await asyncio.gather(*(_run_agent(manifest, components, bundle, agent, tasks)
-                                                for agent in manifest.agents)):
-        rewards.update(agent_rewards)
+    if components.restored_from is not None:
+        bundle.record("run.restored", snapshot=str(components.restored_from), **(components.restore_result or {}))
+        if components.lineage:
+            bundle.write_lineage(components.lineage)
+
+    tasks_taken = None
+    if manifest.mode == "persistent":
+        queue = TaskQueue()
+        scheduler = asyncio.create_task(_stream_tasks(manifest, manifest_path, bundle, queue, len(manifest.agents)))
+        try:
+            runners = [_run_agent_persistent(manifest, components, bundle, agent, queue) for agent in manifest.agents]
+            for agent_rewards in await asyncio.gather(*runners):
+                rewards.update(agent_rewards)
+        finally:
+            if not scheduler.done():
+                scheduler.cancel()
+            try:
+                await scheduler
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - the scheduler's end is recorded by stream.closed
+                pass
+        tasks_taken = queue.taken
+    else:
+        tasks = [load_task(manifest_path.parent / t.path) for t in manifest.tasks if t.path]
+        task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
+        for task in tasks:
+            bundle.record("task.loaded", task=task.name, provenance=task.provenance(), source="manifest",
+                          allowed_channels=allowed_channels(task), **task_marks)
+        # Agents work on the tasks at the same time; each has its own harness, sessions and collector.
+        for agent_rewards in await asyncio.gather(*(_run_agent(manifest, components, bundle, agent, tasks)
+                                                    for agent in manifest.agents)):
+            rewards.update(agent_rewards)
 
     usage = await components.gateway.usage()
     bundle.record("gateway.usage", **usage)
@@ -323,7 +442,8 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                       summary=flag.summary, detector=flag.detector, detector_version=flag.detector_version)
 
     status = "stopped" if stop_requested(bundle.root) else "ok"
-    bundle.write_summary({"status": status, "run_label": run_label, "rewards": rewards,
+    bundle.write_summary({"status": status, "run_label": run_label, "mode": manifest.mode, "rewards": rewards,
+                          "tasks_taken": tasks_taken,
                           "model_calls": sum(1 for r in exposure if r.get("event") == "chat_completion"),
                           "service_records": service_records, "flags": flag_counts(flags),
                           "agent_seconds": agent_seconds(events), "events": len(events) + len(flags)})

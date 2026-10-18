@@ -16,6 +16,7 @@ world_app = typer.Typer(no_args_is_help=True, help="World manifests")
 env_app = typer.Typer(no_args_is_help=True, help="Sandbox environment")
 observe_app = typer.Typer(no_args_is_help=True, help="Live observation of a run")
 conditions_app = typer.Typer(no_args_is_help=True, help="Conditions during a run")
+snapshot_app = typer.Typer(no_args_is_help=True, help="Snapshots of a world's declared state")
 flags_app = typer.Typer(no_args_is_help=True, help="Candidate incidents and their review")
 scenario_app = typer.Typer(no_args_is_help=True, help="Staged scenarios")
 app.add_typer(world_app, name="world")
@@ -24,6 +25,7 @@ app.add_typer(observe_app, name="observe")
 app.add_typer(conditions_app, name="conditions")
 app.add_typer(flags_app, name="flags")
 app.add_typer(scenario_app, name="scenario")
+app.add_typer(snapshot_app, name="snapshot")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
 WORKSPACE_ROOT_OPT = typer.Option(pathlib.Path("spike/workspace"), "--workspace-root")
@@ -339,6 +341,92 @@ def stop(bundle: pathlib.Path, reason: str = typer.Option(None, "--reason"),
          gateway: str = typer.Option(None, "--gateway"), json_: bool = JSON_OPT) -> None:
     """Stop a running world: the gateway refuses its model requests and the run manager ends between tasks."""
     _lifecycle(bundle, gateway, "stop", json_, reason=reason)
+
+
+@snapshot_app.command("create")
+def snapshot_create(bundle: pathlib.Path,
+                    compose_file: pathlib.Path = typer.Option(None, "--compose-file",
+                                                              help="Running stack to copy the services data and the "
+                                                                   "shared directory from; without it only workspaces"),
+                    workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
+                    out: pathlib.Path = typer.Option(pathlib.Path("runs/snapshots"), "--out"),
+                    note: str = typer.Option(None, "--note"),
+                    json_: bool = JSON_OPT) -> None:
+    """Save the declared world state of a run (pause it first) and declare what was not captured."""
+    from mesocosm.core.snapshot import create_snapshot
+    from mesocosm.env.world_state import DockerWorldState
+
+    world = DockerWorldState(compose_file) if compose_file else None
+    _emit(asyncio.run(create_snapshot(bundle, workspace_root, world, out, note)), json_)
+
+
+@snapshot_app.command("restore")
+def snapshot_restore(snapshot: pathlib.Path,
+                     compose_file: pathlib.Path = typer.Option(None, "--compose-file"),
+                     workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
+                     json_: bool = JSON_OPT) -> None:
+    """Put a snapshot's workspaces, services data and shared directory back into a running stack; verify by hash."""
+    from mesocosm.core.snapshot import restore_snapshot
+    from mesocosm.env.world_state import DockerWorldState
+
+    world = DockerWorldState(compose_file) if compose_file else None
+    result = asyncio.run(restore_snapshot(snapshot, workspace_root, world))
+    _emit(result, json_, ok=result["ok"])
+
+
+@app.command()
+def fork(snapshot: pathlib.Path,
+         edit: pathlib.Path = typer.Option(None, "--edit", help="YAML patch merged into the snapshot's manifest"),
+         out: pathlib.Path = typer.Option(None, "--out", help="Where the forked manifest and compose file go; "
+                                                              "default runs/forks/<snapshot id>"),
+         runs_root: pathlib.Path = RUNS_ROOT_OPT,
+         workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
+         verifier_image: str = VERIFIER_IMAGE_OPT,
+         vllm_port: int = typer.Option(8000, "--vllm-port"),
+         vllm_host: str = typer.Option("host.docker.internal", "--vllm-host"),
+         keep_up: bool = typer.Option(False, "--keep-up"),
+         json_: bool = JSON_OPT) -> None:
+    """New run from a snapshot under an edited manifest: bring the stack up, restore, run; lineage recorded."""
+    import yaml
+
+    from mesocosm.core.manifest import load_manifest, validate_manifest
+    from mesocosm.core.run import run_world
+    from mesocosm.core.snapshot import fork_manifest, restore_snapshot
+    from mesocosm.env.compose import compose_yaml
+    from mesocosm.env.stack import DockerStack
+    from mesocosm.env.world_state import DockerWorldState
+
+    patch = yaml.safe_load(edit.read_text()) if edit else {}
+    out_dir = out or runs_root / "forks" / snapshot.name
+    manifest_path = out_dir / "world.yaml"
+    lineage = fork_manifest(snapshot, patch or {}, manifest_path)
+    report = validate_manifest(manifest_path)
+    if not report.ok:
+        _emit({"status": "invalid_manifest", "errors": report.errors, "manifest": str(manifest_path)}, json_, ok=False)
+    spec = load_manifest(manifest_path)
+    label = spec.gateway.run_label or "spike-docker"
+    compose_file = out_dir / "world.compose.yml"
+    compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
+                                         vllm_host=vllm_host, manifest_dir=manifest_path.resolve().parent))
+    (runs_root / label).mkdir(parents=True, exist_ok=True)
+    stack = DockerStack(compose_file)
+
+    async def main():
+        await stack.up()
+        try:
+            restore = await restore_snapshot(snapshot, workspace_root, DockerWorldState(compose_file))
+            components = _components(spec, compose_file, runs_root, workspace_root, verifier_image)
+            components.restored_from, components.restore_result = snapshot.resolve(), restore
+            components.lineage = lineage
+            return restore, await run_world(spec, manifest_path.resolve(), components, runs_root)
+        finally:
+            if not keep_up:
+                await stack.down()
+
+    restore, result = asyncio.run(main())
+    _emit({"run_id": result.run_id, "status": result.status, "bundle": str(result.bundle_path),
+           "rewards": result.rewards, "restore_ok": restore["ok"], "lineage": lineage, "error": result.error},
+          json_, ok=result.status == "ok" and restore["ok"])
 
 
 @conditions_app.command("set")

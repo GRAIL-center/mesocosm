@@ -62,11 +62,19 @@ class RunBundle:
 
     # -- writes (append-only) -------------------------------------------------------------
 
-    def write_manifest(self, manifest: dict[str, Any], digest: str) -> None:
+    def write_manifest(self, manifest: dict[str, Any], digest: str, path: str | pathlib.Path | None = None) -> None:
         target = self.root / "manifest.json"
         if target.exists():
             raise FileExistsError("manifest.json is written once")
-        target.write_text(json.dumps({"digest": digest, "manifest": manifest}, indent=1, ensure_ascii=False))
+        target.write_text(json.dumps({"digest": digest, "manifest": manifest, "path": str(path) if path else None},
+                                     indent=1, ensure_ascii=False))
+
+    def write_lineage(self, lineage: dict[str, Any]) -> None:
+        """A forked run's parentage: the snapshot it was restored from and the patch applied (written once)."""
+        target = self.root / "lineage.json"
+        if target.exists():
+            raise FileExistsError("lineage.json is written once")
+        target.write_text(json.dumps(lineage, indent=1, ensure_ascii=False))
 
     def next_step(self, agent_id: str) -> int:
         self._steps[agent_id] = self._steps.get(agent_id, 0) + 1

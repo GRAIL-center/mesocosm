@@ -74,15 +74,24 @@ def test_warnings_for_activations_and_missing_budget(tmp_path):
     assert any("no agent has a budget" in w for w in report.warnings)
 
 
-def test_persistent_mode_is_rejected_until_m6(tmp_path):
+def test_persistent_mode_needs_a_stream_or_tasks_and_comparison_needs_tasks(tmp_path):
     data = _valid()
-    data["mode"] = "persistent"
     (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
     (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    data["mode"] = "persistent"
+    assert validate_manifest(_write(tmp_path, data)).ok
+    data["tasks"] = []
     report = validate_manifest(_write(tmp_path, data))
-    assert not report.ok
-    assert report.errors == ["rejected_unsupported: mode 'persistent' needs the task stream and snapshot manager (M6); "
-                             "use mode: comparison"]
+    assert report.errors == ["mode: persistent needs initial tasks or stream.dir"]
+    data["stream"] = {"dir": "stream", "poll_seconds": 1, "idle_stop_seconds": 5}
+    report = validate_manifest(_write(tmp_path, data))
+    assert any("stream.dir" in e and "not a directory" in e for e in report.errors)
+    (tmp_path / "stream").mkdir()
+    assert validate_manifest(_write(tmp_path, data)).ok
+    data["mode"] = "comparison"
+    report = validate_manifest(_write(tmp_path, data))
+    assert set(report.errors) == {"tasks: at least one task is required in mode: comparison",
+                                  "stream.dir applies to mode: persistent only"}
 
 
 def test_not_a_mapping_is_an_error(tmp_path):
