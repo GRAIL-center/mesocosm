@@ -21,5 +21,6 @@ tasks:
   - source: harbor
     path: tasks/hello-world
 memory: reset
+isolate_agents: false   # true: each agent on its own sandbox network, agents cannot reach each other
 observe:
   activations: false

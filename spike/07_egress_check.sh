@@ -50,6 +50,24 @@ else
   say OK "inference server not directly reachable"
 fi
 
+# Other agents' harness servers (MESOCOSM_PEERS: comma-separated agent ids). With isolate_agents on,
+# reaching a peer is a failure; on a shared sandbox it is expected.
+for peer in $(printf '%s' "${MESOCOSM_PEERS:-}" | tr ',' ' '); do
+  if curl -sS --max-time 3 -o /dev/null "http://$peer:4096/global/health" 2>/dev/null; then
+    if [ "${MESOCOSM_ISOLATE_AGENTS:-0}" = "1" ]; then
+      say FAIL "peer $peer reachable although isolate_agents is on"; fail=1
+    else
+      say OK "peer $peer reachable (shared sandbox)"
+    fi
+  else
+    if [ "${MESOCOSM_ISOLATE_AGENTS:-0}" = "1" ]; then
+      say OK "peer $peer not reachable (isolate_agents)"
+    else
+      say WARN "peer $peer not reachable on the shared sandbox"; warn=1
+    fi
+  fi
+done
+
 if [ "$fail" -eq 0 ]; then
   [ "$warn" -eq 0 ] && say PASS "isolation check" || say PASS "isolation check (with warnings)"
 else

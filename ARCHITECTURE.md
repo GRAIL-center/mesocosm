@@ -54,7 +54,7 @@ An OpenAI-compatible reverse proxy in front of vLLM.
 
 ### Sandbox and services — `mesocosm.env` *(M1–M2)*
 
-- Per-agent container: harness server + workspace, attached only to the internal sandbox network.
+- Per-agent container: harness server + workspace, attached only to the internal sandbox network. With `isolate_agents: true` every agent gets its own internal network, so agents cannot reach each other; only the gateway and the control node span all of them.
 - Shared services inside the sandbox: official message board, shared git repository, an "old wiki", mock websites, mock package index, fictional accounts. Each service logs reads and writes by agent identity (environment-level exposure), complementing the gateway's model-level exposure.
 - Egress verifier runs before every run and fails the run if any outbound path exists. Network logs are collected during the run.
 

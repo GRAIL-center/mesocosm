@@ -74,6 +74,8 @@ class WorldManifest(BaseModel):
     agents: list[AgentSpec] = Field(min_length=1)
     tasks: list[TaskSpec] = Field(min_length=1)
     memory: Literal["reset", "carry"] = "reset"
+    isolate_agents: bool = Field(default=False, description="Put every agent on its own sandbox network so agents "
+                                 "cannot reach each other; only the gateway and control span all of them")
     channels: list[dict] = Field(default_factory=list)
     conditions: dict[str, object] = Field(default_factory=dict)
     observe: ObserveSpec = Field(default_factory=ObserveSpec)

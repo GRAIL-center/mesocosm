@@ -59,3 +59,4 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 | Agent container has no route to the internet (HTTP, DNS, ICMP) | unverified (no Docker on Colab) | spike 07 on the workstation |
 | Agent container reaches the gateway only | unverified | spike 07 |
 | Gateway reaches the inference server only | unverified | spike 07 |
+| Agents cannot reach each other when `isolate_agents: true` (per-agent networks; `egress-check` peer lines) | unverified | spike 06 |

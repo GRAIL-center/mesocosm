@@ -29,6 +29,25 @@ def test_compose_topology_invariants():
     assert yaml.safe_load(compose_yaml(manifest, repo_root=ROOT, run_label="lbl")) == compose
 
 
+def test_isolate_agents_gives_each_agent_a_private_network():
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
+    manifest.isolate_agents = True
+    compose = render_compose(manifest, repo_root=ROOT, run_label="lbl")
+    assert compose["networks"] == {"sandbox-agent-1": {"internal": True}, "sandbox-agent-2": {"internal": True},
+                                   "edge": {}}
+    svc = compose["services"]
+    assert svc["gateway"]["networks"] == ["sandbox-agent-1", "sandbox-agent-2", "edge"]
+    assert svc["control"]["networks"] == ["sandbox-agent-1", "sandbox-agent-2", "edge"]
+    assert svc["agent-1"]["networks"] == ["sandbox-agent-1"]
+    assert svc["agent-2"]["networks"] == ["sandbox-agent-2"]
+    assert svc["agent-1"]["environment"]["MESOCOSM_PEERS"] == "agent-2"
+    assert svc["agent-1"]["environment"]["MESOCOSM_ISOLATE_AGENTS"] == "1"
+    shared = render_compose(manifest.model_copy(update={"isolate_agents": False}), repo_root=ROOT, run_label="lbl")
+    assert shared["services"]["agent-2"]["environment"]["MESOCOSM_PEERS"] == "agent-1"
+    assert shared["services"]["agent-2"]["environment"]["MESOCOSM_ISOLATE_AGENTS"] == "0"
+
+
 def test_egress_parser_blocks_on_fail_and_records_warn():
     ok = parse_egress_output(
         "OK    gateway reachable at http://gateway:8080\nOK    HTTPS egress blocked\nOK    raw-IP egress blocked\n"
