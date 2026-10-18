@@ -15,6 +15,7 @@ uv run mesocosm world validate examples/spike-world.yaml --json   # check a mani
 uv run mesocosm env compose examples/spike-world.yaml              # render the sandbox topology
 uv run mesocosm run examples/spike-world.yaml --json               # needs vLLM, the gateway and the Compose sandbox up
 uv run mesocosm observe serve runs/<run_id> --gateway-log runs/spike/gateway.jsonl   # live view at http://127.0.0.1:8090
+#   add --summarizer-url http://127.0.0.1:8000/v1 --summarizer-model mesocosm-3b --summarizer-key mesocosm-local for model-written status lines
 ```
 
 ## What the platform does (target)

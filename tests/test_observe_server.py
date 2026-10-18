@@ -46,7 +46,7 @@ async def test_state_sse_and_drilldown(bundle):
         agent = snap["agents"][0]
         assert agent["agent_id"] == "agent-1" and agent["status"] == "tool" and agent["requests"] == 1
         assert agent["budget"] == {"requests": 200, "receipt": "applied"}
-        assert snap["sessions"]["s1"]["summary"] == "bash ls"
+        assert snap["sessions"]["s1"]["summary"] == "Running ls"
 
         # appended lines are picked up without restarting anything
         write_lines(root / "events.jsonl", [oc("session.status", 13.0, "s1", "agent-1", status={"type": "idle"})])
@@ -64,7 +64,7 @@ async def test_state_sse_and_drilldown(bundle):
         # point-in-time rebuild: before the tool call the session was waiting for the model
         past = (await c.get("/state", params={"at": 11.2})).json()
         assert past["meta"]["at"] == 11.2
-        assert past["state"]["sessions"]["s1"]["summary"] == "waiting for model"
+        assert past["state"]["sessions"]["s1"]["summary"] == "Waiting for the model"
         assert past["state"]["agents"][0]["requests"] == 0
 
         assert (await c.get("/")).text.startswith("<!doctype html>")

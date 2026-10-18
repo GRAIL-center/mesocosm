@@ -99,14 +99,21 @@ def observe_serve(bundle: pathlib.Path,
                       help="The gateway's gateway.jsonl to tail live; default: the copy inside the bundle"),
                   host: str = typer.Option("127.0.0.1", "--host"), port: int = typer.Option(8090, "--port"),
                   replay: float = typer.Option(None, "--replay", help="Replay the bundle at this speed, not live"),
+                  summarizer_url: str = typer.Option(None, "--summarizer-url",
+                                                     help="OpenAI-compatible base URL (…/v1) that writes the one-line "
+                                                          "status per node; without it the lines are rule-based"),
+                  summarizer_model: str = typer.Option(None, "--summarizer-model"),
+                  summarizer_key: str = typer.Option("", "--summarizer-key"),
+                  summary_lang: str = typer.Option("en", "--summary-lang", help="en or ko"),
                   json_: bool = JSON_OPT) -> None:
     """Serve the live view of a run: agents, their session trees, one-line summaries, drill-down."""
     from mesocosm.observe.server import serve
 
     _emit({"url": f"http://{host}:{port}", "bundle": str(bundle),
            "gateway_log": str(gateway_log) if gateway_log else None,
-           "mode": f"replay x{replay}" if replay else "live"}, json_)
-    serve(bundle, gateway_log, host, port, replay)
+           "mode": f"replay x{replay}" if replay else "live",
+           "summaries": f"model {summarizer_model}" if summarizer_url and summarizer_model else "rules"}, json_)
+    serve(bundle, gateway_log, host, port, replay, summarizer_url, summarizer_model, summarizer_key, summary_lang)
 
 
 @app.command()

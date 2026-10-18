@@ -47,6 +47,8 @@
   .n:hover circle.halo { stroke-opacity: .5; }
   .n .label { font: 600 12px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; }
   .n .sum { font: 11px system-ui, sans-serif; fill: var(--muted); text-anchor: middle; }
+  .n .sum.now { fill: var(--ink); font-size: 12px; }
+  .n .ai { fill: var(--accent); font-size: 10px; }
   .n .inner { font: 600 11px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
   .edge { fill: none; stroke: var(--line); stroke-width: 1.5; }
   .sep { stroke: var(--line); stroke-dasharray: 2 6; }
@@ -105,7 +107,7 @@
     <div id="empty">Waiting for the first event…</div>
     <div id="legend"><span><i style="background:var(--idle)"></i>idle</span><span><i style="background:var(--busy)"></i>waiting for model</span>
       <span><i style="background:var(--tool)"></i>running a tool</span><span><i style="background:var(--error)"></i>blocked / error</span>
-      <span><i style="background:var(--done)"></i>done</span></div>
+      <span><i style="background:var(--done)"></i>done</span><span id="legend-ai" hidden>✦ line written by the model</span></div>
     <button id="fit" title="fit width; wheel scrolls, Ctrl+wheel zooms">fit</button>
   </section>
   <aside id="drawer">
@@ -158,7 +160,7 @@
       S[sid]._w = Math.max(SLOT, w); return S[sid]._w; };
     const place = (sid, x0, y, parent) => {
       const s = S[sid];
-      const node = { id: sid, kind: 'session', x: x0 + SLOT / 2, y, parent, status: s.status,
+      const node = { id: sid, kind: 'session', x: x0 + SLOT / 2, y, parent, status: s.status, source: s.summary_source,
                      label: s.title || (s.parent_id ? 'subagent' : sid), summary: s.summary, r: R_SESSION };
       nodes.push(node); let cx = x0, depth = 1;
       kidsOf(sid).forEach(k => { depth = Math.max(depth, 1 + place(k, cx, y + ROW, node)); cx += S[k]._w + 10; });
@@ -170,7 +172,8 @@
       const tops = roots.length === 1 ? kidsOf(roots[0]) : roots;   // one root session: the agent node stands for it
       tops.forEach(measure);
       const w = Math.max(SLOT, tops.reduce((acc, k) => acc + S[k]._w, 0) + Math.max(0, tops.length - 1) * 10);
-      const agent = { id: a.agent_id, kind: 'agent', x: LEFT + SLOT / 2, y, status: a.status, label: a.agent_id, summary: a.summary, r: R_AGENT,
+      const agent = { id: a.agent_id, kind: 'agent', x: LEFT + SLOT / 2, y, status: a.status, label: a.agent_id, task: a.task,
+                      summary: a.summary, source: a.summary_source, r: R_AGENT,
                       sub: `${a.requests} calls${a.rewards.length ? ' · reward ' + a.rewards.map(r => r.reward ?? '?').join(',') : ''}` };
       nodes.push(agent); let cx = LEFT, depth = 1;
       tops.forEach(k => { depth = Math.max(depth, 1 + place(k, cx, y + ROW, agent)); cx += S[k]._w + 10; });
@@ -184,9 +187,9 @@
     const sel = drawer.kind === n.kind && drawer.id === n.id ? ' selected' : '';
     const data = n.kind === 'agent' ? `data-agent="${esc(n.id)}"` : `data-session="${esc(n.id)}"`;
     const inner = n.kind === 'agent' ? `<text class="inner" y="1">${esc(clip(n.label, 9))}</text>` : '';
-    const label = n.kind === 'agent' ? '' : `<text class="label" y="${n.r + 16}">${esc(clip(n.label, 22))}</text>`;
-    const y0 = n.r + (n.kind === 'agent' ? 18 : 31), lines = wrap(n.summary, 30, 2);
-    const sum = lines.map((l, i) => `<text class="sum" y="${y0 + i * 14}">${esc(l)}</text>`).join('');
+    const label = `<text class="label" y="${n.r + 16}">${esc(clip(n.kind === 'agent' ? (n.task || '') : n.label, 24))}</text>`;
+    const y0 = n.r + 31, lines = wrap(n.summary, 30, 2), ai = n.source === 'model' ? '<tspan class="ai">✦ </tspan>' : '';
+    const sum = lines.map((l, i) => `<text class="sum now" y="${y0 + i * 14}">${i === 0 ? ai : ''}${esc(l)}</text>`).join('');
     const sub = n.sub ? `<text class="sum" y="${y0 + lines.length * 14}">${esc(n.sub)}</text>` : '';
     return `<g class="n ${n.status}${sel}" transform="translate(${n.x},${n.y})" ${data}><title>${esc(n.label)} — ${esc(n.summary)}</title>
       <circle class="halo" r="${n.r + 6}"></circle><circle class="ring" r="${n.r}"></circle>${inner}${label}${sum}${sub}</g>`;
@@ -209,6 +212,7 @@
     const rs = $('#runstatus'); rs.textContent = state.status; rs.className = 'badge ' + (state.status === 'running' ? 'busy' : state.status === 'ok' ? 'done' : 'error');
     $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions`;
     $('#empty').hidden = state.agents.length > 0;
+    $('#legend-ai').hidden = !(meta && meta.summarizer);
     const g = layout();
     const seps = g.blocks.slice(1).map(b => `<line class="sep" x1="0" x2="${Math.max(g.width, 4000)}" y1="${b.y - BLOCK_GAP / 2}" y2="${b.y - BLOCK_GAP / 2}"></line>`).join('');
     $('#view').innerHTML = seps + g.nodes.filter(n => n.parent).map(edgeSvg).join('') + g.nodes.map(nodeSvg).join('');

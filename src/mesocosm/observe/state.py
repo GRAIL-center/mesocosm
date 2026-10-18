@@ -66,6 +66,17 @@ def tool_input_summary(tool: str | None, inp: dict[str, Any] | None) -> str:
     return ""
 
 
+def tool_phrase(tool: str | None, input_summary: str | None) -> str:
+    arg = input_summary or ""
+    verbs = {"bash": "Running", "read": "Reading", "write": "Writing", "edit": "Editing", "glob": "Searching for",
+             "grep": "Searching for", "task": "Delegating:", "webfetch": "Fetching", "todowrite": "Updating the plan",
+             "question": "Asking the user", "skill": "Loading a skill"}
+    verb = verbs.get(tool or "", f"Using {tool}")
+    if tool == "todowrite" or not arg:
+        return verb.rstrip(":")
+    return f"{verb} {arg}"
+
+
 @dataclass
 class SessionNode:
     session_id: str
@@ -82,36 +93,50 @@ class SessionNode:
     tools: OrderedDict = field(default_factory=OrderedDict)     # call_id -> tool item
     items: deque = field(default_factory=lambda: deque(maxlen=TIMELINE_MAX))
     last_activity: dict[str, Any] | None = None                # the item the summary is built from
+    model_summary: tuple[str, str] | None = None               # (activity signature, model-written line)
     tool_calls_total: int = 0
     text_parts_total: int = 0
 
-    def summary(self) -> str:
+    def rule_summary(self) -> str:
+        """Plain words, present tense, no jargon: what this session is doing right now."""
         if self.status == ERROR and self.error:
-            return _clip(f"error: {self.error}")
+            return _clip(f"Stopped: {self.error}")
         act = self.last_activity
         if act is None:
-            return "waiting for model" if self.status == BUSY else "idle"
+            return "Waiting for the model" if self.status == BUSY else "Idle"
         if act["kind"] == "tool":
-            phrase = f"{act['tool']} {act.get('input_summary') or ''}".strip()
             if act["status"] in ("pending", "running"):
-                return _clip(phrase)
+                return _clip(tool_phrase(act["tool"], act.get("input_summary")))
             if self.status == BUSY:
-                return _clip(f"after {phrase}: waiting for model")
-            return _clip(f"last: {phrase}")
+                return "Waiting for the model"
+            return _clip("Finished: " + tool_phrase(act["tool"], act.get("input_summary")).lower())
         if act["kind"] == "text":
-            return _clip(act["text"])
+            return _clip(act["text"].split(". ")[0], 70)
         if act["kind"] == "reasoning":
-            return _clip("thinking: " + act["text"])
+            return "Thinking"
         if act["kind"] == "file":
-            return _clip(f"edited {act['path']}")
-        return "waiting for model" if self.status == BUSY else "idle"
+            return _clip(f"Edited {act['path']}")
+        return "Waiting for the model" if self.status == BUSY else "Idle"
+
+    def summary(self) -> str:
+        """The model-written line when it matches the current activity, else the rule-based one."""
+        if self.model_summary and self.model_summary[0] == self.signature():
+            return self.model_summary[1]
+        return self.rule_summary()
+
+    def summary_source(self) -> str:
+        return "model" if (self.model_summary and self.model_summary[0] == self.signature()) else "rules"
+
+    def signature(self) -> str:
+        from mesocosm.observe.summarize import signature  # local import: summarize imports this module
+        return signature(self)
 
     def to_dict(self) -> dict[str, Any]:
         running = [t for t in self.tools.values() if t["status"] in ("pending", "running")]
         return {
             "session_id": self.session_id, "agent_id": self.agent_id, "parent_id": self.parent_id,
             "title": self.title, "status": TOOL if (self.status == BUSY and running) else self.status,
-            "summary": self.summary(), "children": list(self.children),
+            "summary": self.summary(), "summary_source": self.summary_source(), "children": list(self.children),
             "created_ts": self.created_ts, "updated_ts": self.updated_ts, "tokens": self.tokens,
             "tool_calls": self.tool_calls_total, "text_parts": self.text_parts_total,
             "running_tool": running[-1]["tool"] if running else None,
@@ -260,23 +285,30 @@ class Observer:
 
     def agent_summary(self, agent: AgentState) -> str:
         if agent.blocked:
-            return f"budget exhausted ({agent.blocked})"
+            return f"Stopped: budget used up ({agent.blocked})"
         nodes = [self.sessions[s] for s in self._agent_sessions(agent.agent_id)]
         if not nodes:
-            return agent.task or "no session yet"
+            return "Starting"
         busy = [n for n in nodes if n.status == BUSY]
         pick = max(busy or nodes, key=lambda n: n.updated_ts or 0)
-        prefix = f"{agent.task}: " if agent.task else ""
-        if pick.parent_id:
-            prefix += "↳ "
-        return _clip(prefix + pick.summary(), 120)
+        if not busy and agent.rewards:
+            return _clip("Done: " + pick.summary()[0].lower() + pick.summary()[1:], 90)
+        return _clip(("Subagent: " if pick.parent_id else "") + pick.summary(), 90)
+
+    def agent_summary_source(self, agent: AgentState) -> str:
+        nodes = [self.sessions[s] for s in self._agent_sessions(agent.agent_id)]
+        if agent.blocked or not nodes:
+            return "rules"
+        busy = [n for n in nodes if n.status == BUSY]
+        return max(busy or nodes, key=lambda n: n.updated_ts or 0).summary_source()
 
     def snapshot(self) -> dict[str, Any]:
         agents = []
         for agent in self.agents.values():
             agents.append({
                 "agent_id": agent.agent_id, "task": agent.task, "status": self.agent_status(agent),
-                "summary": self.agent_summary(agent), "budget": agent.budget,
+                "summary": self.agent_summary(agent), "summary_source": self.agent_summary_source(agent),
+                "budget": agent.budget,
                 "requests": agent.requests_total, "completion_tokens": agent.completion_tokens_total,
                 "rewards": agent.rewards, "root_sessions": list(agent.root_sessions),
                 "last_request_ts": agent.last_request_ts, "last_error": agent.last_error,

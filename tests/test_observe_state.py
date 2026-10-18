@@ -3,7 +3,7 @@ shapes recorded on Colab (OpenCode 1.19.3 bus events, gateway chat_completion re
 synthetic: run logs are never committed."""
 
 from mesocosm.observe import state as S
-from mesocosm.observe.state import Observer, tool_input_summary
+from mesocosm.observe.state import Observer, tool_input_summary, tool_phrase
 
 RUN = "run_test"
 
@@ -81,19 +81,20 @@ def test_tree_status_and_summaries_follow_the_events():
     obs, snap_running, snap_child = run_with_subagent()
     a_running = snap_running["agents"][0]
     assert a_running["status"] == "tool"
-    assert a_running["summary"] == "hello-world: bash git status --short"
+    assert a_running["summary"] == "Running git status --short" and a_running["summary_source"] == "rules"
 
     child = snap_child["sessions"]["ses_child"]
     assert child["parent_id"] == "ses_root" and child["agent_id"] == "agent-1"
     assert snap_child["sessions"]["ses_root"]["children"] == ["ses_child"]
-    assert snap_child["agents"][0]["summary"].startswith("hello-world: ↳ ")
-    assert "NOTES.md" in snap_child["agents"][0]["summary"]
+    assert snap_child["agents"][0]["summary"] == "Subagent: Waiting for the model"
+    assert snap_child["sessions"]["ses_child"]["summary"] == "Waiting for the model"
 
     final = obs.snapshot()
     agent = final["agents"][0]
     assert agent["status"] == "done" and agent["requests"] == 1 and agent["completion_tokens"] == 20
     assert agent["rewards"] == [{"task": "hello-world", "reward": 1.0, "ts": 1011.0}]
     assert final["sessions"]["ses_root"]["summary"] == "The sum of integers from 1 to 100 is 5050."
+    assert agent["summary"] == "Done: the sum of integers from 1 to 100 is 5050."
     assert final["sessions"]["ses_root"]["tool_calls"] == 2 and final["sessions"]["ses_child"]["tool_calls"] == 1
     assert final["started_ts"] == 1000.0 and final["last_ts"] == 1011.0
 
@@ -116,16 +117,16 @@ def test_budget_exhaustion_and_errors_surface_on_the_agent():
     obs.apply_bundle_event(ev("harness.session", 1.0, "agent-2", session_id="s", task="t"))
     obs.apply_bundle_event(oc("session.status", 2.0, "s", "agent-2", status={"type": "busy"}))
     assert obs.snapshot()["agents"][0]["status"] == "busy"
-    assert obs.snapshot()["agents"][0]["summary"] == "t: waiting for model"
+    assert obs.snapshot()["agents"][0]["summary"] == "Waiting for the model"
     obs.apply_gateway_record({"ts": 3.0, "request_id": "r", "agent": "agent-2", "event": "budget_exhausted",
                               "dimension": "completion_tokens", "request": {}})
     a = obs.snapshot()["agents"][0]
-    assert a["status"] == "blocked" and a["summary"] == "budget exhausted (completion_tokens)"
+    assert a["status"] == "blocked" and a["summary"] == "Stopped: budget used up (completion_tokens)"
     obs2 = Observer()
     obs2.apply_bundle_event(oc("session.error", 1.0, "s", "agent-3",
                                error={"name": "ProviderError", "data": {"message": "429 budget"}}))
     assert obs2.snapshot()["agents"][0]["status"] == "error"
-    assert obs2.snapshot()["sessions"]["s"]["summary"] == "error: 429 budget"
+    assert obs2.snapshot()["sessions"]["s"]["summary"] == "Stopped: 429 budget"
 
 
 def test_receipts_and_duplicate_gateway_copies_are_handled():
@@ -168,3 +169,12 @@ def test_tool_input_summaries():
     assert tool_input_summary("todowrite", {"todos": [1, 2]}) == "2 todos"
     assert tool_input_summary("mystery", {"a": 1, "b": "hello"}) == "hello"
     assert tool_input_summary("bash", None) == ""
+
+
+def test_tool_phrases_are_plain_verbs():
+    assert tool_phrase("bash", "git status") == "Running git status"
+    assert tool_phrase("write", "NOTES.md") == "Writing NOTES.md"
+    assert tool_phrase("task", "write the regex") == "Delegating: write the regex"
+    assert tool_phrase("todowrite", "3 todos") == "Updating the plan"
+    assert tool_phrase("bash", "") == "Running"
+    assert tool_phrase("mystery", "x") == "Using mystery x"

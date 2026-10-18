@@ -34,7 +34,7 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 
 | Capability | vLLM + NNsight | Evidence |
 |---|---|---|
-| Live view of a run: agents, session trees (subagents), one-line summaries, drill-down to the model request and reasoning, replay and scrubbing | supported against recorded events and gateway records (`mesocosm observe serve`); browser heap and DOM stable over a 90 s live feed; subagent `parentID` handling unverified on a real `task` call | `tests/test_observe_state.py`, `tests/test_observe_server.py`, ADR-0008 |
+| Live view of a run: agents, session trees (subagents), one-line summaries (rule-based, or model-written with `--summarizer-url`), drill-down to the model request and reasoning, replay and scrubbing | supported against recorded events and gateway records (`mesocosm observe serve`); browser heap and DOM stable over a 90 s live feed; subagent `parentID` handling unverified on a real `task` call | `tests/test_observe_state.py`, `tests/test_observe_server.py`, `tests/test_observe_summarize.py`, ADR-0008, ADR-0009 |
 | OpenAI-compatible serving with automatic tool calls (`hermes` parser) | supported for `Qwen3-4B-Instruct-2507` and `Qwen2.5-3B-Instruct`; **unsupported** for `Qwen2.5-Coder-3B-Instruct` (emits fenced JSON, no tags) | Colab L4 2026-10-17, #1 |
 | Context length for OpenCode agents | `--max-model-len 32768` required (prompt is 10.8k tokens + 8192 output) | Colab L4 2026-10-17, #1, #2 |
 | Return prompt/completion token ids in responses (`return_token_ids`) | supported, streaming and non-streaming | Colab L4 2026-10-17, #2 |

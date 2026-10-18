@@ -26,6 +26,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from mesocosm.observe.state import REQUEST_BODIES_MAX, Observer
+from mesocosm.observe.summarize import Summarizer
 
 STATIC = pathlib.Path(__file__).parent / "static"
 POLL_SECONDS = 0.25
@@ -71,6 +72,7 @@ class Follower:
     sources: list[Source]
     observer: Observer = field(default_factory=Observer)
     replay_speed: float | None = None      # None: live tail; else replay at this speed
+    summarizer: Summarizer | None = None
     version: int = 0
     changed: asyncio.Condition = field(default_factory=asyncio.Condition)
     task: asyncio.Task | None = None
@@ -88,6 +90,8 @@ class Follower:
                 await self.task
             except asyncio.CancelledError:
                 pass
+        if self.summarizer:
+            await self.summarizer.aclose()
 
     def _feed(self, src: Source, line: bytes) -> bool:
         try:
@@ -101,6 +105,22 @@ class Follower:
         async with self.changed:
             self.version += 1
             self.changed.notify_all()
+        if self.summarizer:
+            self._schedule_summaries()
+
+    def _schedule_summaries(self) -> None:
+        """Ask the model for a new line for every session whose activity changed; one task per node,
+        bounded by the summarizer's semaphore and its per-node interval."""
+        self.summarizer.apply_cached(self.observer)
+        for node in self.summarizer.due(self.observer):
+            agent = self.observer.agents.get(node.agent_id or "")
+            asyncio.create_task(self._summarize(node, agent.task if agent else None))
+
+    async def _summarize(self, node, task) -> None:
+        if await self.summarizer.summarize(node, task):
+            async with self.changed:
+                self.version += 1
+                self.changed.notify_all()
 
     async def _tail(self) -> None:
         while True:
@@ -188,11 +208,11 @@ def state_at(bundle: pathlib.Path, gateway_log: pathlib.Path | None, at: float) 
 
 
 def create_app(bundle: pathlib.Path, gateway_log: pathlib.Path | None = None,
-               replay_speed: float | None = None) -> FastAPI:
+               replay_speed: float | None = None, summarizer: Summarizer | None = None) -> FastAPI:
     bundle = pathlib.Path(bundle)
     if not bundle.is_dir():
         raise FileNotFoundError(f"not a run bundle directory: {bundle}")
-    follower = Follower(sources=make_sources(bundle, gateway_log), replay_speed=replay_speed)
+    follower = Follower(sources=make_sources(bundle, gateway_log), replay_speed=replay_speed, summarizer=summarizer)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -207,7 +227,8 @@ def create_app(bundle: pathlib.Path, gateway_log: pathlib.Path | None = None,
     def meta() -> dict[str, Any]:
         return {"mode": "replay" if replay_speed else "live", "replay_speed": replay_speed,
                 "replay_position": follower.replay_position, "replay_done": follower.replay_done,
-                "version": follower.version, "server_ts": time.time(), "bundle": str(bundle)}
+                "version": follower.version, "server_ts": time.time(), "bundle": str(bundle),
+                "summarizer": summarizer.stats() if summarizer else None}
 
     @app.get("/")
     async def index():
@@ -252,11 +273,22 @@ def create_app(bundle: pathlib.Path, gateway_log: pathlib.Path | None = None,
     return app
 
 
+def derived_path(bundle: pathlib.Path) -> pathlib.Path:
+    """Model-written lines live next to the bundle, never inside it: <runs>/<run_id>.observe/summaries.jsonl."""
+    return bundle.parent / f"{bundle.name}.observe" / "summaries.jsonl"
+
+
 def serve(bundle: pathlib.Path, gateway_log: pathlib.Path | None, host: str, port: int,
-          replay_speed: float | None) -> None:
+          replay_speed: float | None, summarizer_url: str | None = None, summarizer_model: str | None = None,
+          summarizer_key: str = "", summary_lang: str = "en") -> None:
     import uvicorn
 
-    app = create_app(bundle, gateway_log, replay_speed)
+    summarizer = None
+    if summarizer_url and summarizer_model:
+        summarizer = Summarizer(summarizer_url, summarizer_model, summarizer_key, summary_lang,
+                                derived_path=derived_path(pathlib.Path(bundle)))
+    app = create_app(bundle, gateway_log, replay_speed, summarizer)
     print(f"[observe] http://{host}:{port}  bundle={bundle} gateway_log={gateway_log} "
-          f"mode={'replay x' + str(replay_speed) if replay_speed else 'live'}", file=sys.stderr)
+          f"mode={'replay x' + str(replay_speed) if replay_speed else 'live'} "
+          f"summaries={'model ' + summarizer_model if summarizer else 'rules'}", file=sys.stderr)
     uvicorn.run(app, host=host, port=port, log_level="warning")
