@@ -136,12 +136,3 @@ def test_exposure_and_accounts_are_validated(tmp_path):
     assert any("services.accounts: user names must be unique" in e for e in validate_manifest(_write(tmp_path, data)).errors)
     data["services"] = {"accounts": [{"user": "Not Valid", "password": "pw"}]}
     assert not validate_manifest(_write(tmp_path, data)).ok
-
-
-def test_memory_carry_is_rejected_until_m3(tmp_path):
-    data = _valid()
-    data["memory"] = "carry"
-    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
-    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
-    report = validate_manifest(_write(tmp_path, data))
-    assert report.errors == ["rejected_unsupported: memory 'carry' needs the memory policy of M3; use memory: reset"]

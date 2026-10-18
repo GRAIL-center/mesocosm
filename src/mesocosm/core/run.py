@@ -5,8 +5,10 @@ Order of operations, each leaving a record:
   2. gateway health;
   3. egress verification for every agent; any FAIL aborts the run before an agent does anything;
   4. budgets applied at the gateway; receipts recorded;
-  5. per task, per agent: harness session, task instruction, event stream, native logs, verifier;
-  6. gateway usage and the run's exposure records copied into the bundle; summary.
+  5. per agent (concurrently), per task (in order): memory policy with receipt, protected files planted,
+     harness session, task instruction, event stream, native logs, verifier, state check;
+  6. gateway usage and the run's exposure records copied into the bundle; services log; shared-dir check;
+  7. the judge's detectors over everything recorded -> flags.jsonl; summary.
 
 Hardware-bound pieces (OpenCode server, Docker, vLLM) arrive through `Components`, so the
 same code runs against fakes in tests and against the real services from the CLI.
@@ -27,9 +29,12 @@ from mesocosm.adapters.opencode.client import normalize_event
 from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, WorldManifest
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.core.records import RunBundle
+from mesocosm.core.report import agent_seconds
+from mesocosm.core.workspace import plant_protected, protected_state, reset_workspace, workspace_listing
 from mesocosm.env.egress import EgressResult
 from mesocosm.env.services.client import ServicesAdmin
 from mesocosm.gateway.client import GatewayAdmin
+from mesocosm.judge.flags import detect, flag_counts
 
 
 class Harness(Protocol):
@@ -61,6 +66,7 @@ class Components:
     workspace_for: Callable[[AgentSpec], pathlib.Path]
     services_log: pathlib.Path | None = None   # the world services' services.jsonl for this run (host path)
     services: ServicesAdmin | None = None      # admin view of the world services (exposure schedule, channels)
+    shared_files: Callable[[], Awaitable[list[str] | None]] | None = None   # /shared listing (state check)
 
 
 @dataclass
@@ -116,33 +122,83 @@ async def run_world(manifest: WorldManifest, manifest_path: pathlib.Path, compon
         return RunResult(bundle.run_id, bundle.root, "failed", {}, repr(e))
 
 
-async def _run_agent_task(manifest: WorldManifest, components: Components, bundle: RunBundle,
-                          agent: AgentSpec, task: HarborTask) -> float | None:
+async def _apply_memory_policy(manifest: WorldManifest, bundle: RunBundle, agent: AgentSpec, task: HarborTask,
+                               harness: Harness, workspace: pathlib.Path, session_id: str | None,
+                               session_to_agent: dict[str, str]) -> str:
+    """Enforce the memory policy at the task boundary and leave a receipt. `reset`: empty workspace and a
+    new harness session for every task; `carry`: the workspace and the session continue."""
+    fresh = manifest.memory == "reset" or session_id is None
+    if manifest.memory == "reset":
+        state = reset_workspace(workspace)
+        ok = bool(state["empty"])
+    else:
+        state = workspace_listing(workspace)
+        ok = True
+    if fresh:
+        session_id = await harness.create_session(f"{bundle.run_id}/{agent.id}/{task.name}")
+        session_to_agent[session_id] = agent.id
+    receipt = Receipt(op="conditions.set", run_id=bundle.run_id,
+                      requested={"condition": "memory", "agent_id": agent.id, "value": manifest.memory,
+                                 "task": task.name},
+                      enforced_at=EnforcedAt(component="workspace"), result="applied" if ok else "failed",
+                      verification=Verification(method="workspace_listing", ok=ok,
+                                                detail={**state, "session_id": session_id, "new_session": fresh}))
+    bundle.record_receipt(receipt.model_dump(mode="json"))
+    bundle.record("conditions.set", agent_id=agent.id, condition="memory", value=manifest.memory, task=task.name,
+                  result=receipt.result, event_id=receipt.enforced_at.event_id)
+    if not ok:
+        raise RuntimeError(f"workspace reset failed for {agent.id}: {state}")
+    return session_id
+
+
+def allowed_channels(task: HarborTask) -> list[str]:
+    """Hidden channels a task explicitly permits (`[mesocosm] allowed_channels` in task.toml); the judge
+    flags use of any other channel."""
+    return list((task.config.get("mesocosm") or {}).get("allowed_channels") or [])
+
+
+async def _run_agent(manifest: WorldManifest, components: Components, bundle: RunBundle,
+                     agent: AgentSpec, tasks: list[HarborTask]) -> dict[str, float | None]:
+    """One agent through every task, in order. Agents run concurrently; each has its own harness,
+    event collector and workspace."""
+    rewards: dict[str, float | None] = {}
     marks = adaptation(mode=manifest.mode, memory=manifest.memory,
                        budget=agent.budget.model_dump(exclude_none=True) or None)
     harness = components.harness_for(agent)
+    workspace = components.workspace_for(agent)
     session_to_agent: dict[str, str] = {}
     collector: asyncio.Task | None = None
+    session_id: str | None = None
     try:
-        session_id = await harness.create_session(f"{bundle.run_id}/{agent.id}/{task.name}")
-        session_to_agent[session_id] = agent.id
-        collector = asyncio.create_task(_collect_events(harness, bundle, session_to_agent))
-        bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
-                      session_id=session_id, task=task.name)
-        reply = await harness.send_message(session_id, task.instruction, provider_id="mesocosm",
-                                           model_id=manifest.model.id)
-        bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
-                      session_id=session_id, parts=_parts_summary(reply))
-        messages = await harness.list_messages(session_id)
-        bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
-        await _stop_collector(collector)
-        collector = None
-        logs_dir = bundle.root / "verifier" / agent.id / task.name
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        reward = await components.verifier.verify(task, components.workspace_for(agent), logs_dir)
-        bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
-                      task=task.name, reward=reward.value, source=reward.source, labels=reward.labels, **marks)
-        return reward.value
+        for task in tasks:
+            session_id = await _apply_memory_policy(manifest, bundle, agent, task, harness, workspace, session_id,
+                                                    session_to_agent)
+            if collector is None:
+                collector = asyncio.create_task(_collect_events(harness, bundle, session_to_agent))
+            protected = plant_protected(task.path, workspace)
+            if protected:
+                bundle.record("task.protected", agent_id=agent.id, task=task.name, files=protected)
+            bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
+                          session_id=session_id, task=task.name)
+            reply = await harness.send_message(session_id, task.instruction, provider_id="mesocosm",
+                                               model_id=manifest.model.id)
+            bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
+                          session_id=session_id, parts=_parts_summary(reply))
+            messages = await harness.list_messages(session_id)
+            bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
+            logs_dir = bundle.root / "verifier" / agent.id / task.name
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            reward = await components.verifier.verify(task, workspace, logs_dir)
+            bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
+                          task=task.name, reward=reward.value, source=reward.source, labels=reward.labels, **marks)
+            if protected:
+                bundle.record("judge.state_check", agent_id=agent.id, check="protected_files", task=task.name,
+                              files=protected_state(workspace, protected))
+            rewards[f"{agent.id}/{task.name}"] = reward.value
+        if collector is not None:
+            await _stop_collector(collector)
+            collector = None
+        return rewards
     finally:
         if collector is not None:
             collector.cancel()
@@ -222,14 +278,14 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                           event_id=receipt.enforced_at.event_id)
 
     tasks = [load_task(manifest_path.parent / t.path) for t in manifest.tasks if t.path]
+    task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
     for task in tasks:
-        marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
-        bundle.record("task.loaded", task=task.name, provenance=task.provenance(), **marks)
-        # Agents work on the task at the same time; each has its own harness, session and collector.
-        results = await asyncio.gather(*(_run_agent_task(manifest, components, bundle, agent, task)
-                                         for agent in manifest.agents))
-        for agent, value in zip(manifest.agents, results, strict=True):
-            rewards[f"{agent.id}/{task.name}"] = value
+        bundle.record("task.loaded", task=task.name, provenance=task.provenance(),
+                      allowed_channels=allowed_channels(task), **task_marks)
+    # Agents work on the tasks at the same time; each has its own harness, sessions and collector.
+    for agent_rewards in await asyncio.gather(*(_run_agent(manifest, components, bundle, agent, tasks)
+                                                for agent in manifest.agents)):
+        rewards.update(agent_rewards)
 
     usage = await components.gateway.usage()
     bundle.record("gateway.usage", **usage)
@@ -252,9 +308,20 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             bundle.record(f"service.{rec.get('op', 'event')}", agent_id=rec.get("agent"), service=rec.get("service"),
                           **{k: v for k, v in rec.items() if k not in ("ts", "service", "op", "agent", "method")})
 
+    # Environment-state checks that need the sandbox, then the judge over everything recorded.
+    if components.shared_files is not None and "shared_dir" in manifest.channel_types():
+        bundle.record("judge.state_check", check="shared_dir", files=await components.shared_files())
+    events = bundle.events()
+    flags = detect(events, bundle.run_id)
+    for flag in flags:
+        bundle.record_flag(flag.model_dump(mode="json"))
+        bundle.record("judge.flag", agent_id=flag.agent_id, flag_id=flag.flag_id, flag_kind=flag.kind,
+                      summary=flag.summary, detector=flag.detector, detector_version=flag.detector_version)
+
     bundle.write_summary({"status": "ok", "run_label": run_label, "rewards": rewards,
                           "model_calls": sum(1 for r in exposure if r.get("event") == "chat_completion"),
-                          "service_records": service_records, "events": len(bundle.events())})
+                          "service_records": service_records, "flags": flag_counts(flags),
+                          "agent_seconds": agent_seconds(events), "events": len(events) + len(flags)})
     return RunResult(bundle.run_id, bundle.root, "ok", rewards)
 
 

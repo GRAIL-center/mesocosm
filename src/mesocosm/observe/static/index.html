@@ -200,7 +200,8 @@
     return `<g class="n ${n.status}${sel}" transform="translate(${n.x},${n.y})" ${data}><title>${esc(n.label)} — ${esc(n.summary)}</title>
       <circle class="halo" r="${n.r + 6}"></circle><circle class="ring" r="${n.r}"></circle>${inner}${label}${sum}${sub}${flag}</g>`;
   }
-  const flagText = flags => flags.map(f => `${f.kind === 'trap' ? 'used trap credential' : f.kind} ${f.account || ''} on ${f.service || '?'}${f.note ? ' (' + f.note + ')' : ''}`).join('\n');
+  const flagLine = f => f.summary ? `${f.kind}: ${f.summary}` : `${f.kind === 'trap' ? 'used trap credential' : f.kind} ${f.account || ''} on ${f.service || '?'}${f.note ? ' (' + f.note + ')' : ''}`;
+  const flagText = flags => flags.map(flagLine).join('\n');
 
   const edgeSvg = n => { const p = n.parent, y0 = p.y + p.r + (p.kind === 'agent' ? 54 : 52), y1 = n.y - n.r - 6, my = (y0 + y1) / 2;
     return `<path class="edge${n.status === 'busy' || n.status === 'tool' ? ' live' : ''}" d="M${p.x},${y0} C${p.x},${my} ${n.x},${my} ${n.x},${y1}"></path>`; };
@@ -235,7 +236,8 @@
     const rs = $('#runstatus'); rs.textContent = state.status; rs.className = 'badge ' + (state.status === 'running' ? 'busy' : state.status === 'ok' ? 'done' : 'error');
     const chans = Object.entries(state.run_conditions || {}).filter(([k]) => k.startsWith('channel:')).map(([k, v]) => `${k.slice(8)} ${v.enabled ? 'on' : 'off'}`);
     const exposure = Object.entries((state.run_conditions?.exposure || {}).wiki || {}).map(([slug, s]) => `${slug} at +${s}s`);
-    $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions${chans.length ? ' · channels: ' + chans.join(', ') : ''}${exposure.length ? ' · wiki publishes: ' + exposure.join(', ') : ''}`;
+    const nflags = (state.run_flags || []).length + state.agents.reduce((n, a) => n + (a.flags || []).length, 0);
+    $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions${chans.length ? ' · channels: ' + chans.join(', ') : ''}${exposure.length ? ' · wiki publishes: ' + exposure.join(', ') : ''}${nflags ? ' · flags: ' + nflags : ''}`;
     $('#empty').hidden = state.agents.length > 0;
     $('#legend-ai').hidden = !(meta && meta.summarizer);
     const g = layout();
@@ -312,7 +314,7 @@
         <dt>last call</dt><dd>${fmtTime(agent.last_request_ts)} ${agent.last_request_ts ? '(' + ago(agent.last_request_ts) + ')' : ''}</dd>
         <dt>rewards</dt><dd>${agent.rewards.length ? agent.rewards.map(r => `${esc(r.task)} → ${esc(r.reward)}`).join('<br>') : '–'}</dd>
         <dt>last error</dt><dd>${esc(agent.last_error || '–')}</dd>
-        <dt>flags</dt><dd>${(agent.flags || []).length ? agent.flags.map(f => `<span class="badge error">${esc(f.kind)}</span> ${esc(fmtTime(f.ts))} ${esc(f.account || '')} on ${esc(f.service || '?')}${f.note ? ' · ' + esc(f.note) : ''}`).join('<br>') : '–'}</dd>
+        <dt>flags</dt><dd>${(agent.flags || []).length ? agent.flags.map(f => `<span class="badge error">${esc(f.kind)}</span> ${esc(fmtTime(f.ts))} ${esc(f.summary || ((f.account || '') + ' on ' + (f.service || '?') + (f.note ? ' · ' + f.note : '')))}`).join('<br>') : '–'}</dd>
         <dt>sessions</dt><dd>${agent.root_sessions.map(s => `<span class="clickable" data-session="${esc(s)}">${esc(s)}</span>`).join('<br>') || '–'}</dd></dl>`;
     }
     const tk = d.tokens || {};

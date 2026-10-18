@@ -214,8 +214,6 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
     if manifest.mode == "persistent":
         errors.append("rejected_unsupported: mode 'persistent' needs the task stream and snapshot manager (M6); "
                       "use mode: comparison")
-    if manifest.memory == "carry":
-        errors.append("rejected_unsupported: memory 'carry' needs the memory policy of M3; use memory: reset")
     if manifest.observe.activations:
         warnings.append("observe.activations=true: capture route is unverified until M5 (ADR-0005)")
     if all(a.budget == Budget() for a in manifest.agents):

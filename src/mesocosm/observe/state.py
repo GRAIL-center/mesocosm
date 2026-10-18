@@ -175,6 +175,7 @@ class Observer:
         self.agents: dict[str, AgentState] = {}
         self.sessions: dict[str, SessionNode] = {}
         self.known_agents: set[str] = set()      # from manifest.json; empty = accept every caller
+        self.run_flags: deque = deque(maxlen=FLAGS_MAX)   # judge flags not attributed to one agent
         self.ignored_records = 0                 # gateway records from callers outside the manifest
         self._seen_requests: set[str] = set()
         self.interactions: deque = deque(maxlen=INTERACTIONS_MAX)   # who read whose writing, through which service
@@ -224,6 +225,13 @@ class Observer:
             pass
         elif kind in ("run.failed", "run.aborted"):
             self.status = "failed" if kind == "run.failed" else data.get("reason") or "aborted"
+        elif kind == "judge.flag":
+            flag = {"ts": ts, "kind": data.get("flag_kind"), "summary": data.get("summary"),
+                    "flag_id": data.get("flag_id"), "detector": data.get("detector")}
+            if agent_id:
+                self._agent(agent_id).flags.append(flag)
+            else:
+                self.run_flags.append(flag)
         elif kind.startswith("service."):
             if not self._live_services:          # the end-of-run copy counts only when no live log is tailed
                 self.apply_service_record({"ts": ts, "agent": agent_id, "op": kind[len("service."):], **data})
@@ -396,7 +404,7 @@ class Observer:
             "run_id": self.run_id, "status": self.status, "started_ts": self.started_ts,
             "last_ts": self.last_ts, "ingested": self.ingested, "ignored_records": self.ignored_records,
             "service_records": self.service_records, "interactions": list(self.interactions),
-            "run_conditions": self.run_conditions,
+            "run_conditions": self.run_conditions, "run_flags": list(self.run_flags),
             "agents": agents,
             "sessions": {sid: n.to_dict() for sid, n in self.sessions.items()},
         }

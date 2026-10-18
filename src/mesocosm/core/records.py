@@ -82,6 +82,14 @@ class RunBundle:
     def record_receipt(self, receipt: dict[str, Any]) -> None:
         self._append("receipts.jsonl", receipt)
 
+    def record_flag(self, flag: dict[str, Any]) -> None:
+        """A candidate incident from the judge's detectors (flags.jsonl)."""
+        self._append("flags.jsonl", flag)
+
+    def record_verdict(self, verdict: dict[str, Any]) -> None:
+        """A human verdict on a flag (verdicts.jsonl); append-only, the latest verdict per flag counts."""
+        self._append("verdicts.jsonl", verdict)
+
     def write_native(self, relpath: str, content: bytes | str) -> pathlib.Path:
         """Store a raw artifact exactly once (e.g. native/agent-1/messages.json)."""
         target = self.root / "native" / relpath
@@ -117,6 +125,18 @@ class RunBundle:
 
     def receipts(self) -> list[dict[str, Any]]:
         path = self.root / "receipts.jsonl"
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+
+    def flags(self) -> list[dict[str, Any]]:
+        return self._read_jsonl("flags.jsonl")
+
+    def verdicts(self) -> list[dict[str, Any]]:
+        return self._read_jsonl("verdicts.jsonl")
+
+    def _read_jsonl(self, name: str) -> list[dict[str, Any]]:
+        path = self.root / name
         if not path.exists():
             return []
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
