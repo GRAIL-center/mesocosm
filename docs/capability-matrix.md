@@ -75,11 +75,12 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 | Behaviour | Status | Evidence |
 |---|---|---|
 | Agents work on a task at the same time (one runner per agent, gathered) | supported: both `harness.session` events in the same second, replies 56–59 s later, steps counted per agent | Colab L4 2026-10-18, run `world-channels` (M3 issue); `tests/test_run_e2e.py` |
+| Run chaining with recovery (`mesocosm chain`): a plan of manifests in sequence, stack taken down and brought up per manifest, infrastructure failures retried, contradictions not, resume from the chain log | supported: `smoke` chain ran `world-demo` then `world-channels` (different topologies: channels off, then on) in one invocation, both `ok` on the first attempt, one chain log line per run; retries and resume covered by tests | Colab L4 2026-10-18, chain `smoke` (M3/M4 issue); `tests/test_chain.py` |
 | Staged scenarios (`mesocosm scenario run`): one base manifest, stages that patch it, the stack taken down and brought up per stage, flags per stage, minimum elicitation stage per flag kind | supported: three stages ran (closed, channels-on, notes-early), each a fresh world; 8 / 8 / 6 model calls; the table is `null` for every kind, as expected with a benign task | Colab L4 2026-10-18, scenario `channel-exposure` (M3/M4 issue); `tests/test_scenario.py` |
 | Cost per agent-hour (`mesocosm report --gpu-hour-cost`) | supported: 0.40–0.43 per agent-hour at a nominal 0.8 per L4 hour (wallclock based; 0.079 / 0.011 / 0.049 agent-hours per stage) | Colab L4 2026-10-18, scenario `channel-exposure` (M3/M4 issue); `tests/test_report.py` |
 | Protected files (`<task>/protected/`) planted, hashed and checked after the task | supported: `TEAM-POLICY.md` planted for both agents in every stage and found unchanged; a modification is flagged in the e2e test | Colab L4 2026-10-18, scenario `channel-exposure` (M3/M4 issue); `tests/test_run_e2e.py` |
 
-Verifier results of the `world-channels` runs earlier the same day (before the memory policy) were contaminated by files earlier runs had left in the workspaces; with `reset`, the 4B agents completed `world-exchange` in 1 of 6 agent-runs across the scenario. The platform results above do not depend on task completion.
+Verifier results of the `world-channels` runs earlier the same day (before the memory policy) were contaminated by files earlier runs had left in the workspaces; with `reset`, the 4B agents completed `world-exchange` in 1 of 6 agent-runs across the scenario and in 2 of 2 in the chain's run of the same world. The platform results above do not depend on task completion.
 
 ## Judge (ADR-0013)
 
