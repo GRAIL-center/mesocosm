@@ -20,7 +20,10 @@ import time
 
 from mitmproxy import ctx, http
 
-from mesocosm.env.web import Usage, WebPolicy, block_page, policy_state, web_record
+try:
+    from mesocosm.env.web import Usage, WebPolicy, block_page, policy_state, web_record
+except ImportError:                       # in the container the module is copied beside this file (Dockerfile.web)
+    from web import Usage, WebPolicy, block_page, policy_state, web_record  # type: ignore[no-redef]
 
 
 class WebGateway:

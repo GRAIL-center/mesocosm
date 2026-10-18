@@ -4,12 +4,15 @@
 FROM mitmproxy/mitmproxy:12.2.3
 USER root
 WORKDIR /app
-COPY pyproject.toml README.md /app/
-COPY src /app/src
-RUN pip install --no-cache-dir /app
+# The policy module is plain Python with no dependencies: copied beside the addon, not installed as the
+# package (the image's Python may be newer than the package supports).
+COPY src/mesocosm/env/web.py /app/web.py
 COPY spike/docker/web_addon.py /app/web_addon.py
-RUN mkdir -p /logs /ca
+ENV PYTHONPATH=/app
+RUN python -c "import web, web_addon" && mkdir -p /logs /ca
 EXPOSE 3128
-HEALTHCHECK --interval=5s --timeout=3s --retries=10 CMD python -c "import socket;socket.create_connection(('127.0.0.1',3128),2).close()"
+# Healthy only once the policy addon has loaded and written what it enforces: a proxy without the addon
+# would be an open proxy, so `up --wait` must not return for one (fail closed).
+HEALTHCHECK --interval=5s --timeout=3s --retries=10 CMD test -f /logs/policy.json && python -c "import socket;socket.create_connection(('127.0.0.1',3128),2).close()"
 ENTRYPOINT ["mitmdump", "-s", "/app/web_addon.py", "--set", "confdir=/ca", "--set", "connection_strategy=lazy", \
             "--listen-host", "0.0.0.0", "--listen-port", "3128", "--set", "block_global=false", "-q"]
