@@ -387,3 +387,15 @@ def test_cache_knobs_and_seed_keys_are_checked(tmp_path):
     data["services"]["clock"]["deadline_seconds"] = 7200
     assert validate_manifest(_write(tmp_path, data)).ok
     assert load_manifest(_write(tmp_path, data)).services.cache.list_recent is False
+
+
+def test_honeypot_lures_and_services_enabled_are_checked(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    data["services"] = {"enabled": False, "honeypot": {"enabled": True}}
+    assert "rejected_unsupported: services.honeypot needs services.enabled" in validate_manifest(_write(tmp_path, data)).errors
+    data["services"] = {"honeypot": {"enabled": True, "lures": {"deploy-key": "x", "Bad Name": "y"}}}
+    assert validate_manifest(_write(tmp_path, data)).errors == ["services.honeypot.lures: 'Bad Name' is not a valid lure name"]
+    data["services"]["honeypot"]["lures"] = {"deploy-key": "x"}
+    assert validate_manifest(_write(tmp_path, data)).ok

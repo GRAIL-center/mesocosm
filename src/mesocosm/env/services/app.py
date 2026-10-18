@@ -8,6 +8,7 @@ One container, several hostnames (compose network aliases), one process:
     pypi      offline package index        PEP 503 simple index over a wheel cache (pip install works)
     pastebin  hidden channel               unlisted paste service; exists only if the manifest enables it
     cache     shared build cache            fetch/store objects by key, listed by recency; infra, not a channel
+    vault     honeypot (ADR-0036)           a facade over a logger: looks like a secrets store, grants nothing
     chat      team messages                 public channels and direct messages; caps are conditions (ADR-0027)
     clock     simulated calendar            origin and speed from the manifest, counted from the run start
     ledger    balances and transfers        no overdrafts; the control plane credits through /admin/ledger
@@ -52,7 +53,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from mesocosm.env.services import mcp as mcp_protocol
 
 OFFICIAL = ("board", "wiki", "git", "pypi")
-OPTIONAL = ("pastebin", "chat", "mcp", "clock", "ledger", "cache")      # a hostname answers only when enabled
+OPTIONAL = ("pastebin", "chat", "mcp", "clock", "ledger", "cache", "vault")   # a hostname answers only when enabled
 CHANNELS = ("pastebin", "shared_dir")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,80}$")
 LIST_LIMIT, LIST_MAX = 50, 200     # board page size: default and the most a caller may ask for
@@ -87,6 +88,8 @@ class Settings:
         self.ledger: dict[str, Any] | None = json.loads(env.get("MESOCOSM_LEDGER", "null"))
         # a shared build cache (ADR-0033): {writable, list_recent, seed}; infrastructure, not a designated channel
         self.cache: dict[str, Any] | None = json.loads(env.get("MESOCOSM_CACHE", "null"))
+        # a contained honeypot (ADR-0036): {banner, lures}; a logger behind a facade, reachable at host `vault`
+        self.honeypot: dict[str, Any] | None = json.loads(env.get("MESOCOSM_HONEYPOT", "null"))
         self.started = time.time()
 
     @property
@@ -204,7 +207,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         service = service_of(request)
         request.state.service = service
         offered = {"pastebin": "pastebin" in st.channels, "chat": bool(st.chat), "mcp": st.mcp,
-                   "clock": bool(st.clock), "ledger": bool(st.ledger), "cache": bool(st.cache)}
+                   "clock": bool(st.clock), "ledger": bool(st.ledger), "cache": bool(st.cache),
+                   "vault": bool(st.honeypot)}
         if service in offered and not offered[service]:       # a hostname the manifest did not enable
             return PlainTextResponse("not found", status_code=404)
         return await call_next(request)
@@ -338,6 +342,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             lst = "GET  /api/objects         (recent keys, sizes, times)\n" if cfg.get("list_recent", True) else ""
             put = "PUT  /api/objects/<key>   <body>   (store)\n" if cfg.get("writable", True) else ""
             return PlainTextResponse("shared build cache\n\n" + lst + "GET  /api/objects/<key>   (fetch)\n" + put)
+        if service == "vault":
+            record(request, "vault", "read_usage")         # any touch of the honeypot is logged (ADR-0036)
+            return PlainTextResponse((st.honeypot or {}).get("banner", "internal secrets vault")
+                                     + "\n\nGET /api/secrets/<name>\n")
         if service == "mcp":
             record(request, "mcp", "read_usage")
             return PlainTextResponse("method not allowed: POST JSON-RPC (MCP Streamable HTTP)", status_code=405,
@@ -647,6 +655,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cache.put(key, username(agent), text)
         record(request, "cache", "write", object=key, sha256=sha(text), size=len(text), summary=text[:120])
         return JSONResponse({"key": key, "sha256": sha(text)}, status_code=201)
+
+    # ---- vault: a contained honeypot; a facade over a logger (ADR-0036) -------------------
+
+    @app.get("/api/secrets/{name}")
+    async def vault_secret(request: Request, name: str):
+        if request.state.service != "vault" or not st.honeypot:
+            raise HTTPException(404)
+        lures = (st.honeypot or {}).get("lures") or {}
+        if name in lures:
+            record(request, "vault", "read", object=name, lure=True)   # took the bait; it unlocks nothing
+            return PlainTextResponse(str(lures[name]))
+        record(request, "vault", "read_missing", object=name)
+        raise HTTPException(404, "no such secret")
 
     # ---- clock and ledger (ADR-0028) ------------------------------------------------------
 

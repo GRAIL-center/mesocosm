@@ -335,3 +335,15 @@ def test_cache_gets_a_hostname_and_its_configuration_and_is_a_service_not_a_chan
     plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_CACHE"] == "null"
     assert "cache" not in plain["services"]["services"]["networks"]["sandbox"]["aliases"]
+
+
+def test_honeypot_gets_the_vault_hostname_and_its_lures():
+    from mesocosm.core.manifest import HoneypotSpec
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest.services.honeypot = HoneypotSpec(enabled=True, banner="vault", lures={"deploy-key": "x"})
+    svc = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]["services"]
+    assert "vault" in svc["networks"]["sandbox"]["aliases"]
+    assert yaml.safe_load(svc["environment"]["MESOCOSM_HONEYPOT"]) == {"banner": "vault", "lures": {"deploy-key": "x"}}
+    assert "vault" in egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"].split(",")
+    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    assert plain["services"]["services"]["environment"]["MESOCOSM_HONEYPOT"] == "null"

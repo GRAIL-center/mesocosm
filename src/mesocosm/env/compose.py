@@ -74,7 +74,8 @@ def world_hostnames(manifest: WorldManifest) -> list[str]:
                ("pypi", bool(manifest.services.pypi)),
                ("pastebin", "pastebin" in channels), ("chat", manifest.services.chat.enabled),
                ("clock", manifest.services.clock.enabled), ("ledger", manifest.services.ledger.enabled),
-               ("cache", manifest.services.cache.enabled), ("mcp", manifest.services.mcp))
+               ("cache", manifest.services.cache.enabled), ("vault", manifest.services.honeypot.enabled),
+               ("mcp", manifest.services.mcp))
     return [n for n, on in offered if on]
 
 
@@ -271,6 +272,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                                               if manifest.services.ledger.enabled else None),
                 "MESOCOSM_CACHE": json.dumps(manifest.services.cache.model_dump(exclude={"enabled"})
                                              if manifest.services.cache.enabled else None),
+                "MESOCOSM_HONEYPOT": json.dumps(manifest.services.honeypot.model_dump(exclude={"enabled"})
+                                                if manifest.services.honeypot.enabled else None),
             },
             "volumes": volumes,
         }
