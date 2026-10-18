@@ -6,7 +6,7 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 |---|---|---|
 | [0001](0001-record-decisions.md) | Record architecture decisions | accepted |
 | [0002](0002-opencode-first-unmodified.md) | OpenCode is the first harness and is used unmodified | accepted |
-| [0003](0003-model-gateway.md) | A model gateway is the enforcement and exposure-logging point | accepted (error types and identity headers superseded by ADR-0019) |
+| [0003](0003-model-gateway.md) | A model gateway is the enforcement and exposure-logging point | accepted (separate-gateway clause superseded by ADR-0029; error types and identity headers superseded by ADR-0019) |
 | [0004](0004-training-ready-records.md) | Records are training-ready; no trainer in scope | accepted |
 | [0005](0005-behavior-only-default.md) | Behavior-only runs are the default; activations are selective | accepted |
 | [0006](0006-smoke-test-hardware.md) | Smoke tests run on a local RTX 3090 with a 3B model | accepted (model choice superseded by ADR-0007) |
@@ -32,3 +32,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0026](0026-peer-review-over-n-agents.md) | Every mechanism takes N agents; peer review is a topology over them (`all`, `ring`), instances come from a pool | accepted |
 | [0027](0027-chat-is-a-standing-service.md) | The chat is a standing world service (channels, direct messages, caps as conditions); peer review runs on top of it | accepted |
 | [0028](0028-world-state-is-verifiable.md) | The world's state is a verifiable object: `world.json` to verifiers, checkpoints as partial credit, a simulated clock, a ledger | accepted |
+| [0029](0029-one-gateway-many-models.md) | One gateway, a model per agent: a model catalog, routing by model id, keys from the environment | accepted |

@@ -288,3 +288,42 @@ async def test_the_gateway_authenticates_to_the_upstream_itself(tmp_path):
     assert up.state.requests[-1]["headers"]["authorization"] == "Bearer vllm-secret", "the agent's key is replaced"
     r = await client.get("/v1/models")
     assert r.status_code == 200 and up.state.requests[-1]["headers"]["authorization"] == "Bearer vllm-secret"
+
+
+async def test_requests_are_routed_to_the_upstream_serving_the_model(tmp_path, monkeypatch):
+    """One gateway, several upstreams (ADR-0029): the model id names the server; keys come from the
+    gateway's environment; token ids are requested from vLLM only."""
+    up = fake_upstream()
+    monkeypatch.setenv("BASELINE_KEY", "sk-baseline")
+    settings = Settings(upstream="http://vllm", log_dir=tmp_path, upstream_key="vllm-secret", return_token_ids=True,
+                        agent_keys={"sk-one": {"agent": "agent-1", "run": "lbl"}},
+                        upstreams={"baseline-x": {"url": "http://api.example", "key_env": "BASELINE_KEY",
+                                                  "kind": "openai"},
+                                   "local-b": {"url": "http://vllm-b", "kind": "vllm"}})
+    app = create_app(settings, transport=httpx.ASGITransport(app=up))
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway")
+    hdr = {"Authorization": "Bearer sk-one"}
+    r = await client.post("/v1/chat/completions", headers=hdr, json={"model": "baseline-x", "messages": []})
+    assert r.status_code == 200
+    sent = up.state.requests[-1]
+    assert sent["headers"]["host"] == "api.example" and sent["headers"]["authorization"] == "Bearer sk-baseline"
+    assert "return_token_ids" not in sent["body"], "a commercial API does not know the field"
+    rec = _records(tmp_path)[-1]
+    assert rec["upstream"] == "http://api.example" and rec["model_kind"] == "openai" and rec["agent"] == "agent-1"
+    assert sent["headers"]["host"] == "api.example" and up.state.requests[-1]["body"] == {"model": "baseline-x",
+                                                                                           "messages": []}
+    r = await client.post("/v1/chat/completions", headers=hdr, json={"model": "local-b", "messages": []})
+    sent = up.state.requests[-1]
+    assert sent["headers"]["host"] == "vllm-b" and "authorization" not in sent["headers"], "no key named, none sent"
+    assert sent["body"]["return_token_ids"] is True and _records(tmp_path)[-1]["model_kind"] == "vllm"
+    r = await client.post("/v1/chat/completions", headers=hdr, json={"model": "qwen3-4b", "messages": []})
+    sent = up.state.requests[-1]
+    assert sent["headers"]["host"] == "vllm" and sent["headers"]["authorization"] == "Bearer vllm-secret", \
+        "a model the map does not name goes to the default inference server"
+    assert _records(tmp_path)[-1]["upstream"] == "http://vllm"
+    assert app.state.gateway.usage_for("agent-1")["requests"] == 3, "one budget whatever the upstream"
+    admin = GatewayAdmin("http://gateway", transport=httpx.ASGITransport(app=app), api_key="mesocosm-local")
+    health = await admin.health()
+    assert health["upstreams"] == {"baseline-x": {"url": "http://api.example", "kind": "openai", "key": True},
+                                   "local-b": {"url": "http://vllm-b", "kind": "vllm", "key": False}}
+    assert "sk-baseline" not in json.dumps(health), "the key itself never leaves the environment"

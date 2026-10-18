@@ -35,6 +35,14 @@ def bundle_with_records(tmp_path, records, flags=()):
     return b
 
 
+def test_select_keeps_the_requests_that_named_the_served_model(tmp_path):
+    a, b = record("r1", "agent-1"), record("r2", "agent-2")
+    a["request"]["model"], b["request"]["model"] = "qwen3-4b", "local-b"
+    bundle = bundle_with_records(tmp_path, [a, b])
+    assert [r["request_id"] for r in select(bundle.root, served_model="local-b")] == ["r2"]
+    assert [r["request_id"] for r in select(bundle.root)] == ["r1", "r2"]
+
+
 def test_only_successful_completions_with_token_ids_are_recomputable(tmp_path):
     no_ids = record("r3", "agent-1")
     no_ids["response"] = {"content": "x"}

@@ -5,6 +5,8 @@
 * logs full request and response to <log_dir>/gateway.jsonl (actual information exposure);
 * pauses, resumes and stops runs: a paused run's requests wait here, a stopped run's are refused;
 * enforces per-agent budgets and answers an explicit 429 when one is exhausted;
+* routes each chat request to the upstream serving the model it names (MESOCOSM_UPSTREAMS, ADR-0029): vLLM on
+  the host by default, a commercial API for a baseline agent; keys come from the gateway's environment;
 * `POST /admin/budget` (control key only) sets a budget and returns a receipt (the enforcement point for
   the `budget` condition);
 * optionally asks vLLM for prompt/completion token ids.
@@ -46,6 +48,8 @@ class Settings:
     control_key: str = "mesocosm-local"                    # bearer key of the /admin endpoints (the control plane)
     agent_keys: dict[str, dict[str, str]] = field(default_factory=dict)   # bearer key -> {agent, run} (ADR-0019)
     upstream_key: str | None = None                        # the inference server's key; agents never hold it
+    # model id -> {url, key_env, kind}: where requests for that model go (ADR-0029); other models go to `upstream`
+    upstreams: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -58,6 +62,7 @@ class Settings:
             control_key=os.environ.get("MESOCOSM_CONTROL_KEY", cls.control_key),
             agent_keys=json.loads(os.environ.get("MESOCOSM_AGENT_KEYS", "{}") or "{}"),
             upstream_key=os.environ.get("MESOCOSM_UPSTREAM_KEY") or None,
+            upstreams=json.loads(os.environ.get("MESOCOSM_UPSTREAMS", "{}") or "{}"),
         )
 
 
@@ -182,16 +187,40 @@ def request_summary(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@dataclass
+class Route:
+    """Where a request goes: the upstream's client, the key the gateway presents there, what kind of server it is."""
+    client: httpx.AsyncClient
+    upstream: str
+    key: str | None
+    kind: str          # vllm: token ids can be requested; openai: any other OpenAI-compatible API
+
+
 class Gateway:
     def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
+        self._transport = transport
         self.client = httpx.AsyncClient(base_url=settings.upstream, timeout=httpx.Timeout(None),
                                         transport=transport)
+        self.clients: dict[str, httpx.AsyncClient] = {settings.upstream: self.client}
         self.budgets: dict[str, dict[str, int]] = {k: dict(v) for k, v in settings.budgets.items()}
         self.usage: dict[str, dict[str, int]] = {}
         self.holds: dict[tuple[str, str | None], Hold] = {}
         self.stopped: dict[str, float] = {}
         self._log_file = None
+
+    def route(self, model: str | None) -> Route:
+        """The upstream for a model id (ADR-0029): a configured one, else the default inference server."""
+        spec = self.settings.upstreams.get(model or "")
+        if spec is None:
+            return Route(self.client, self.settings.upstream, self.settings.upstream_key, "vllm")
+        url = str(spec["url"]).rstrip("/")
+        client = self.clients.get(url)
+        if client is None:
+            client = self.clients[url] = httpx.AsyncClient(base_url=url, timeout=httpx.Timeout(None),
+                                                           transport=self._transport)
+        key = os.environ.get(spec["key_env"]) if spec.get("key_env") else None
+        return Route(client, url, key or None, str(spec.get("kind") or "vllm"))
 
     def log(self, record: dict[str, Any]) -> None:
         if self._log_file is None:
@@ -371,7 +400,11 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
 
     @app.get("/admin/health")
     async def admin_health() -> dict[str, Any]:
+        upstreams = {m: {"url": s["url"], "kind": s.get("kind", "vllm"),
+                         "key": bool(s.get("key_env") and os.environ.get(s["key_env"]))}   # present, never shown
+                     for m, s in gw.settings.upstreams.items()}
         return {"ok": True, "upstream": gw.settings.upstream, "return_token_ids": gw.settings.return_token_ids,
+                "upstreams": upstreams,
                 "budget": gw.budgets, "agents": sorted(v["agent"] for v in gw.settings.agent_keys.values()),
                 **gw.control_state()}
 
@@ -430,8 +463,9 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
             except json.JSONDecodeError:
                 body = None
         is_chat = path.rstrip("/").endswith("chat/completions") and isinstance(body, dict)
+        route = gw.route(body.get("model") if is_chat else None)
         base = {"ts": t0, "request_id": request_id, "run": run, "agent": agent, "identified_by": identified_by,
-                "path": "/" + path, "method": request.method}
+                "path": "/" + path, "method": request.method, "upstream": route.upstream, "model_kind": route.kind}
 
         if is_chat:
             hold = gw.hold_for(run, agent)
@@ -452,23 +486,23 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 return refusal("budget", param=exhausted)
             if body.get("stream"):
                 body.setdefault("stream_options", {})["include_usage"] = True
-            if gw.settings.return_token_ids:
+            if gw.settings.return_token_ids and route.kind == "vllm":     # only vLLM understands the field
                 body["return_token_ids"] = True
             body_bytes = json.dumps(body).encode("utf-8")
 
         headers = {k: v for k, v in request.headers.items()
                    if k.lower() not in HOP_BY_HOP and k.lower() not in ("authorization", "x-mesocosm-agent",
                                                                           "x-mesocosm-run")}
-        if gw.settings.upstream_key:            # the gateway authenticates to the inference server itself
-            headers["authorization"] = f"Bearer {gw.settings.upstream_key}"
+        if route.key:                           # the gateway authenticates to the inference server itself
+            headers["authorization"] = f"Bearer {route.key}"
         headers["x-mesocosm-request-id"] = request_id
         if is_chat:
             headers["content-length"] = str(len(body_bytes))
 
-        upstream_req = gw.client.build_request(request.method, "/" + path, content=body_bytes,
-                                               headers=headers, params=request.query_params)
+        upstream_req = route.client.build_request(request.method, "/" + path, content=body_bytes,
+                                                  headers=headers, params=request.query_params)
         try:
-            upstream = await gw.client.send(upstream_req, stream=True)
+            upstream = await route.client.send(upstream_req, stream=True)
         except httpx.HTTPError as e:
             gw.log({**base, "event": "upstream_error", "error": repr(e), "request": body})
             return refusal("upstream")

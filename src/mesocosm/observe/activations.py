@@ -51,13 +51,17 @@ def token_sequence(record: dict[str, Any]) -> tuple[list[int], list[int]]:
 
 
 def select(bundle_root: str | pathlib.Path, request_ids: list[str] | None = None, agents: list[str] | None = None,
-           limit: int | None = None) -> list[dict[str, Any]]:
+           limit: int | None = None, served_model: str | None = None) -> list[dict[str, Any]]:
+    """`served_model` keeps the requests that named that model id: a world with several models (ADR-0029)
+    recomputes each with its own weights."""
     records = recomputable(gateway_records(bundle_root))
     if request_ids:
         wanted = set(request_ids)
         records = [r for r in records if r.get("request_id") in wanted]
     if agents:
         records = [r for r in records if r.get("agent") in set(agents)]
+    if served_model:
+        records = [r for r in records if (r.get("request") or {}).get("model") == served_model]
     return records[:limit] if limit else records
 
 
@@ -188,9 +192,10 @@ class Recomputer:
 
 def capture(bundle_root: str | pathlib.Path, model_id: str, layers: list[int] | None = None, raw: str = "flagged",
             positions: str = "completion", limit: int | None = None, request_ids: list[str] | None = None,
-            device: str = "cuda", dtype: str = "bfloat16", recomputer: Recomputer | None = None) -> dict[str, Any]:
+            device: str = "cuda", dtype: str = "bfloat16", recomputer: Recomputer | None = None,
+            served_model: str | None = None) -> dict[str, Any]:
     """Recompute activations for a bundle's requests; summaries for all, raw tensors per policy."""
-    records = select(bundle_root, request_ids=request_ids, limit=limit)
+    records = select(bundle_root, request_ids=request_ids, limit=limit, served_model=served_model)
     if not records:
         return {"captured": 0, "reason": "no chat completion with recorded token ids (observe.activations: true?)"}
     rc = recomputer or Recomputer(model_id, device=device, dtype=dtype)

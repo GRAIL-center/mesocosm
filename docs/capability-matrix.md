@@ -44,6 +44,8 @@ Evidence "Colab L4 2026-10-17" refers to the M0 spike run with `spike/colab_smok
 | Recompute activations from recorded tokens; difference within tolerance | supported across engines at bf16 level: rel-L2 mean 0.020 / max 0.029, cosine ≥ 0.9996, last-logit argmax equal. Same-engine (wrapper vs wrapper) recompute not yet measured | Colab L4 2026-10-17, #5 |
 | Capture overhead (latency, VRAM) | measured: trace 0.87 s vs plain generate 0.59 s (1.48×) at batch 1, eager; transformers path 7.6 GB VRAM for the 4B model | Colab L4 2026-10-17, #5 |
 
+| Several models in one world (`models` catalog, `agents[].model`): the gateway routes each request to the upstream serving the model it names, keys from the gateway's environment (`${VAR:?}` passthrough in the compose file), `return_token_ids` for vLLM only, records carry `upstream` / `model_kind`; an agent's config names its model only | supported in tests; `examples/world-two-models.yaml` (a vLLM agent and a Claude agent) not yet run | `tests/test_gateway.py`, `tests/test_env.py`, `tests/test_manifest.py`, `tests/test_export.py`; ADR-0029 |
+
 ## World services (ADR-0010)
 
 | Service | Status | Evidence |

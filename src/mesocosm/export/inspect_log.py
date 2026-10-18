@@ -82,7 +82,9 @@ def inspect_log(bundle: RunBundle) -> dict[str, Any]:
     events = bundle.events()
     records = [r for r in gateway_records(bundle) if r.get("event") == "chat_completion"]
     provider = (spec.get("gateway") or {}).get("provider_id", "internal")
-    model = f"{provider}/{(spec.get('model') or {}).get('id', 'model')}"
+    default_model = (spec.get("model") or {}).get("id", "model")
+    model = f"{provider}/{default_model}"
+    agent_model = {a.get("id"): f"{provider}/{a.get('model') or default_model}" for a in spec.get("agents") or []}
     flags = bundle.flags()
     conditions = [e.data for e in events if e.kind == "conditions.set"]
 
@@ -97,14 +99,15 @@ def inspect_log(bundle: RunBundle) -> dict[str, Any]:
             if w is not None:
                 w["end"], w["reward"], w["source"] = e.ts, e.data.get("reward"), e.data.get("source")
     samples = []
-    run_usage: dict[str, int] = {}
+    run_usage: dict[str, dict[str, int]] = {}
     for w in windows:
+        sample_model = agent_model.get(w["agent"], model)
         mine = [r for r in records if r.get("agent") == w["agent"] and w["start"] - 1 <= float(r.get("ts") or 0)
                 and (w["end"] is None or float(r.get("ts") or 0) <= w["end"] + 1)]
         usage: dict[str, int] = {}
         for r in mine:
             _add_usage(usage, _usage((r.get("response") or {}).get("usage")))
-        _add_usage(run_usage, usage)
+        _add_usage(run_usage.setdefault(sample_model, {}), usage)
         last = mine[-1] if mine else None
         messages = [_message(m) for m in ((last or {}).get("request") or {}).get("messages") or []]
         final: dict[str, Any] = {"role": "assistant", "content": ""}
@@ -120,14 +123,14 @@ def inspect_log(bundle: RunBundle) -> dict[str, Any]:
         samples.append({
             "id": f"{w['agent']}/{w['task']}", "epoch": 1, "input": instruction, "target": "",
             "messages": messages,
-            "output": {"model": model, "choices": [{"message": final, "stop_reason": "stop"}],
+            "output": {"model": sample_model, "choices": [{"message": final, "stop_reason": "stop"}],
                        "usage": usage or None},
             "scores": {"verifier": {"value": reward if reward is not None else "", "answer": None,
                                     "explanation": w.get("source"), "metadata": {"task": w["task"]}}},
             "metadata": {"agent_id": w["agent"], "task": w["task"], "run_id": bundle.run_id,
                          "model_calls": len(mine), "flags": [{"kind": f["kind"], "summary": f["summary"]}
                                                              for f in agent_flags]},
-            "model_usage": {model: usage} if usage else {},
+            "model_usage": {sample_model: usage} if usage else {},
             "started_at": _iso(w["start"]), "completed_at": _iso(w["end"] or w["start"]),
             "total_time": round((w["end"] or w["start"]) - w["start"], 3),
         })
@@ -158,7 +161,7 @@ def inspect_log(bundle: RunBundle) -> dict[str, Any]:
                     "scores": [{"name": "verifier", "scorer": "harbor",
                                 "metrics": {"accuracy": {"name": "accuracy", "value": accuracy}}}]},
         "stats": {"started_at": _iso(started), "completed_at": _iso(completed),
-                  "model_usage": {model: run_usage} if run_usage else {}},
+                  "model_usage": {m: u for m, u in run_usage.items() if u}},
         "samples": samples,
     }
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import os
 import pathlib
 import re
 import sys
@@ -83,6 +84,8 @@ class AgentSpec(BaseModel):
     tools: dict[str, bool] = Field(default_factory=dict, description="Harness tools switched off (false) in the "
                                                                      "agent's config, e.g. {todowrite: false}; "
                                                                      "every tool schema costs context on every call")
+    model: str | None = Field(default=None, description="Model id from the catalog (`model` or `models`); "
+                                                        "default: the world's `model` (ADR-0029)")
 
     def harness_url(self) -> str:
         return self.url or f"http://{self.id}:4096"
@@ -108,8 +111,21 @@ class TaskSpec(BaseModel):
 
 
 class ModelSpec(BaseModel):
-    id: str = Field(description="Model id the harness requests, e.g. qwen3-4b (the name vLLM serves)")
+    """A model agents can be given (ADR-0029). The gateway forwards requests for `id` to `upstream` (default:
+    the inference server the gateway was started with, vLLM on the host) with the key named by `api_key_env`,
+    read from the control plane's environment: the compose file passes the variable through, no file carries
+    the secret. `kind: vllm` records token ids so activations can be recomputed; `kind: openai` is any other
+    OpenAI-compatible API (commercial baselines), behavior only."""
+    id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$",
+                    description="Model id the harness requests, e.g. qwen3-4b (the name vLLM serves)")
     hf_repo: str | None = None
+    upstream: str | None = Field(default=None, pattern=r"^https?://",
+                                 description="The server's root (https://api.example); the harness's path "
+                                             "(/v1/chat/completions) is forwarded as is")
+    api_key_env: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
+    kind: Literal["vllm", "openai"] = "vllm"
+    context_limit: int = Field(default=32768, ge=4096, description="Context the harness may fill (tokens)")
+    output_limit: int = Field(default=8192, ge=256)
 
 
 class GatewaySpec(BaseModel):
@@ -296,6 +312,8 @@ class WorldManifest(BaseModel):
     name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     mode: Literal["comparison", "persistent"] = "comparison"
     model: ModelSpec
+    models: list[ModelSpec] = Field(default_factory=list, description="Further models agents may be given "
+                                                                      "(`agents[].model`); `model` is the default")
     gateway: GatewaySpec
     agents: list[AgentSpec] = Field(min_length=1)
     tasks: list[TaskSpec] = Field(default_factory=list)
@@ -311,6 +329,13 @@ class WorldManifest(BaseModel):
 
     def channel_types(self) -> list[str]:
         return [c.type for c in self.channels]
+
+    def catalog(self) -> dict[str, ModelSpec]:
+        """Every model by id: the default first, then `models`."""
+        return {m.id: m for m in [self.model, *self.models]}
+
+    def model_for(self, agent: AgentSpec) -> ModelSpec:
+        return self.catalog()[agent.model or self.model.id]
 
     @field_validator("agents")
     @classmethod
@@ -511,6 +536,25 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             errors.append("tasks: at least one task is required in mode: comparison")
         if manifest.stream.dir:
             errors.append("stream.dir applies to mode: persistent only")
+    ids = [m.id for m in [manifest.model, *manifest.models]]
+    dupes = sorted({i for i in ids if ids.count(i) > 1})
+    if dupes:
+        errors.append(f"models: ids must be unique: {dupes}")
+    for agent in manifest.agents:
+        if agent.model is not None and agent.model not in ids:
+            errors.append(f"agent {agent.id!r}: model {agent.model!r} is not in the catalog (model, models)")
+    for m in manifest.catalog().values():
+        if m.upstream and m.upstream.rstrip("/").endswith("/v1"):
+            errors.append(f"model {m.id!r}: upstream is the server's root; the harness's /v1/... path is appended")
+        if m.api_key_env and not m.upstream:
+            errors.append(f"model {m.id!r}: api_key_env without upstream (the default upstream uses "
+                          "gateway.upstream_key)")
+        if m.api_key_env and not os.environ.get(m.api_key_env):
+            warnings.append(f"model {m.id!r}: {m.api_key_env} is not set in this environment; the compose file "
+                            "passes it through and `docker compose up` fails without it")
+        if m.kind == "openai" and manifest.observe.activations:
+            warnings.append(f"model {m.id!r} is kind: openai: no token ids are recorded for it, activations cannot be "
+                            "recomputed (ADR-0029)")
     if manifest.observe.activations:
         warnings.append("observe.activations=true: capture route is unverified until M5 (ADR-0005)")
     if all(a.budget == Budget() for a in manifest.agents):

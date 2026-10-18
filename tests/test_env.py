@@ -297,3 +297,25 @@ def test_switched_off_harness_tools_reach_the_config():
     manifest.agents[0].tools = {"todowrite": False, "question": False}
     cfg = json.loads(agent_files(manifest, "lbl")["agent-1"]["opencode.json"])
     assert cfg["tools"] == {"todowrite": False, "question": False}
+
+
+def test_each_agent_gets_its_own_model_and_the_gateway_the_catalog_with_keys_passed_through():
+    from mesocosm.core.manifest import ModelSpec
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest.models = [ModelSpec(id="baseline-x", upstream="https://api.example", api_key_env="BASELINE_KEY",
+                                 kind="openai", context_limit=200000, output_limit=16000)]
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "model": "baseline-x"}))
+    compose = render_compose(manifest, repo_root=ROOT, run_label="lbl")
+    env = compose["services"]["gateway"]["environment"]
+    assert yaml.safe_load(env["MESOCOSM_UPSTREAMS"]) == {"baseline-x": {"url": "https://api.example",
+                                                                         "key_env": "BASELINE_KEY", "kind": "openai"}}
+    assert env["BASELINE_KEY"] == "${BASELINE_KEY:?BASELINE_KEY is required by model baseline-x in the manifest}", \
+        "compose interpolates the key at `up`; the file never holds it"
+    for agent_id in ("agent-1", "agent-2"):
+        assert "environment" not in compose["services"][agent_id], "nothing of ours on an agent"
+    files = agent_files(manifest, "lbl")
+    one, two = json.loads(files["agent-1"]["opencode.json"]), json.loads(files["agent-2"]["opencode.json"])
+    assert one["model"] == f"internal/{manifest.model.id}" and two["model"] == "internal/baseline-x"
+    assert list(two["provider"]["internal"]["models"]) == ["baseline-x"], "an agent's config names its model only"
+    assert two["provider"]["internal"]["models"]["baseline-x"]["limit"] == {"context": 200000, "output": 16000}
+    assert "BASELINE_KEY" not in json.dumps(files) and "api.example" not in json.dumps(files)

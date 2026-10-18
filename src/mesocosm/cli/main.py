@@ -462,12 +462,16 @@ def activations_capture(bundle: pathlib.Path,
                         request_id: list[str] = typer.Option(None, "--request"),
                         device: str = typer.Option("cuda", "--device"),
                         dtype: str = typer.Option("bfloat16", "--dtype"),
+                        served_model: str = typer.Option(None, "--served-model",
+                                                         help="Only requests that named this model id (a world "
+                                                              "with several models)"),
                         json_: bool = JSON_OPT) -> None:
     """Recompute activations for a bundle's requests from the recorded token ids (needs the GPU and the weights)."""
     from mesocosm.observe.activations import capture
 
     layer_ids = [int(x) for x in layers.split(",")] if layers else None
-    report = capture(bundle, model, layer_ids, raw, positions, limit, request_id or None, device, dtype)
+    report = capture(bundle, model, layer_ids, raw, positions, limit, request_id or None, device, dtype,
+                     served_model=served_model)
     _emit(report, json_, ok=report.get("captured", 0) > 0)
 
 

@@ -93,18 +93,27 @@ def _with_domain(names: list[str], domain: str | None) -> list[str]:
     return names + [f"{n}.{domain}" for n in names] if domain else names
 
 
+def gateway_upstreams(manifest: WorldManifest) -> dict[str, dict[str, str | None]]:
+    """MESOCOSM_UPSTREAMS: the models the gateway routes elsewhere than its default inference server (ADR-0029)."""
+    return {m.id: {"url": m.upstream, "key_env": m.api_key_env, "kind": m.kind}
+            for m in manifest.catalog().values() if m.upstream}
+
+
 def agent_files(manifest: WorldManifest, run_label: str, gateway_url: str = GATEWAY_URL,
-                context_limit: int = 32768) -> dict[str, dict[str, str]]:
-    """Per agent, the files mounted into its container: the harness config (`opencode.json`), the git
-    identity (`gitconfig`) and, with a persona brief, the harness rules file (`AGENTS.md`)."""
+                context_limit: int | None = None) -> dict[str, dict[str, str]]:
+    """Per agent, the files mounted into its container: the harness config (`opencode.json`, naming the
+    agent's own model and nothing else of the catalog), the git identity (`gitconfig`) and, with a persona
+    brief, the harness rules file (`AGENTS.md`)."""
     domain = manifest.services.domain
     out: dict[str, dict[str, str]] = {}
     for agent in manifest.agents:
-        config = render_opencode_config(gateway_url=gateway_url, model_id=manifest.model.id,
+        model = manifest.model_for(agent)
+        config = render_opencode_config(gateway_url=gateway_url, model_id=model.id,
                                         api_key=agent_api_key(manifest, run_label, agent.id),
                                         provider_id=manifest.gateway.provider_id,
-                                        provider_name=manifest.gateway.provider_name, context_limit=context_limit,
-                                        tools=agent.tools or None)
+                                        provider_name=manifest.gateway.provider_name,
+                                        context_limit=context_limit or model.context_limit,
+                                        output_limit=model.output_limit, tools=agent.tools or None)
         mcp = mcp_config(manifest, agent)
         if mcp:
             config["mcp"] = mcp
@@ -213,6 +222,10 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_CONTROL_KEY": manifest.gateway.api_key,
                 "MESOCOSM_AGENT_KEYS": json.dumps(agent_keys(manifest, run_label)),
                 "MESOCOSM_UPSTREAM_KEY": manifest.gateway.upstream_key or manifest.gateway.api_key,
+                "MESOCOSM_UPSTREAMS": json.dumps(gateway_upstreams(manifest)),
+                # a model's key is passed through from the environment `docker compose up` runs in, never written
+                **{m.api_key_env: f"${{{m.api_key_env}:?{m.api_key_env} is required by model {m.id} in the manifest}}"
+                   for m in manifest.catalog().values() if m.api_key_env},
             },
             "volumes": [f"{runs}:/runs"],
             "healthcheck": {

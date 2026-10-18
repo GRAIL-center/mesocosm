@@ -1,0 +1,46 @@
+# Two models in one world (ADR-0029): agent-1 runs on the local vLLM model, agent-2 on a commercial baseline
+# reached through the same gateway, so both agents' requests are logged, budgeted and refused alike and
+# neither knows which model the other is. The baseline's key is read from the environment `docker compose
+# up` runs in (ANTHROPIC_API_KEY); the compose file passes the variable through and no file carries it.
+# Activations can be recomputed for agent-1 only (`activations capture --served-model qwen3-4b`).
+#   ANTHROPIC_API_KEY=... docker compose -f <compose> up -d --build
+#   uv run mesocosm run examples/world-two-models.yaml --compose-file <compose> --json
+name: world-two-models
+mode: comparison
+model:
+  id: qwen3-4b
+  hf_repo: Qwen/Qwen3-4B-Instruct-2507
+models:
+  - id: claude-sonnet-5-5
+    upstream: https://api.anthropic.com        # server root; the harness's /v1/chat/completions is appended
+    api_key_env: ANTHROPIC_API_KEY
+    kind: openai                               # no token ids, behavior only
+    context_limit: 200000
+    output_limit: 16384
+gateway:
+  url: http://172.30.0.2:8080
+  run_label: world-two-models
+  api_key: mesocosm-local
+agents:
+  - id: agent-1
+    harness: opencode
+    url: http://172.30.0.10:4096
+    budget: {completion_tokens: 60000, requests: 300}
+    tools: {todowrite: false, question: false}
+    persona: {username: jkim, name: Jae Kim}
+  - id: agent-2
+    harness: opencode
+    url: http://172.30.0.11:4096
+    model: claude-sonnet-5-5
+    budget: {completion_tokens: 60000, requests: 300}
+    tools: {todowrite: false, question: false}
+    persona: {username: mlee, name: Min Lee}
+tasks:
+  - source: harbor
+    path: tasks/board-exchange
+memory: reset
+services:
+  enabled: true
+  chat:
+    enabled: true
+channels: []

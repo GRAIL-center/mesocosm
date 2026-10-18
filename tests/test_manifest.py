@@ -320,3 +320,32 @@ def test_internet_access_is_validated(tmp_path):
     assert report.ok and any("ignored while internet.enabled is false" in w for w in report.warnings)
     data["internet"] = {"enabled": True, "allow": ["pypi.org"], "budget": {"requests": 0}}
     assert not validate_manifest(_write(tmp_path, data)).ok
+
+
+def test_models_form_a_catalog_agents_pick_from(tmp_path, monkeypatch):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
+    data["models"] = [{"id": "baseline-x", "upstream": "https://api.example", "api_key_env": "BASELINE_KEY",
+                       "kind": "openai"}, {"id": data["model"]["id"]}]
+    data["agents"][0]["model"] = "nope"
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.errors == [f"models: ids must be unique: ['{data['model']['id']}']",
+                             "agent 'agent-1': model 'nope' is not in the catalog (model, models)"]
+    data["models"] = data["models"][:1]
+    data["agents"][0]["model"] = "baseline-x"
+    monkeypatch.delenv("BASELINE_KEY", raising=False)
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.ok and any("BASELINE_KEY is not set" in w for w in report.warnings)
+    monkeypatch.setenv("BASELINE_KEY", "x")
+    assert not any("BASELINE_KEY" in w for w in validate_manifest(_write(tmp_path, data)).warnings)
+    manifest = load_manifest(_write(tmp_path, data))
+    assert manifest.model_for(manifest.agents[0]).kind == "openai" and list(manifest.catalog()) == [data["model"]["id"], "baseline-x"]
+    data["models"][0].pop("upstream")
+    assert validate_manifest(_write(tmp_path, data)).errors == ["model 'baseline-x': api_key_env without upstream "
+                                                                 "(the default upstream uses gateway.upstream_key)"]
+    data["models"][0]["upstream"] = "api.example"
+    assert not validate_manifest(_write(tmp_path, data)).ok, "an upstream is a URL"
+    data["models"][0]["upstream"] = "https://api.example/v1/"
+    assert validate_manifest(_write(tmp_path, data)).errors == ["model 'baseline-x': upstream is the server's root; "
+                                                                 "the harness's /v1/... path is appended"]

@@ -11,12 +11,16 @@ from mesocosm.export.inspect_log import NOT_EXPORTED, inspect_log, write_inspect
 def _bundle(tmp_path):
     b = RunBundle.create(tmp_path / "runs", "run_x")
     b.write_manifest({"name": "demo", "mode": "comparison", "model": {"id": "qwen3-4b"},
-                      "gateway": {"provider_id": "internal"}, "agents": [{"id": "agent-1"}]}, "d" * 64)
+                      "models": [{"id": "baseline-x", "kind": "openai"}],
+                      "gateway": {"provider_id": "internal"},
+                      "agents": [{"id": "agent-1"}, {"id": "agent-2", "model": "baseline-x"}]}, "d" * 64)
     b.record("conditions.set", condition="budget", result="applied", ts=10.0)
     b.record("harness.session", agent_id="agent-1", step=1, session_id="s1", task="hello", ts=11.0)
     b.record("verifier.reward", agent_id="agent-1", step=2, task="hello", reward=1.0, source="tests/test.sh", ts=20.0)
     b.record("harness.session", agent_id="agent-1", step=3, session_id="s2", task="second", ts=21.0)
     b.record("verifier.reward", agent_id="agent-1", step=4, task="second", reward=0.0, source="tests/test.sh", ts=30.0)
+    b.record("harness.session", agent_id="agent-2", step=1, session_id="s3", task="hello", ts=11.0)
+    b.record("verifier.reward", agent_id="agent-2", step=2, task="hello", reward=1.0, source="tests/test.sh", ts=20.0)
     b.record_flag({"flag_id": "f1", "run_id": "run_x", "agent_id": "agent-1", "kind": "blocked_egress",
                    "summary": "1 request to 'evil.example' refused", "detector": "web", "ts": 15.0, "evidence": []})
     b.record_receipt({"op": "conditions.set", "requested": {"condition": "budget"}, "result": "applied"})
@@ -37,6 +41,10 @@ def _bundle(tmp_path):
          "response": {"content": "no", "tool_calls": [], "model": "qwen3-4b", "usage": {"prompt_tokens": 50,
                                                                                          "completion_tokens": 1}}},
         {"ts": 26.0, "agent": "agent-1", "event": "budget_exhausted"},
+        {"ts": 14.0, "agent": "agent-2", "event": "chat_completion", "request": {
+            "messages": [{"role": "user", "content": "say hello"}]},
+         "response": {"content": "hello", "tool_calls": [], "model": "baseline-x",
+                      "usage": {"prompt_tokens": 30, "completion_tokens": 2, "total_tokens": 32}}},
     ]
     b.write_native("gateway/records.jsonl", "".join(json.dumps(r) + "\n" for r in records))
     b.write_summary({"status": "ok", "run_label": "demo", "flags": {"blocked_egress": 1}})
@@ -47,12 +55,14 @@ def test_bundle_becomes_a_version_2_eval_log_with_one_sample_per_agent_task(tmp_
     log = inspect_log(_bundle(tmp_path))
     assert log["version"] == 2 and log["status"] == "success"
     assert log["eval"]["task"] == "demo" and log["eval"]["model"] == "internal/qwen3-4b"
-    assert log["eval"]["dataset"]["sample_ids"] == ["agent-1/hello", "agent-1/second"]
+    assert log["eval"]["dataset"]["sample_ids"] == ["agent-1/hello", "agent-1/second", "agent-2/hello"]
     assert log["eval"]["metadata"]["mesocosm"]["not_exported"] == NOT_EXPORTED
     assert log["eval"]["metadata"]["mesocosm"]["conditions"][0]["condition"] == "budget"
     assert log["eval"]["metadata"]["mesocosm"]["receipts"] == [{"op": "conditions.set", "requested": {"condition": "budget"},
                                                                  "result": "applied"}]
-    first, second = log["samples"]
+    first, second, other = log["samples"]
+    assert other["output"]["model"] == "internal/baseline-x" and other["model_usage"] == {
+        "internal/baseline-x": {"input_tokens": 30, "output_tokens": 2, "total_tokens": 32}}, "the agent's own model"
     assert first["input"] == "say hello" and first["scores"]["verifier"]["value"] == 1.0
     roles = [m["role"] for m in first["messages"]]
     assert roles == ["system", "user", "assistant", "tool", "assistant"], "the last request plus its answer"
@@ -65,8 +75,9 @@ def test_bundle_becomes_a_version_2_eval_log_with_one_sample_per_agent_task(tmp_
     assert first["started_at"].endswith("Z") and first["total_time"] == 9.0
     assert second["input"] == "second task" and second["scores"]["verifier"]["value"] == 0.0
     assert second["model_usage"]["internal/qwen3-4b"]["total_tokens"] == 51, "total is derived when the upstream omits it"
-    assert log["results"]["scores"][0]["metrics"]["accuracy"]["value"] == 0.5
+    assert log["results"]["scores"][0]["metrics"]["accuracy"]["value"] == 2 / 3
     assert log["stats"]["model_usage"]["internal/qwen3-4b"]["input_tokens"] == 270
+    assert log["stats"]["model_usage"]["internal/baseline-x"]["input_tokens"] == 30
 
 
 def test_status_follows_the_summary_and_the_file_lands_in_the_bundle(tmp_path):
