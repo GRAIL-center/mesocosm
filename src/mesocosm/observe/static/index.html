@@ -49,6 +49,7 @@
   .n .sum { font: 11px system-ui, sans-serif; fill: var(--muted); text-anchor: middle; }
   .n .inner { font: 600 11px system-ui, sans-serif; fill: var(--ink); text-anchor: middle; dominant-baseline: central; }
   .edge { fill: none; stroke: var(--line); stroke-width: 1.5; }
+  .sep { stroke: var(--line); stroke-dasharray: 2 6; }
   .edge.live { stroke: var(--busy); stroke-opacity: .6; }
   @keyframes pulse { 0%,100% { stroke-opacity: 1; } 50% { stroke-opacity: .35; } }
   #legend { position: absolute; left: 14px; bottom: 12px; display: flex; gap: 12px; font-size: 11px; color: var(--muted);
@@ -105,7 +106,7 @@
     <div id="legend"><span><i style="background:var(--idle)"></i>idle</span><span><i style="background:var(--busy)"></i>waiting for model</span>
       <span><i style="background:var(--tool)"></i>running a tool</span><span><i style="background:var(--error)"></i>blocked / error</span>
       <span><i style="background:var(--done)"></i>done</span></div>
-    <button id="fit" title="fit to view">fit</button>
+    <button id="fit" title="fit width; wheel scrolls, Ctrl+wheel zooms">fit</button>
   </section>
   <aside id="drawer">
     <div class="dhead"><h2 id="dtitle"></h2><span id="dbadge" class="badge idle"></span><button id="dclose" title="close">✕</button></div>
@@ -136,7 +137,7 @@
   }
 
   // ---- graph: tree layout per agent, drawn as SVG nodes and edges (rebuilt from state; no listeners per node) ----
-  const R_AGENT = 28, R_SESSION = 17, SLOT = 200, ROW = 160, GAP = 40, TOP = 70;
+  const R_AGENT = 28, R_SESSION = 17, SLOT = 200, ROW = 160, TOP = 70, LEFT = 30, BLOCK_GAP = 30;
   const clip = (t, n) => { t = String(t ?? ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
   const wrap = (t, n, max) => {   // greedy word wrap into at most `max` lines of ~n chars; the last line is clipped
     const words = String(t ?? '').split(' '), lines = []; let cur = '';
@@ -148,34 +149,35 @@
   const view = { k: 1, x: 0, y: 0, fitted: false };
 
   function layout() {
-    // Each agent is a root; with a single root session the agent node stands for it and its subagents hang beneath.
-    const S = state.sessions, trees = [];
+    // One block per agent, stacked vertically. Inside a block the tree is top-down and left-aligned:
+    // a node sits above its first child, siblings share the row to the right, so every agent node
+    // lines up in one column and children of one parent are at the same height.
+    const S = state.sessions, nodes = [], blocks = [];
     const kidsOf = sid => (S[sid]?.children || []).filter(c => S[c]);
     const measure = sid => { const ks = kidsOf(sid); const w = ks.reduce((acc, k) => acc + measure(k), 0) + Math.max(0, ks.length - 1) * 10;
       S[sid]._w = Math.max(SLOT, w); return S[sid]._w; };
-    const place = (sid, x0, depth, parent, out) => {
-      const ks = kidsOf(sid), s = S[sid], total = ks.reduce((a, k) => a + S[k]._w, 0) + Math.max(0, ks.length - 1) * 10;
-      const node = { id: sid, kind: 'session', x: x0 + s._w / 2, y: TOP + depth * ROW, parent, status: s.status,
+    const place = (sid, x0, y, parent) => {
+      const s = S[sid];
+      const node = { id: sid, kind: 'session', x: x0 + SLOT / 2, y, parent, status: s.status,
                      label: s.title || (s.parent_id ? 'subagent' : sid), summary: s.summary, r: R_SESSION };
-      out.push(node); let cx = x0 + (s._w - total) / 2;
-      ks.forEach(k => { place(k, cx, depth + 1, node, out); cx += S[k]._w + 10; });
-      return node;
+      nodes.push(node); let cx = x0, depth = 1;
+      kidsOf(sid).forEach(k => { depth = Math.max(depth, 1 + place(k, cx, y + ROW, node)); cx += S[k]._w + 10; });
+      return depth;
     };
-    let x = 20;
+    let y = TOP, width = 0;
     state.agents.forEach(a => {
       const roots = a.root_sessions.filter(r => S[r]);
-      const single = roots.length === 1;
-      const tops = single ? kidsOf(roots[0]) : roots;
+      const tops = roots.length === 1 ? kidsOf(roots[0]) : roots;   // one root session: the agent node stands for it
       tops.forEach(measure);
-      const total = tops.reduce((acc, k) => acc + S[k]._w, 0) + Math.max(0, tops.length - 1) * 10;
-      const w = Math.max(SLOT, total);
-      const agent = { id: a.agent_id, kind: 'agent', x: x + w / 2, y: TOP, status: a.status, label: a.agent_id, summary: a.summary, r: R_AGENT,
+      const w = Math.max(SLOT, tops.reduce((acc, k) => acc + S[k]._w, 0) + Math.max(0, tops.length - 1) * 10);
+      const agent = { id: a.agent_id, kind: 'agent', x: LEFT + SLOT / 2, y, status: a.status, label: a.agent_id, summary: a.summary, r: R_AGENT,
                       sub: `${a.requests} calls${a.rewards.length ? ' · reward ' + a.rewards.map(r => r.reward ?? '?').join(',') : ''}` };
-      const nodes = [agent]; let cx = x + (w - total) / 2;
-      tops.forEach(k => { place(k, cx, 1, agent, nodes); cx += S[k]._w + 10; });
-      trees.push(nodes); x += w + GAP;
+      nodes.push(agent); let cx = LEFT, depth = 1;
+      tops.forEach(k => { depth = Math.max(depth, 1 + place(k, cx, y + ROW, agent)); cx += S[k]._w + 10; });
+      const h = depth * ROW; blocks.push({ y: y - TOP / 2, h });
+      width = Math.max(width, LEFT + w); y += h + BLOCK_GAP;
     });
-    return { nodes: trees.flat(), width: x, height: TOP + ROW * (1 + Math.max(0, ...trees.flat().map(n => (n.y - TOP) / ROW))) + 40 };
+    return { nodes, blocks, width: width + 40, height: y };
   }
 
   function nodeSvg(n) {
@@ -196,8 +198,8 @@
   function applyView() { $('#view').setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`); }
   function fit(g) {
     const box = $('#graph').getBoundingClientRect();
-    view.k = Math.min(1, (box.width - 40) / g.width, (box.height - 40) / g.height);
-    view.x = Math.max(20, (box.width - g.width * view.k) / 2); view.y = 10; view.fitted = true; applyView();
+    view.k = Math.min(1, (box.width - 40) / g.width);
+    view.x = 10; view.y = 10; view.fitted = true; applyView();
   }
 
   function render() {
@@ -208,7 +210,8 @@
     $('#counts').textContent = `${state.ingested} records · ${Object.keys(state.sessions).length} sessions`;
     $('#empty').hidden = state.agents.length > 0;
     const g = layout();
-    $('#view').innerHTML = g.nodes.filter(n => n.parent).map(edgeSvg).join('') + g.nodes.map(nodeSvg).join('');
+    const seps = g.blocks.slice(1).map(b => `<line class="sep" x1="0" x2="${Math.max(g.width, 4000)}" y1="${b.y - BLOCK_GAP / 2}" y2="${b.y - BLOCK_GAP / 2}"></line>`).join('');
+    $('#view').innerHTML = seps + g.nodes.filter(n => n.parent).map(edgeSvg).join('') + g.nodes.map(nodeSvg).join('');
     if (!view.fitted) fit(g);
     if (meta && (meta.mode === 'replay' || state.started_ts)) {
       $('#scrub').hidden = false;
@@ -225,7 +228,9 @@
     svg.addEventListener('pointermove', e => { if (!drag) return; view.x = drag.vx + e.clientX - drag.x; view.y = drag.vy + e.clientY - drag.y; applyView(); });
     const end = () => { drag = null; svg.classList.remove('dragging'); };
     svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
-    svg.addEventListener('wheel', e => { e.preventDefault(); const box = svg.getBoundingClientRect(), mx = e.clientX - box.left, my = e.clientY - box.top;
+    svg.addEventListener('wheel', e => { e.preventDefault();
+      if (!(e.ctrlKey || e.metaKey)) { view.x -= e.deltaX; view.y -= e.deltaY; applyView(); return; }   // plain wheel scrolls the list
+      const box = svg.getBoundingClientRect(), mx = e.clientX - box.left, my = e.clientY - box.top;
       const k = Math.min(3, Math.max(0.2, view.k * (e.deltaY < 0 ? 1.1 : 0.9)));
       view.x = mx - (mx - view.x) * k / view.k; view.y = my - (my - view.y) * k / view.k; view.k = k; view.fitted = true; applyView(); }, { passive: false });
     $('#fit').addEventListener('click', () => { view.fitted = false; render(); });
