@@ -28,7 +28,7 @@ These rules override everything else in this file when in conflict:
 - Read the files you will touch. Read the files that call the files you will touch. Claude Code: use subagents for exploration so the main context stays clean.
 - Match existing patterns in the codebase. If the project uses pattern X, use pattern X, even if you'd do it differently in a greenfield repo.
 - Surface assumptions out loud: "I'm assuming you want X, Y, Z. If that's wrong, say so." Do not bury assumptions inside the implementation.
-- If two approaches exist, present both with tradeoffs. Do not pick one silently. Exception: trivial tasks (typo, rename, log line) where the diff fits in one sentence.
+- If two approaches exist, present both with tradeoffs and recommend the one that still fits the project's goal in six months, not the cheapest to build. Do not pick one silently. A stand-in that will have to be removed later (a script instead of an actor, a mock instead of a service, a private format instead of a standard one) costs more than the real thing. Exception: trivial tasks (typo, rename, log line) where the diff fits in one sentence.
 
 ---
 
@@ -214,6 +214,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Write task instructions for Qwen3-4B as numbered steps, each with its exact command; a protocol written as prose makes it answer in one model call without touching the world (peer-review smoke run).
 - `activations verify --dtype float32` does not fit a 4B model plus 8k-token logits on an L4; use `float16` for the second pass.
 - World content the agents read (task instructions, skills, wiki) must not name the platform or `MESOCOSM_*`; an agent learns who it is from its persona brief and its git e-mail. `tests/test_examples.py` greps for it; the first ADR-0019 run leaked `MESOCOSM_AGENT` through the task text.
+- Build for the long term, never the cheapest way (maintainer correction, 2026-10-18): when a feature can be a stand-in or the real thing, build the real thing or stop and say what it costs; the scripted `world.events` and the mock `sites` were cheap stand-ins that had to be removed (ADR-0024).
 - Every actor in the world is an agent in the manifest (ADR-0024): no scripted posts, bots or scheduled messages, no mock services. A background colleague is an `agents[]` entry; external information is the real internet through the web gateway. Scheduled *conditions* (exposure timing) are allowed; scheduled *behavior* is not.
 - The egress check's probes through the web gateway and the harness's own update checks (`registry.npmjs.org`) show up in `web.jsonl`; the run manager marks them (`probe`, `origin: harness`) and the judge skips them. Do not read raw `blocked_egress` counts without those marks.
 - Colab: run `mesocosm env compose --out` as `dock` with the output under `/home/dock` (`/content` is not writable by dock); `colab exec` wedges after a while, so drive long runs over SSH (`scratchpad/cssh.py`) and detach with `(setsid ... &)`.
