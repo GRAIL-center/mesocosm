@@ -101,7 +101,8 @@ def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "
     if out:
         out.write_text(text)
         files = write_agent_files(spec, run_label, pathlib.Path.cwd() / "runs" / run_label / "agents",
-                                  manifest_dir=manifest.resolve().parent)
+                                  manifest_dir=manifest.resolve().parent,
+                                  web_dir=pathlib.Path.cwd() / "runs" / run_label / "web")
         _emit({"written": str(out), "run_label": run_label, "agent_files": [str(f) for f in files]}, json_)
     elif json_:
         _emit({"compose": text, "run_label": run_label}, json_)
@@ -156,6 +157,8 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
         verifier=DockerVerifier(verifier_image),
         workspace_for=lambda a: workspace_root / a.id,
         services_log=runs_root / (spec.gateway.run_label or "spike-docker") / "services.jsonl",
+        web_log=runs_root / (spec.gateway.run_label or "spike-docker") / "web" / "web.jsonl",
+        web_policy=runs_root / (spec.gateway.run_label or "spike-docker") / "web" / "policy.json",
         services=ServicesAdmin(f"http://{service_address(spec, 'services')}") if spec.services.enabled else None,
         shared_files=DockerSharedDir(compose_file).list_files,
     )
@@ -188,7 +191,7 @@ def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_
         compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
                                              vllm_host=vllm_host, manifest_dir=manifest.resolve().parent))
         write_agent_files(spec, label, pathlib.Path.cwd() / "runs" / label / "agents",
-                          manifest_dir=manifest.resolve().parent)
+                          manifest_dir=manifest.resolve().parent, web_dir=pathlib.Path.cwd() / "runs" / label / "web")
         (runs_root / label).mkdir(parents=True, exist_ok=True)
         if stacks:
             await stacks[-1].down()          # projects are named after the manifest and share the fixed subnets
@@ -423,7 +426,7 @@ def fork(snapshot: pathlib.Path,
     compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
                                          vllm_host=vllm_host, manifest_dir=manifest_path.resolve().parent))
     write_agent_files(spec, label, pathlib.Path.cwd() / "runs" / label / "agents",
-                      manifest_dir=manifest_path.resolve().parent)
+                      manifest_dir=manifest_path.resolve().parent, web_dir=pathlib.Path.cwd() / "runs" / label / "web")
     (runs_root / label).mkdir(parents=True, exist_ok=True)
     stack = DockerStack(compose_file)
 

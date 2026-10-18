@@ -24,9 +24,33 @@ import yaml
 
 from mesocosm.adapters.opencode.client import render_opencode_config
 from mesocosm.core.manifest import AgentSpec, WorldManifest
+from mesocosm.env.web import WebPolicy, generate_ca, probe_hosts
 
 GATEWAY_URL = "http://gateway:8080"          # as agents reach it, on every sandbox network
 MCP_URL = "http://mcp/"                       # the world's own MCP server (services.mcp), server name `team`
+PROXY_URL = "http://proxy:3128"               # the web gateway (ADR-0022), the agents' only route out
+CA_PATH = "/etc/ssl/certs/corp-ca.pem"        # where the agents find the proxy's CA certificate
+
+
+def web_policy(manifest: WorldManifest) -> WebPolicy:
+    net = manifest.internet
+    return WebPolicy(allow=[p.lower() for p in net.allow], deny=[p.lower() for p in net.deny], mode=net.mode,
+                     budget_requests=net.budget.requests, budget_bytes=net.budget.bytes,
+                     domain=manifest.services.domain)
+
+
+def proxy_environment(manifest: WorldManifest) -> dict[str, str]:
+    """What a workstation behind a corporate proxy carries: proxy variables for every common client and the
+    CA bundle variables. Internal hostnames stay direct (`no_proxy`)."""
+    internal = ["localhost", "127.0.0.1", "gateway", *world_hostnames(manifest), "services"]
+    if manifest.services.domain:
+        internal.append("." + manifest.services.domain)
+    no_proxy = ",".join(dict.fromkeys(internal))
+    env = {"HTTP_PROXY": PROXY_URL, "HTTPS_PROXY": PROXY_URL, "NO_PROXY": no_proxy,
+           "SSL_CERT_FILE": CA_PATH, "NODE_EXTRA_CA_CERTS": CA_PATH, "REQUESTS_CA_BUNDLE": CA_PATH,
+           "PIP_CERT": CA_PATH, "GIT_SSL_CAINFO": CA_PATH, "CURL_CA_BUNDLE": CA_PATH}
+    env.update({k.lower(): v for k, v in list(env.items())[:3]})
+    return env
 
 
 def agent_api_key(manifest: WorldManifest, run_label: str, agent_id: str) -> str:
@@ -92,10 +116,15 @@ def agent_files(manifest: WorldManifest, run_label: str, gateway_url: str = GATE
 
 
 def write_agent_files(manifest: WorldManifest, run_label: str, files_dir: pathlib.Path,
-                      manifest_dir: pathlib.Path | None = None, **kwargs) -> list[pathlib.Path]:
-    """Write `agent_files` under files_dir/<agent_id>/ and copy the agent's skill directories to
-    files_dir/<agent_id>/skills/<name>/ (manifest_dir resolves them); returns the paths written."""
+                      manifest_dir: pathlib.Path | None = None, web_dir: pathlib.Path | None = None,
+                      **kwargs) -> list[pathlib.Path]:
+    """Write `agent_files` under files_dir/<agent_id>/, copy the agent's skill directories to
+    files_dir/<agent_id>/skills/<name>/ (manifest_dir resolves them) and, with the internet enabled, make the
+    web gateway's CA under web_dir/ca (default: next to files_dir); returns the paths written."""
     written = []
+    if manifest.internet.enabled:
+        web_dir = web_dir or files_dir.parent / "web"
+        written.append(generate_ca(web_dir / "ca", f"{manifest.services.domain or 'corp'} Root CA"))
     for agent in manifest.agents:
         (files_dir / agent.id).mkdir(parents=True, exist_ok=True)
         for name, content in agent_files(manifest, run_label, **kwargs)[agent.id].items():
@@ -124,7 +153,17 @@ def egress_env(manifest: WorldManifest, agent: AgentSpec, vllm_host: str = "host
         "MESOCOSM_SERVICES": ",".join(n for n in world_hostnames(manifest) if n != "pastebin")
         if manifest.services.enabled else "",
         "MESOCOSM_CHANNELS": ",".join(manifest.channel_types()),
+        **egress_proxy_env(manifest),
     }
+
+
+def egress_proxy_env(manifest: WorldManifest) -> dict[str, str]:
+    """The web gateway facts for the egress check: the proxy, a host it allows and one it denies."""
+    if not manifest.internet.enabled:
+        return {"MESOCOSM_PROXY": ""}
+    allowed, denied = probe_hosts(web_policy(manifest))
+    return {"MESOCOSM_PROXY": PROXY_URL, "MESOCOSM_PROXY_ALLOWED": allowed or "", "MESOCOSM_PROXY_DENIED": denied,
+            "MESOCOSM_CA": CA_PATH}
 
 
 def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_label: str,
@@ -143,6 +182,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
     runs = str((repo / runs_dir).resolve())
     manifest_dir = (manifest_dir or repo).resolve()
     files_root = (files_dir or pathlib.Path(runs) / run_label / "agents").resolve()
+    web_root = files_root.parent / "web"
     domain = manifest.services.domain
     net_index = {a.id: (i + 1 if manifest.isolate_agents else 0) for i, a in enumerate(manifest.agents)}
     network_of = {a.id: f"sandbox-{a.id}" if manifest.isolate_agents else "sandbox" for a in manifest.agents}
@@ -212,10 +252,35 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
             },
             "volumes": volumes,
         }
+    if manifest.internet.enabled:
+        command = []
+        if manifest.internet.mode == "record":
+            command += ["-w", "/logs/flows.mitm"]
+        if manifest.internet.mode == "replay":
+            command += ["--server-replay", "/logs/replay.mitm", "--set", "server_replay_extra=kill",
+                        "--set", "server_replay_reuse=true"]
+        web: dict = {
+            "build": {"context": str(repo), "dockerfile": "spike/docker/Dockerfile.web"},
+            "networks": {**attach(5, sandboxes, _with_domain(["proxy"], domain) if domain else ["proxy"]),
+                         "edge": {}},
+            "environment": {
+                "MESOCOSM_WEB_POLICY": json.dumps(web_policy(manifest).to_dict()),
+                "MESOCOSM_AGENT_IPS": json.dumps(dict(sorted((ip, a) for a, ip in agent_ip.items()))),
+                "MESOCOSM_WEB_LOG_DIR": "/logs",
+            },
+            "volumes": [f"{web_root}:/logs", f"{web_root}/ca:/ca"],
+        }
+        if command:
+            web["command"] = command
+        if manifest.internet.mode == "replay" and manifest.internet.replay_file:
+            web["volumes"].append(f"{(manifest_dir / manifest.internet.replay_file).resolve()}:/logs/replay.mitm:ro")
+        services["web"] = web
     for agent in manifest.agents:
         depends = {"gateway": {"condition": "service_healthy"}}
         if services_on:
             depends["services"] = {"condition": "service_healthy"}
+        if manifest.internet.enabled:
+            depends["web"] = {"condition": "service_healthy"}
         files = files_root / agent.id
         mounts = [f"{files}/opencode.json:/root/.config/opencode/opencode.json:ro",
                   f"{files}/gitconfig:/root/.gitconfig:ro"]
@@ -223,6 +288,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
             mounts.append(f"{files}/AGENTS.md:/root/.config/opencode/AGENTS.md:ro")
         if agent.skills:
             mounts.append(f"{files}/skills:/root/.config/opencode/skills:ro")
+        if manifest.internet.enabled:
+            mounts.append(f"{web_root}/ca/ca.pem:{CA_PATH}:ro")
         services[agent.id] = {
             "build": {"context": spike, "dockerfile": "docker/Dockerfile.agent",
                       "args": {"OPENCODE_VERSION": opencode_version}},
@@ -237,6 +304,9 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
         }
         if agent.persona and agent.persona.hostname:
             services[agent.id]["hostname"] = agent.persona.hostname
+        if manifest.internet.enabled:
+            # standard proxy and CA variables, as on any workstation behind a corporate proxy; nothing of ours
+            services[agent.id]["environment"] = proxy_environment(manifest)
     out = {
         "name": f"mesocosm-{manifest.name}",
         "services": services,

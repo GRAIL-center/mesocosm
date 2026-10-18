@@ -96,13 +96,13 @@ def fake_opencode(gateway: httpx.AsyncClient, agent_id: str, run_label: str,
 
 
 class FakeEgress:
-    def __init__(self, ok: bool):
-        self.ok = ok
+    def __init__(self, ok: bool, proxy: str = "OK proxy absent (internet disabled)\n"):
+        self.ok, self.proxy = ok, proxy
 
     async def verify(self, agent_ids):
         channels = "OK channel pastebin absent (disabled)\nOK channel shared_dir absent (disabled)\n"
-        text = ("OK gateway reachable\nOK HTTPS egress blocked\n" + channels if self.ok
-                else "OK gateway reachable\nFAIL HTTPS egress to example.com succeeded\n" + channels)
+        text = ("OK gateway reachable\nOK HTTPS egress blocked\n" + channels + self.proxy if self.ok
+                else "OK gateway reachable\nFAIL HTTPS egress to example.com succeeded\n" + channels + self.proxy)
         return {a: parse_egress_output(text, 0 if self.ok else 1) for a in agent_ids}
 
 
@@ -294,6 +294,74 @@ async def test_one_failing_agent_cancels_the_others(world):
     assert result.status == "failed" and "verifier container died" in result.error
     bundle = RunBundle.open(result.bundle_path)
     assert bundle.events()[-1].kind == "run.failed" and "verifier container died" in bundle.events()[-1].data["error"]
+
+
+async def test_the_internet_is_a_verified_condition_and_web_records_join_the_bundle(world):
+    from mesocosm.env.compose import web_policy
+    from mesocosm.env.web import policy_state
+
+    manifest, components, tmp_path = world
+    # disabled (the default): every agent must confirm the proxy is absent
+    comps = components()
+    comps.egress = FakeEgress(True, proxy="")
+    result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs")
+    assert result.status == "failed_internet_verification" and "proxy not confirmed absent" in result.error
+    bundle = RunBundle.open(result.bundle_path)
+    receipt = next(r for r in bundle.receipts() if r["requested"].get("condition") == "internet")
+    assert receipt["result"] == "failed" and receipt["enforced_at"]["component"] == "web"
+
+    # enabled: the proxy must be seen by every agent and must have loaded this manifest's policy
+    manifest.internet.enabled = True
+    manifest.internet.allow = ["pypi.org", "*.pythonhosted.org"]
+    manifest.internet.budget.requests = 50
+    web_dir = tmp_path / "web"
+    web_dir.mkdir()
+    present = "OK proxy reachable at http://proxy:3128, denies example.com (403)\nOK proxy allows pypi.org (200)\n"
+    comps = components()
+    comps.egress = FakeEgress(True, proxy=present)
+    comps.web_policy, comps.web_log = web_dir / "policy.json", web_dir / "web.jsonl"
+    result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs")
+    assert result.status == "failed_internet_verification" and "no policy.json" in result.error
+
+    other = web_policy(manifest)
+    other.allow = ["evil.example"]
+    (web_dir / "policy.json").write_text(json.dumps(policy_state(other)))
+    result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs")
+    assert result.status == "failed_internet_verification" and "differs from the manifest" in result.error
+
+    (web_dir / "policy.json").write_text(json.dumps(policy_state(web_policy(manifest))))
+    now = time.time()
+    records = [
+        {"ts": 1.0, "agent": "agent-1", "host": "old.example", "decision": "allowed"},        # an earlier run
+        {"ts": now, "agent": "agent-1", "ip": "172.30.0.10", "method": "GET", "scheme": "https", "host": "pypi.org",
+         "port": 443, "path": "/pypi/requests/json", "decision": "allowed", "rule": "pypi.org", "status": 200,
+         "request_bytes": 0, "response_bytes": 5120, "content_type": "application/json", "sha256": "ab" * 32,
+         "excerpt": '{"info": {"version": "2.32.3"}}', "duration_ms": 90},
+        {"ts": now + 0.1, "agent": "agent-1", "ip": "172.30.0.10", "method": "CONNECT", "scheme": "https",
+         "host": "evil.example", "port": 443, "path": "", "decision": "denied:not_allowed", "rule": None,
+         "status": 403, "connect": True},
+        {"ts": now + 0.2, "agent": "agent-1", "ip": "172.30.0.10", "method": "GET", "scheme": "http",
+         "host": "10.0.2.2", "port": 8000, "path": "/v1/models", "decision": "denied:network",
+         "rule": "private or local address", "status": 403},
+    ]
+    (web_dir / "web.jsonl").write_text("".join(json.dumps(r) + "\n" for r in records))
+    result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs")
+    assert result.status == "ok", result.error
+    bundle = RunBundle.open(result.bundle_path)
+    receipt = next(r for r in bundle.receipts() if r["requested"].get("condition") == "internet")
+    assert receipt["result"] == "applied" and receipt["requested"]["allow"] == ["pypi.org", "*.pythonhosted.org"]
+    assert receipt["verification"]["detail"]["loaded"]["budget"] == {"requests": 50, "bytes": None}
+    web = [e for e in bundle.events() if e.kind == "web.request"]
+    assert [(e.data["host"], e.data["decision"]) for e in web] == [
+        ("pypi.org", "allowed"), ("evil.example", "denied:not_allowed"), ("10.0.2.2", "denied:network")]
+    assert all(e.agent_id == "agent-1" for e in web) and web[0].ts == now and "excerpt" not in web[0].data
+    copied = (result.bundle_path / "native" / "web" / "web.jsonl").read_text().splitlines()
+    assert len(copied) == 3 and "2.32.3" in copied[0], "the copy keeps the excerpt; events carry the hash"
+    flags = {(f["kind"], f["data"]["host"] if "data" in f else f.get("host")) for f in bundle.flags()}
+    kinds = [(f["kind"], f["agent_id"]) for f in bundle.flags()]
+    assert kinds.count(("blocked_egress", "agent-1")) == 2, flags
+    summary = json.loads((result.bundle_path / "summary.json").read_text())
+    assert summary["web_records"] == 3 and summary["flags"]["blocked_egress"] == 2
 
 
 class FakeServices:

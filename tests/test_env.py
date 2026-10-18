@@ -50,7 +50,7 @@ def test_compose_topology_invariants():
     assert egress_env(manifest, manifest.agents[0]) == {
         "MESOCOSM_GATEWAY_URL": "http://gateway:8080", "MESOCOSM_UPSTREAM_PROBE": "http://host.docker.internal:8000/v1/models",
         "MESOCOSM_PEERS": "agent-2", "MESOCOSM_ISOLATE_AGENTS": "0", "MESOCOSM_SERVICES": "board,wiki,git,pypi,sites",
-        "MESOCOSM_CHANNELS": ""}
+        "MESOCOSM_CHANNELS": "", "MESOCOSM_PROXY": ""}
     assert world["environment"]["MESOCOSM_CHANNELS"] == "" and world["environment"]["MESOCOSM_GIT_REPOS"] == "project"
     assert world["environment"]["MESOCOSM_PROTECTED_REPOS"] == ""
     assert world["build"]["args"]["PYPI_PACKAGES"] == "requests pytest rich pyyaml"
@@ -215,3 +215,58 @@ def test_mcp_servers_and_skills_reach_the_agent_through_its_config_and_mounts(tm
     plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_MCP"] == "0"
     assert "mcp" not in json.loads(agent_files(load_manifest(ROOT / "examples" / "spike-world.yaml"), "lbl")["agent-1"]["opencode.json"])
+
+
+def test_the_web_gateway_is_the_only_route_out_and_agents_carry_only_standard_proxy_variables(tmp_path):
+    from mesocosm.env.compose import CA_PATH, PROXY_URL, egress_proxy_env, proxy_environment
+
+    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
+    manifest.services.domain = "corp.example"
+    manifest.internet.enabled = True
+    manifest.internet.mode = "record"
+    manifest.internet.allow = ["pypi.org", "*.pythonhosted.org"]
+    manifest.internet.deny = ["bad.example"]
+    manifest.internet.budget.requests = 100
+    files = write_agent_files(manifest, "lbl", tmp_path / "agents", web_dir=tmp_path / "web")
+    assert (tmp_path / "web" / "ca" / "ca.pem").exists() and (tmp_path / "web" / "ca" / "mitmproxy-ca.pem").exists()
+    assert any(p.name == "ca.pem" for p in files)
+    compose = render_compose(manifest, repo_root=ROOT, run_label="lbl", files_dir=tmp_path / "agents")
+    web = compose["services"]["web"]
+    assert web["build"]["dockerfile"] == "spike/docker/Dockerfile.web"
+    assert web["networks"] == {"sandbox": {"ipv4_address": "172.30.0.5", "aliases": ["proxy", "proxy.corp.example"]},
+                               "edge": {}}, "on every sandbox network and on edge: the one route out"
+    policy = json.loads(web["environment"]["MESOCOSM_WEB_POLICY"])
+    assert policy["allow"] == ["pypi.org", "*.pythonhosted.org"] and policy["deny"] == ["bad.example"]
+    assert policy["mode"] == "record" and policy["budget"] == {"requests": 100, "bytes": None}
+    assert policy["domain"] == "corp.example"
+    assert web["environment"]["MESOCOSM_AGENT_IPS"] == '{"172.30.0.10": "agent-1", "172.30.0.11": "agent-2"}'
+    assert web["volumes"] == [f"{tmp_path}/web:/logs", f"{tmp_path}/web/ca:/ca"]
+    assert web["command"] == ["-w", "/logs/flows.mitm"]
+    for agent_id in ("agent-1", "agent-2"):
+        a = compose["services"][agent_id]
+        env = a["environment"]
+        assert not any(k.startswith("MESOCOSM") for k in env), "nothing of ours; a workstation behind a corporate proxy"
+        assert env["HTTPS_PROXY"] == env["https_proxy"] == PROXY_URL and env["HTTP_PROXY"] == PROXY_URL
+        assert env["NO_PROXY"] == "localhost,127.0.0.1,gateway,board,wiki,git,pypi,sites,services,.corp.example"
+        assert env["SSL_CERT_FILE"] == env["NODE_EXTRA_CA_CERTS"] == env["PIP_CERT"] == env["GIT_SSL_CAINFO"] == CA_PATH
+        assert f"{tmp_path}/web/ca/ca.pem:{CA_PATH}:ro" in a["volumes"]
+        assert a["depends_on"]["web"] == {"condition": "service_healthy"}
+        assert "ports" not in a and "extra_hosts" not in a and list(a["networks"]) == ["sandbox"]
+    assert proxy_environment(manifest)["no_proxy"] == proxy_environment(manifest)["NO_PROXY"]
+    env = egress_env(manifest, manifest.agents[0])
+    assert env["MESOCOSM_PROXY"] == PROXY_URL and env["MESOCOSM_PROXY_ALLOWED"] == "pypi.org"
+    assert env["MESOCOSM_PROXY_DENIED"] == "example.com" and env["MESOCOSM_CA"] == CA_PATH
+    # replay: the recorded flows are mounted read-only and nothing is forwarded
+    manifest.internet.mode = "replay"
+    manifest.internet.replay_file = "flows.mitm"
+    replay = render_compose(manifest, repo_root=ROOT, run_label="lbl", files_dir=tmp_path / "agents",
+                            manifest_dir=tmp_path)["services"]["web"]
+    assert replay["command"][:2] == ["--server-replay", "/logs/replay.mitm"] and "server_replay_extra=kill" in replay["command"]
+    assert f"{tmp_path}/flows.mitm:/logs/replay.mitm:ro" in replay["volumes"]
+    # disabled: no web service, no proxy variables, and the check expects the proxy name to be absent
+    plain = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    off = render_compose(plain, repo_root=ROOT, run_label="lbl")
+    assert "web" not in off["services"] and "environment" not in off["services"]["agent-1"]
+    assert egress_proxy_env(plain) == {"MESOCOSM_PROXY": ""} and egress_env(plain, plain.agents[0])["MESOCOSM_PROXY"] == ""
+    assert "web" not in off["services"]["agent-1"]["depends_on"]

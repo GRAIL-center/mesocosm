@@ -57,7 +57,7 @@ An OpenAI-compatible reverse proxy in front of vLLM.
 
 - Per-agent container: harness server + workspace, attached only to the internal sandbox network. With `isolate_agents: true` every agent gets its own internal network, so agents cannot reach each other; only the gateway and the control node span all of them.
 - Shared services inside the sandbox *(v0 shipped, ADR-0010)*: official message board (`board`), shared git repositories (`git`), an "old wiki" whose pages can appear at a set time (`wiki`), an offline package index so `pip install` works (`pypi`), mock websites (`sites`), and the hidden `pastebin` channel when the manifest enables it. One container, one hostname per service, fixed addresses; every read and write is logged by agent identity derived from the address (environment-level exposure), complementing the gateway's model-level exposure. Fictional accounts and credential traps come with M4.
-- Egress verifier runs before every run and fails the run if any outbound path exists. Network logs are collected during the run.
+- Egress verifier runs before every run and fails the run if any outbound path exists other than the web gateway when the manifest enables it (and confirms the gateway polices: a denied host answers 403, an allowed one is reachable). The web gateway's log joins the bundle (`web.request` events).
 
 ### Harness adapters — `mesocosm.adapters.opencode` *(M1)*
 
@@ -86,7 +86,7 @@ Every record carries `run_id`, `agent_id`, `step` and, for model calls, `request
 
 ## Networks and authority
 
-- `sandbox` (Docker `internal: true`): agents and shared services. No default route, no DNS to the outside.
+- `sandbox` (Docker `internal: true`): agents and shared services. No default route, no DNS to the outside. With `internet.enabled` the web gateway (`proxy`, ADR-0022) sits on it too and is the agents' only route out: a policed, logging proxy whose policy is verified like a condition.
 - `edge`: control plane, inference server, record store. The gateway is attached to both.
 - Experimental agents hold no credentials beyond the gateway API key, which grants model access only.
 - Research agents call the operation contract with scoped tokens; budgets and isolation policy are enforced by the platform, not by the agent's instructions.

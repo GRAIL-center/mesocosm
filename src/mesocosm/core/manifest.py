@@ -230,6 +230,25 @@ class WorldSpec(BaseModel):
     events: list[WorldEvent] = Field(default_factory=list)
 
 
+class InternetBudget(BaseModel):
+    requests: int | None = Field(default=None, ge=1, description="Allowed requests per agent")
+    bytes: int | None = Field(default=None, ge=1, description="Response bytes per agent")
+
+
+class InternetSpec(BaseModel):
+    """Controlled access to the real internet through the web gateway (ADR-0022): a logging proxy on the
+    sandbox networks, the agents' only route out. Everything not allowed is refused with a web filter
+    page; private and sandbox addresses are refused whatever `allow` says."""
+    enabled: bool = False
+    allow: list[str] = Field(default_factory=list, description="Host globs, e.g. pypi.org, *.wikipedia.org")
+    deny: list[str] = Field(default_factory=list, description="Host globs refused even when allowed")
+    mode: Literal["live", "record", "replay"] = Field(
+        default="live", description="record: also save every flow for replay; replay: serve recorded flows, "
+                                    "never the internet")
+    replay_file: str | None = Field(default=None, description="replay: the recorded flows (relative to the manifest)")
+    budget: InternetBudget = Field(default_factory=InternetBudget)
+
+
 class ChannelSpec(BaseModel):
     type: str
 
@@ -250,6 +269,7 @@ class WorldManifest(BaseModel):
     conditions: dict[str, object] = Field(default_factory=dict)
     observe: ObserveSpec = Field(default_factory=ObserveSpec)
     world: WorldSpec = Field(default_factory=WorldSpec)
+    internet: InternetSpec = Field(default_factory=InternetSpec)
 
     def channel_types(self) -> list[str]:
         return [c.type for c in self.channels]
@@ -379,6 +399,21 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             errors.append(f"services.protected_repos: {repo!r} is not in services.git")
     if manifest.services.mcp and not manifest.services.enabled:
         errors.append("rejected_unsupported: services.mcp needs services.enabled")
+    net = manifest.internet
+    if net.enabled:
+        if not net.allow and net.mode != "replay":
+            errors.append("internet.enabled with an empty allow list reaches nothing: name the hosts (globs) or "
+                          "disable it")
+        for pattern in net.allow + net.deny:
+            if pattern != pattern.lower() or " " in pattern or "/" in pattern or ":" in pattern:
+                errors.append(f"internet: pattern {pattern!r} must be a lowercase host glob without scheme, port or "
+                              "path")
+        if net.mode == "replay" and (not net.replay_file or not (path.parent / net.replay_file).is_file()):
+            errors.append("internet.mode: replay needs internet.replay_file (recorded flows next to the manifest)")
+        if net.mode != "replay" and net.replay_file:
+            errors.append("internet.replay_file is only read in replay mode")
+    elif net.allow or net.deny or net.replay_file:
+        warnings.append("internet: allow/deny/replay_file are ignored while internet.enabled is false")
     for agent in manifest.agents:
         for name in agent.mcp:
             if not re.fullmatch(MCP_NAME, name):

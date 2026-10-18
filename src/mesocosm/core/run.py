@@ -73,6 +73,8 @@ class Components:
     verifier: Verifier
     workspace_for: Callable[[AgentSpec], pathlib.Path]
     services_log: pathlib.Path | None = None   # the world services' services.jsonl for this run (host path)
+    web_log: pathlib.Path | None = None        # the web gateway's web.jsonl for this run (host path)
+    web_policy: pathlib.Path | None = None     # the web gateway's policy.json: what it loaded at start
     services: ServicesAdmin | None = None      # admin view of the world services (exposure schedule, channels)
     shared_files: Callable[[], Awaitable[list[str] | None]] | None = None   # /shared listing (state check)
     restored_from: pathlib.Path | None = None        # a fork: the snapshot the world was restored from
@@ -480,6 +482,23 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             return RunResult(bundle.run_id, bundle.root, "failed_exposure_verification", rewards,
                              "exposure schedule not confirmed by the services")
 
+    # The internet is a condition too (ADR-0022): the web gateway must exist exactly when the manifest says,
+    # every agent must see it (or its absence), and it must have loaded this manifest's policy.
+    internet = _internet_check(manifest, components, isolation)
+    receipt = Receipt(op="conditions.set", run_id=bundle.run_id,
+                      requested={"condition": "internet", **manifest.internet.model_dump(exclude_none=True)},
+                      enforced_at=EnforcedAt(component="web"), result="applied" if internet["ok"] else "failed",
+                      verification=Verification(method="web policy.json + egress-check", ok=internet["ok"],
+                                                detail=internet))
+    bundle.record_receipt(receipt.model_dump(mode="json"))
+    bundle.record("conditions.set", condition="internet", enabled=manifest.internet.enabled, result=receipt.result,
+                  event_id=receipt.enforced_at.event_id)
+    if not internet["ok"]:
+        bundle.record("run.aborted", reason="failed_internet_verification")
+        bundle.write_summary({"status": "failed_internet_verification", "run_label": run_label, **internet})
+        return RunResult(bundle.run_id, bundle.root, "failed_internet_verification", rewards,
+                         "web gateway not confirmed: " + "; ".join(internet["problems"]))
+
     for agent in manifest.agents:
         budget = agent.budget.model_dump(exclude_none=True)
         if budget:
@@ -536,6 +555,20 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                               ts=rec.get("ts"), status=rec.get("status"), request_summary=rec.get("request_summary"),
                               usage=(rec.get("response") or {}).get("usage"))
 
+    web_records = 0
+    if components.web_log and components.web_log.exists():
+        with bundle.open_native("web/web.jsonl") as out, components.web_log.open(encoding="utf-8") as src:
+            for line in src:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                if float(rec.get("ts") or 0) < started:
+                    continue
+                out.write(_json(rec) + "\n")
+                web_records += 1
+                bundle.record("web.request", agent_id=rec.get("agent"), ts=rec.get("ts"),
+                              **{k: v for k, v in rec.items() if k not in ("ts", "agent", "excerpt")})
+
     service_records = 0
     if components.services_log and components.services_log.exists():
         with bundle.open_native("services/services.jsonl") as out, \
@@ -566,9 +599,42 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     bundle.write_summary({"status": status, "run_label": run_label, "mode": manifest.mode, "rewards": rewards,
                           "tasks_taken": tasks_taken,
                           "model_calls": model_calls,
-                          "service_records": service_records, "flags": flag_counts(flags),
+                          "service_records": service_records, "web_records": web_records,
+                          "flags": flag_counts(flags),
                           "agent_seconds": agent_seconds(events), "events": len(events) + len(flags)})
     return RunResult(bundle.run_id, bundle.root, status, rewards)
+
+
+def _internet_check(manifest: WorldManifest, components: Components, isolation: dict[str, EgressResult]) -> dict:
+    """Is the internet condition in force? Every agent's egress check must report the proxy present (and
+    policing) or absent, as the manifest says; when present, the proxy's policy.json must match."""
+    from mesocosm.env.compose import web_policy
+
+    wanted = manifest.internet.enabled
+    problems: list[str] = []
+    seen: dict[str, list[str]] = {}
+    for agent_id, result in isolation.items():
+        lines = [m for s, m in result.lines if s == "OK" and m.startswith("proxy ")]
+        seen[agent_id] = lines
+        present = any(m.startswith("proxy reachable") for m in lines)
+        absent = any(m.startswith("proxy absent") for m in lines)
+        if wanted and not present:
+            problems.append(f"{agent_id}: no proxy confirmation")
+        if not wanted and not absent:
+            problems.append(f"{agent_id}: proxy not confirmed absent")
+    loaded = None
+    if wanted:
+        from mesocosm.env.web import read_policy_state
+
+        state = read_policy_state(components.web_policy) if components.web_policy else None
+        loaded = (state or {}).get("policy")
+        expected = web_policy(manifest).to_dict()
+        if loaded is None:
+            problems.append("web gateway wrote no policy.json")
+        elif {k: loaded.get(k) for k in ("allow", "deny", "mode", "budget")} != \
+                {k: expected[k] for k in ("allow", "deny", "mode", "budget")}:
+            problems.append("web gateway policy differs from the manifest")
+    return {"ok": not problems, "enabled": wanted, "problems": problems, "confirmations": seen, "loaded": loaded}
 
 
 async def _end(task: asyncio.Task) -> None:

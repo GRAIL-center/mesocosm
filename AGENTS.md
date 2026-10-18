@@ -180,7 +180,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 ### Forbidden
 - Patching or forking OpenCode, Harbor, vLLM or NNsight internals (ADR-0002). Control them through config and APIs; record limits as `unsupported`.
-- Any outbound route from the sandbox network other than the gateway. Never add internet access, `network_mode: host`, or a second NIC to an agent container.
+- Any outbound route from the sandbox network other than the two gateways: the model gateway and, when `internet.enabled`, the web gateway (ADR-0022). Never `network_mode: host`, a second NIC on an agent container, or internet that bypasses the web gateway's policy and log.
 - Approximating an unsupported condition with prompt text (ADR-0003). It must fail.
 - Committing anything under `runs/`, activations, or run logs.
 - Adding a trainer, optimizer, or training loop (ADR-0004). Exports only.
@@ -207,7 +207,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - `pgrep -f`/`pkill -f` match the shell running them: anchor the pattern or bracket a letter (`serv[e]`), and put a kill in its own Bash call, never in the same call as the launch or any mention of the program (the kill hits the shell itself, exit 144).
 - Operator checks run from inside an agent container (`docker compose exec agent-1 curl ...`) are logged as that agent. Make them at least 10 s before `mesocosm run` starts, or they land in the bundle (records from 5 s before the run are kept) and flag the agent.
 - Never put platform files into an agent workspace (`/work`): the memory policy empties it before every task. OpenCode's config is rendered by the control plane (`mesocosm.env.compose.write_agent_files`) and mounted read-only at `~/.config/opencode/opencode.json`.
-- Nothing in an agent container may name the platform (ADR-0019): no `MESOCOSM_*` environment on the agent service, no scripts in the agent image, no `mesocosm` in anything an agent can read (config, errors, hostnames, model ids). Gateway control endpoints live under `/admin/*` behind the control key; the services' under `/admin/*` behind the control address.
+- Nothing in an agent container may name the platform (ADR-0019): no `MESOCOSM_*` environment on the agent service (standard proxy and CA variables are fine), no scripts in the agent image, no `mesocosm` in anything an agent can read (config, errors, hostnames, model ids, the web filter page). Gateway control endpoints live under `/admin/*` behind the control key; the services' under `/admin/*` behind the control address.
+- The egress check is piped into the container (`sh -s < spike/07_egress_check.sh`) with its facts as `-e` variables; it clears the proxy variables before direct probes and must keep working with and without the web gateway.
 - Compose projects are named after the manifest and all use the fixed 172.30.x.0/24 subnets: take the previous project down (`down -v`) before `up` of another manifest. `up --wait` only covers OpenCode because the agent service has a healthcheck.
 - Inside RootlessKit's network namespace the host resolver (127.0.0.11) is unreachable, so docker/buildx clients cannot fetch registry tokens there: run them under `unshare -m` with a resolv.conf naming 10.0.2.3 bound over /etc/resolv.conf, or build from the host namespace first.
 - Write task instructions for Qwen3-4B as numbered steps, each with its exact command; a protocol written as prose makes it answer in one model call without touching the world (peer-review smoke run).

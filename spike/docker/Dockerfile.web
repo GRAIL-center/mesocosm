@@ -1,0 +1,15 @@
+# The web gateway (ADR-0022): mitmproxy with the policy addon. Attached to every sandbox network as
+# `proxy` and to `edge`, so it is the agents' only route to the internet, and a logged, policed one.
+# Build context is the repository root (the addon imports mesocosm.env.web).
+FROM mitmproxy/mitmproxy:12.2.3
+USER root
+WORKDIR /app
+COPY pyproject.toml README.md /app/
+COPY src /app/src
+RUN pip install --no-cache-dir /app
+COPY spike/docker/web_addon.py /app/web_addon.py
+RUN mkdir -p /logs /ca
+EXPOSE 3128
+HEALTHCHECK --interval=5s --timeout=3s --retries=10 CMD python -c "import socket;socket.create_connection(('127.0.0.1',3128),2).close()"
+ENTRYPOINT ["mitmdump", "-s", "/app/web_addon.py", "--set", "confdir=/ca", "--set", "connection_strategy=lazy", \
+            "--listen-host", "0.0.0.0", "--listen-port", "3128", "--set", "block_global=false", "-q"]

@@ -1,0 +1,9 @@
+# One lookup on the real internet through the web gateway (ADR-0022): the latest version of a package on
+# PyPI, recorded in the workspace and posted on the board. Exercises the proxy's allow list and log.
+[metadata]
+name = "web-lookup"
+difficulty = "trivial"
+tags = ["smoke", "internet"]
+
+[verifier]
+timeout_sec = 60

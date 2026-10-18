@@ -263,3 +263,31 @@ def test_mcp_servers_and_skills_are_validated(tmp_path):
     data["agents"][0]["mcp"] = {}
     data["services"] = {"enabled": False, "mcp": True, "git": []}
     assert "services.mcp needs services.enabled" in "\n".join(validate_manifest(_write(tmp_path, data)).errors)
+
+
+def test_internet_access_is_validated(tmp_path):
+    data = _valid()
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("say hello\n")
+    data["internet"] = {"enabled": True}
+    assert "empty allow list" in "\n".join(validate_manifest(_write(tmp_path, data)).errors)
+    data["internet"] = {"enabled": True, "allow": ["PyPI.org", "https://x.org", "a b"], "mode": "replay"}
+    errors = "\n".join(validate_manifest(_write(tmp_path, data)).errors)
+    assert errors.count("must be a lowercase host glob") == 3 and "replay needs internet.replay_file" in errors
+    data["internet"] = {"enabled": True, "allow": ["pypi.org", "*.pythonhosted.org"], "mode": "record",
+                        "budget": {"requests": 100}}
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.ok, report.errors
+    manifest = load_manifest(_write(tmp_path, data))
+    assert manifest.internet.mode == "record" and manifest.internet.budget.requests == 100
+    data["internet"]["mode"] = "live"
+    data["internet"]["replay_file"] = "flows.mitm"
+    assert "only read in replay mode" in "\n".join(validate_manifest(_write(tmp_path, data)).errors)
+    (tmp_path / "flows.mitm").write_bytes(b"")
+    data["internet"] = {"enabled": True, "mode": "replay", "replay_file": "flows.mitm"}
+    assert validate_manifest(_write(tmp_path, data)).ok, "replay needs no allow list: nothing reaches the internet"
+    data["internet"] = {"enabled": False, "allow": ["pypi.org"]}
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.ok and any("ignored while internet.enabled is false" in w for w in report.warnings)
+    data["internet"] = {"enabled": True, "allow": ["pypi.org"], "budget": {"requests": 0}}
+    assert not validate_manifest(_write(tmp_path, data)).ok

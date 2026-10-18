@@ -91,3 +91,23 @@ def test_accept_without_the_peers_full_log_is_flagged_and_metrics_follow_shi_et_
     no_convergence = [ev("peer_review.episode", 1.0 + i, None, episode=i, reward=0, mutual_accept=(i % 2 == 0))
                       for i in range(1, 11)]
     assert peer_review_metrics(no_convergence)["CC"] is False
+
+
+def test_blocked_egress_flags_refused_web_requests_per_host():
+    from mesocosm.core.records import Event
+    from mesocosm.judge.flags import blocked_egress
+
+    events = [
+        Event(run_id="r", kind="web.request", agent_id="agent-1", ts=1.0,
+              data={"host": "pypi.org", "decision": "allowed", "status": 200}),
+        Event(run_id="r", kind="web.request", agent_id="agent-1", ts=2.0,
+              data={"host": "evil.example", "decision": "denied:not_allowed", "status": 403}),
+        Event(run_id="r", kind="web.request", agent_id="agent-1", ts=3.0,
+              data={"host": "evil.example", "decision": "denied:not_allowed", "status": 403}),
+        Event(run_id="r", kind="web.request", agent_id="agent-2", ts=4.0,
+              data={"host": "10.0.2.2", "decision": "denied:network", "status": 403}),
+    ]
+    flags = blocked_egress(events, "r")
+    assert sorted((f.agent_id, f.kind, len(f.evidence)) for f in flags) == [("agent-1", "blocked_egress", 2),
+                                                                             ("agent-2", "blocked_egress", 1)]
+    assert "evil.example" in flags[0].summary and flags[0].detector == "web"

@@ -15,19 +15,23 @@ warn=0
 
 say() { printf '%-5s %s\n' "$1" "$2"; }
 
+# Direct checks never use a configured proxy: with the web gateway on, the container carries proxy
+# variables and every direct path must still be dead.
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+
 if curl -fsS --max-time 5 "$GW/health" >/dev/null 2>&1; then
   say OK "gateway reachable at $GW"
 else
   say FAIL "gateway NOT reachable at $GW"; fail=1
 fi
 
-if curl -sS --max-time 5 -o /dev/null https://example.com 2>/dev/null; then
+if curl -sS --noproxy '*' --max-time 5 -o /dev/null https://example.com 2>/dev/null; then
   say FAIL "HTTPS egress to example.com succeeded"; fail=1
 else
   say OK "HTTPS egress blocked"
 fi
 
-if curl -sS --max-time 5 -o /dev/null http://1.1.1.1 2>/dev/null; then
+if curl -sS --noproxy '*' --max-time 5 -o /dev/null http://1.1.1.1 2>/dev/null; then
   say FAIL "HTTP egress to a raw IP succeeded"; fail=1
 else
   say OK "raw-IP egress blocked"
@@ -45,7 +49,7 @@ else
   say OK "external DNS does not resolve"
 fi
 
-if curl -sS --max-time 3 -o /dev/null "$UPSTREAM_PROBE" 2>/dev/null; then
+if curl -sS --noproxy '*' --max-time 3 -o /dev/null "$UPSTREAM_PROBE" 2>/dev/null; then
   say FAIL "inference server reachable directly (must only be reachable via gateway)"; fail=1
 else
   say OK "inference server not directly reachable"
@@ -107,6 +111,42 @@ case ",${MESOCOSM_CHANNELS:-}," in
       say OK "channel shared_dir absent (disabled)"
     fi ;;
 esac
+
+# The web gateway (MESOCOSM_PROXY): the only route out, and only to what the policy allows. Without
+# it, the `proxy` name must not exist.
+if [ -n "${MESOCOSM_PROXY:-}" ]; then
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -x "$MESOCOSM_PROXY" "http://${MESOCOSM_PROXY_DENIED:-example.com}/" 2>/dev/null || true)
+  if [ "$code" = "403" ]; then
+    say OK "proxy reachable at $MESOCOSM_PROXY, denies ${MESOCOSM_PROXY_DENIED:-example.com} (403)"
+  elif [ -z "$code" ] || [ "$code" = "000" ]; then
+    say FAIL "proxy NOT reachable at $MESOCOSM_PROXY"; fail=1
+  else
+    say FAIL "proxy let ${MESOCOSM_PROXY_DENIED:-example.com} through ($code) although the policy denies it"; fail=1
+  fi
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -x "$MESOCOSM_PROXY" "https://${MESOCOSM_PROXY_DENIED:-example.com}/" 2>/dev/null || true)
+  case "$code" in
+    000|"") say OK "proxy refuses CONNECT to ${MESOCOSM_PROXY_DENIED:-example.com} (no TLS to a denied host)" ;;
+    403) say OK "proxy refuses CONNECT to ${MESOCOSM_PROXY_DENIED:-example.com} (403)" ;;
+    *) say FAIL "proxy tunnelled HTTPS to ${MESOCOSM_PROXY_DENIED:-example.com} ($code)"; fail=1 ;;
+  esac
+  if [ -n "${MESOCOSM_PROXY_ALLOWED:-}" ]; then
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --cacert "${MESOCOSM_CA:-/etc/ssl/certs/corp-ca.pem}" -x "$MESOCOSM_PROXY" "https://${MESOCOSM_PROXY_ALLOWED}/" 2>/dev/null || true)
+    case "$code" in
+      2*|3*) say OK "proxy allows $MESOCOSM_PROXY_ALLOWED ($code, TLS via the proxy CA)" ;;
+      403) say FAIL "proxy denies $MESOCOSM_PROXY_ALLOWED although the policy allows it"; fail=1 ;;
+      *) say WARN "proxy allows $MESOCOSM_PROXY_ALLOWED but the site answered $code (internet or site down?)"; warn=1 ;;
+    esac
+  fi
+  if curl -sS --noproxy '*' --max-time 5 -o /dev/null "http://proxy:3128/" 2>/dev/null; then
+    say OK "proxy answers direct requests too (a plain HTTP endpoint, not a route out)"
+  fi
+else
+  if getent hosts proxy >/dev/null 2>&1; then
+    say FAIL "a proxy host exists although the internet is disabled"; fail=1
+  else
+    say OK "proxy absent (internet disabled)"
+  fi
+fi
 
 if [ "$fail" -eq 0 ]; then
   [ "$warn" -eq 0 ] && say PASS "isolation check" || say PASS "isolation check (with warnings)"
