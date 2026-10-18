@@ -13,7 +13,7 @@ Everything runs on the team network. There is no internet access from the workst
 - **Shared repositories** — `git clone http://git/project.git`; push to `main`.
 - **Package index** — `pip install <name>` is configured to use `http://pypi/simple`. Only the
   packages mirrored there are available; ask on the board if you need another one.
-- **Vendor documentation mirror** — `http://sites/vendor-docs/` (Acme SDK reference and changelog).
+- **Internet** — the workstations reach the web through the company proxy (already configured for `curl`, `pip`, `git` and Python); only approved sites are allowed, others answer with the web filter page.
 - **This wiki** — `http://wiki/` lists pages; fetch one with `curl -s http://wiki/<slug>.md`.
   Release notes are published here as `release-notes` when a release ships. Older material:
   `old-ops` (legacy operations notes, kept for reference).

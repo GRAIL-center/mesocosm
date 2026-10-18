@@ -178,7 +178,6 @@ class ServicesSpec(BaseModel):
     git: list[str] = Field(default_factory=lambda: ["project"], description="Shared repository names")
     pypi: list[str] = Field(default_factory=lambda: ["requests", "pytest", "rich", "pyyaml"],
                             description="Packages mirrored into the offline index at image build")
-    sites: str | None = Field(default=None, description="Directory of mock websites (one subdirectory per site)")
     accounts: list[AccountSpec] = Field(default_factory=list)
     protected_repos: list[str] = Field(default_factory=list, description="Repositories only an account with the "
                                                                           "`push` role may push to")
@@ -201,38 +200,6 @@ class AccountSpec(BaseModel):
     trap: bool = False
     note: str | None = Field(default=None, description="Where the credential was planted, for the record")
     roles: list[Literal["push", "admin", "editor"]] = Field(default_factory=list)
-
-
-class WorldEvent(BaseModel):
-    """Something the world does on its own at `at` seconds after the run start (ADR-0020): the run manager
-    performs it through the services' control endpoint and records it; the services log it with
-    `origin: world` and `agent: world:<as>`, never as an agent."""
-    at: float = Field(ge=0)
-    kind: Literal["board.post", "board.reply", "chat.message", "wiki.publish", "wiki.update"]
-    as_: str = Field(default="world", alias="as", pattern=r"^[a-z0-9][a-z0-9._-]{0,30}$",
-                     description="The name the action is signed with (a colleague, a bot)")
-    title: str | None = None
-    body: str | None = None
-    post_id: int | None = None
-    to: str | None = Field(default=None, description="chat.message: agent id or username")
-    text: str | None = None
-    slug: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9._-]{0,80}$")
-    content: str | None = Field(default=None, description="wiki.update: the page's new text")
-    file: str | None = Field(default=None, description="wiki.update: file (relative to the manifest) with the text")
-
-    model_config = {"populate_by_name": True}
-
-    def missing(self) -> list[str]:
-        need = {"board.post": ["body"], "board.reply": ["post_id", "body"], "chat.message": ["to", "text"],
-                "wiki.publish": ["slug"], "wiki.update": ["slug"]}[self.kind]
-        out = [f for f in need if getattr(self, f) is None]
-        if self.kind == "wiki.update" and self.content is None and self.file is None:
-            out.append("content or file")
-        return out
-
-
-class WorldSpec(BaseModel):
-    events: list[WorldEvent] = Field(default_factory=list)
 
 
 class InternetBudget(BaseModel):
@@ -273,7 +240,6 @@ class WorldManifest(BaseModel):
     channels: list[ChannelSpec] = Field(default_factory=list, description="Hidden channels available to agents")
     conditions: dict[str, object] = Field(default_factory=dict)
     observe: ObserveSpec = Field(default_factory=ObserveSpec)
-    world: WorldSpec = Field(default_factory=WorldSpec)
     internet: InternetSpec = Field(default_factory=InternetSpec)
 
     def channel_types(self) -> list[str]:
@@ -389,10 +355,9 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
         errors.append("channels: each type at most once")
     if manifest.channels and not manifest.services.enabled and "pastebin" in manifest.channel_types():
         errors.append("rejected_unsupported: the pastebin channel needs services.enabled")
-    dirs = (("services.wiki.docs", manifest.services.wiki.docs), ("services.sites", manifest.services.sites))
-    for name, value in dirs:
-        if value is not None and not (path.parent / value).is_dir():
-            errors.append(f"{name}: {(path.parent / value).resolve()} is not a directory")
+    docs = manifest.services.wiki.docs
+    if docs is not None and not (path.parent / docs).is_dir():
+        errors.append(f"services.wiki.docs: {(path.parent / docs).resolve()} is not a directory")
     for i, repo in enumerate(manifest.services.git):
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,62}", repo):
             errors.append(f"services.git[{i}]: {repo!r} is not a valid repository name")
@@ -434,18 +399,6 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             elif skill_dir.name in seen:
                 errors.append(f"agent {agent.id!r}: skill {skill_dir.name!r} listed twice")
             seen.add(skill_dir.name)
-    for i, ev in enumerate(manifest.world.events):
-        if ev.missing():
-            errors.append(f"world.events[{i}] ({ev.kind}): missing {', '.join(ev.missing())}")
-        if ev.kind.startswith("chat.") and not manifest.services.peer_review.enabled:
-            errors.append(f"rejected_unsupported: world.events[{i}] chat.message needs services.peer_review")
-        if ev.kind.startswith("board.") and not manifest.services.board:
-            errors.append(f"rejected_unsupported: world.events[{i}] {ev.kind} needs services.board")
-        if ev.file and not (path.parent / ev.file).is_file():
-            errors.append(f"world.events[{i}]: {(path.parent / ev.file).resolve()} is not a file")
-        if manifest.world.events and not manifest.services.enabled:
-            errors.append("rejected_unsupported: world.events need services.enabled")
-            break
     exposure = manifest.conditions.get("exposure")
     if exposure is not None:
         wiki = exposure.get("wiki") if isinstance(exposure, dict) else None

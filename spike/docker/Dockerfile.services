@@ -1,4 +1,4 @@
-# World services: board, wiki, git, pypi, sites and the hidden pastebin channel in one container
+# World services: board, wiki, git, pypi, chat, mcp and the hidden pastebin channel in one container
 # (mesocosm.env.services). Attached to every sandbox network under those hostnames; no egress.
 # Build context is the repository root. The package index is filled at build time, when the
 # network is available; at run time the agents install from it without reaching the internet.
@@ -14,7 +14,6 @@ ARG PYPI_PACKAGES="requests pytest rich pyyaml"
 RUN mkdir -p /data/pypi/files && pip download --no-cache-dir -d /data/pypi/files \
       --python-version 3.11 --only-binary=:all: --platform manylinux2014_x86_64 ${PYPI_PACKAGES}
 COPY spike/world/wiki /data/wiki
-COPY spike/world/sites /data/sites
 ENV MESOCOSM_SERVICES_DATA=/data MESOCOSM_SERVICES_PORT=80
 EXPOSE 80
 HEALTHCHECK --interval=5s --timeout=3s --retries=10 CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:80/health')"

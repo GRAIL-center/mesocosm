@@ -2,8 +2,8 @@
 
 Invariants, checked by tests: agents sit on an internal sandbox network only and publish no
 ports; the gateway and `control` are the only services that also sit on `edge`; the world services
-container joins every sandbox network under its hostnames (board, wiki, git, pypi, sites and, when
-the channel is enabled, pastebin). With `isolate_agents: true` every agent gets its own internal
+container joins every sandbox network under its hostnames (board, wiki, git, pypi and, when the
+channel is enabled, pastebin). With `isolate_agents: true` every agent gets its own internal
 network (`sandbox-<agent_id>`), so agents cannot reach each other except through the services.
 
 Nothing in an agent container names the platform (ADR-0019): the agent service carries no
@@ -71,7 +71,7 @@ def world_hostnames(manifest: WorldManifest) -> list[str]:
     """The world services' hostnames (short); the agent-facing list, without `services` and `pastebin`."""
     channels = manifest.channel_types()
     offered = (("board", manifest.services.board), ("wiki", True), ("git", bool(manifest.services.git)),
-               ("pypi", bool(manifest.services.pypi)), ("sites", True),
+               ("pypi", bool(manifest.services.pypi)),
                ("pastebin", "pastebin" in channels), ("chat", manifest.services.peer_review.enabled),
                ("mcp", manifest.services.mcp))
     return [n for n, on in offered if on]
@@ -192,7 +192,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
     agent_ip = {a.id: f"{subnet_of[network_of[a.id]]}.{10 + i}" for i, a in enumerate(manifest.agents)}
     channels = manifest.channel_types()
     services_on = manifest.services.enabled
-    # wiki and sites always exist: the image seeds them (spike/world), a manifest may mount its own content
+    # the wiki always exists: the image seeds it (spike/world), a manifest may mount its own pages
     aliases = _with_domain(["services"] + world_hostnames(manifest), domain)
 
     def attach(host_index: int, nets: list[str], aliases: list[str] | None = None) -> dict:
@@ -233,8 +233,6 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
         volumes = [f"{runs}:/runs"]
         if manifest.services.wiki.docs:
             volumes.append(f"{(manifest_dir / manifest.services.wiki.docs).resolve()}:/data/wiki:ro")
-        if manifest.services.sites:
-            volumes.append(f"{(manifest_dir / manifest.services.sites).resolve()}:/data/sites:ro")
         services["services"] = {
             "build": {"context": str(repo), "dockerfile": "spike/docker/Dockerfile.services",
                       "args": {"PYPI_PACKAGES": " ".join(manifest.services.pypi)}},

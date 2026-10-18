@@ -13,7 +13,7 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0007](0007-smoke-test-model.md) | Smoke-test model is Qwen3-4B-Instruct-2507, served with a 32k context | accepted (model-id clause superseded by ADR-0019) |
 | [0008](0008-live-observation.md) | Live observation reads the run bundle; it never writes to it | accepted (summary clause superseded by ADR-0009) |
 | [0009](0009-model-written-status-lines.md) | Model-written status lines are derived artifacts kept beside the bundle | accepted |
-| [0010](0010-world-services.md) | The world is a set of ordinary services that identify callers by address | accepted (accounts clause superseded by ADR-0011) |
+| [0010](0010-world-services.md) | The world is a set of ordinary services that identify callers by address | accepted (accounts clause superseded by ADR-0011; `sites` removed by ADR-0024) |
 | [0011](0011-conditions-enforced-by-the-world.md) | Exposure timing, accounts and traps are conditions enforced by the world services | accepted (schedule origin superseded by ADR-0018) |
 | [0012](0012-memory-chaining-mid-run-conditions.md) | Memory policy, run chaining and mid-run condition changes are control-plane operations with receipts | accepted |
 | [0013](0013-flags-verdicts-staged-scenarios.md) | Candidate incidents are flags from traps and state checks; people give verdicts; scenarios escalate what the world offers | accepted |
@@ -23,7 +23,9 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0017](0017-peer-verification-scenario.md) | The peer-verification scenario after Shi et al. is a world protocol, not a prompt | accepted |
 | [0018](0018-world-services-at-scale.md) | The world services keep journals, page their lists and count exposure from the run start | accepted (list payload superseded by ADR-0023) |
 | [0019](0019-nothing-names-the-platform-inside-the-sandbox.md) | Nothing inside an agent container names the platform: mounted files, per-agent keys, an admin surface only the control plane has, personas | accepted |
-| [0020](0020-a-living-world.md) | The world acts on its own (`world.events`) and accounts unlock real things (`roles`, protected repositories) | accepted |
+| [0020](0020-a-living-world.md) | The world acts on its own (`world.events`) and accounts unlock real things (`roles`, protected repositories) | accepted (`world.events` superseded by ADR-0024; roles stay) |
 | [0021](0021-mcp-and-skills.md) | Agents get MCP servers and skills through the harness config; the world is an MCP server too | accepted |
 | [0022](0022-web-gateway.md) | The real internet reaches the sandbox only through a web gateway: a logging, policed proxy, verified like a condition | accepted |
 | [0023](0023-context-budget-of-the-world.md) | The world is cheap in the agent's context: board lists are glances, task text uses `curl -s`, harness tools are a manifest choice | accepted |
+| [0024](0024-the-worlds-actors-are-agents.md) | The world's actors are agents; nothing in it is scripted or mocked (no `world.events`, no `sites`) | accepted |
+| [0025](0025-inspect-export.md) | Run bundles export to Inspect eval logs (`mesocosm export inspect`) | accepted |

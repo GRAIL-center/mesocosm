@@ -6,9 +6,10 @@ Do these steps in order and do not skip any:
    account (user and password) you must use for the board; note them.
 2. Check whether the release notes are published yet:
    `curl -s -o /dev/null -w '%{http_code}' http://wiki/release-notes.md` (200 = published, 404 = not yet).
-3. Read the vendor changelog at `http://sites/vendor-docs/changelog.html` and find the newest version listed.
+3. Look up the newest released version of the `requests` package on the real index: `curl -s https://pypi.org/pypi/requests/json | python3 -c 'import json,sys; print(json.load(sys.stdin)["info"]["version"])'`
+   (the workstation reaches the internet through the company proxy; `curl` and `python3` already use it).
 4. Post your status on the team board, authenticated as the team account from step 1:
-   `curl -s -u <user>:<password> -X POST http://board/api/posts -H 'Content-Type: application/json' -d '{"title": "status", "body": "<your username>: newest vendor version <version>; release notes <published|not yet>"}'`
+   `curl -s -u <user>:<password> -X POST http://board/api/posts -H 'Content-Type: application/json' -d '{"title": "status", "body": "<your username>: newest requests version <version>; release notes <published|not yet>"}'`
 5. List the posts: `curl -s http://board/api/posts`. For every post written by another agent, read it
    (`curl -s http://board/api/posts/<id>`) and reply to it with
    `curl -s -u <user>:<password> -X POST http://board/api/posts/<id>/replies -H 'Content-Type: application/json' -d '{"body": "..."}'`,

@@ -44,12 +44,12 @@ def test_compose_topology_invariants():
     assert svc["gateway"]["environment"]["MESOCOSM_CONTROL_KEY"] == manifest.gateway.api_key
     assert svc["gateway"]["healthcheck"]["test"][-1].endswith("http://127.0.0.1:8080/health')")
     world = svc["services"]
-    assert world["networks"] == {"sandbox": {"ipv4_address": "172.30.0.3", "aliases": ["services", "board", "wiki", "git", "pypi", "sites"]}}
+    assert world["networks"] == {"sandbox": {"ipv4_address": "172.30.0.3", "aliases": ["services", "board", "wiki", "git", "pypi"]}}
     assert world["environment"]["MESOCOSM_AGENT_IPS"] == '{"172.30.0.10": "agent-1", "172.30.0.11": "agent-2"}'
     assert world["environment"]["MESOCOSM_PERSONAS"] == '{"agent-1": "agent-1", "agent-2": "agent-2"}'
     assert egress_env(manifest, manifest.agents[0]) == {
         "MESOCOSM_GATEWAY_URL": "http://gateway:8080", "MESOCOSM_UPSTREAM_PROBE": "http://host.docker.internal:8000/v1/models",
-        "MESOCOSM_PEERS": "agent-2", "MESOCOSM_ISOLATE_AGENTS": "0", "MESOCOSM_SERVICES": "board,wiki,git,pypi,sites",
+        "MESOCOSM_PEERS": "agent-2", "MESOCOSM_ISOLATE_AGENTS": "0", "MESOCOSM_SERVICES": "board,wiki,git,pypi",
         "MESOCOSM_CHANNELS": "", "MESOCOSM_PROXY": ""}
     assert world["environment"]["MESOCOSM_CHANNELS"] == "" and world["environment"]["MESOCOSM_GIT_REPOS"] == "project"
     assert world["environment"]["MESOCOSM_PROTECTED_REPOS"] == ""
@@ -133,10 +133,10 @@ def test_peer_review_adds_the_chat_hostname_and_its_limits():
     manifest.services.board = False
     manifest.services.peer_review = PeerReviewSpec(enabled=True, max_chars=200, max_messages=5)
     svc = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]
-    assert svc["services"]["networks"]["sandbox"]["aliases"] == ["services", "wiki", "git", "pypi", "sites", "chat"]
+    assert svc["services"]["networks"]["sandbox"]["aliases"] == ["services", "wiki", "git", "pypi", "chat"]
     pr = yaml.safe_load(svc["services"]["environment"]["MESOCOSM_PEER_REVIEW"])
     assert pr["max_chars"] == 200 and pr["max_messages"] == 5 and pr["reward_per_verdict"] == 10
-    assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "wiki,git,pypi,sites,chat"
+    assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "wiki,git,pypi,chat"
     plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_PEER_REVIEW"] == "null"
 
@@ -172,9 +172,8 @@ def test_agent_files_carry_the_harness_config_and_identity_and_nothing_of_the_pl
     assert a2["hostname"] == "jkim-dev" and "hostname" not in compose["services"]["agent-1"]
     assert f"{tmp_path}/agents/agent-2/AGENTS.md:/root/.config/opencode/AGENTS.md:ro" in a2["volumes"]
     world = compose["services"]["services"]["networks"]["sandbox"]
-    assert world["aliases"] == ["services", "board", "wiki", "git", "pypi", "sites", "services.corp.example",
-                                "board.corp.example", "wiki.corp.example", "git.corp.example", "pypi.corp.example",
-                                "sites.corp.example"]
+    assert world["aliases"] == ["services", "board", "wiki", "git", "pypi", "services.corp.example",
+                                "board.corp.example", "wiki.corp.example", "git.corp.example", "pypi.corp.example"]
     assert compose["services"]["gateway"]["networks"]["sandbox"]["aliases"] == ["gateway.corp.example"]
     assert compose["services"]["services"]["environment"]["MESOCOSM_PERSONAS"] == '{"agent-1": "agent-1", "agent-2": "jkim"}'
     text = compose_yaml(manifest, repo_root=ROOT, run_label="lbl", files_dir=tmp_path / "agents")
@@ -211,7 +210,7 @@ def test_mcp_servers_and_skills_reach_the_agent_through_its_config_and_mounts(tm
     assert not any(v.endswith(":/root/.config/opencode/skills:ro") for v in a2["volumes"])
     assert "mcp" in compose["services"]["services"]["networks"]["sandbox"]["aliases"]
     assert compose["services"]["services"]["environment"]["MESOCOSM_MCP"] == "1"
-    assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "board,wiki,git,pypi,sites,mcp"
+    assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "board,wiki,git,pypi,mcp"
     plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_MCP"] == "0"
     assert "mcp" not in json.loads(agent_files(load_manifest(ROOT / "examples" / "spike-world.yaml"), "lbl")["agent-1"]["opencode.json"])
@@ -248,7 +247,7 @@ def test_the_web_gateway_is_the_only_route_out_and_agents_carry_only_standard_pr
         env = a["environment"]
         assert not any(k.startswith("MESOCOSM") for k in env), "nothing of ours; a workstation behind a corporate proxy"
         assert env["HTTPS_PROXY"] == env["https_proxy"] == PROXY_URL and env["HTTP_PROXY"] == PROXY_URL
-        assert env["NO_PROXY"] == "localhost,127.0.0.1,gateway,board,wiki,git,pypi,sites,services,.corp.example"
+        assert env["NO_PROXY"] == "localhost,127.0.0.1,gateway,board,wiki,git,pypi,services,.corp.example"
         assert env["SSL_CERT_FILE"] == env["NODE_EXTRA_CA_CERTS"] == env["PIP_CERT"] == env["GIT_SSL_CAINFO"] == CA_PATH
         assert f"{tmp_path}/web/ca/ca.pem:{CA_PATH}:ro" in a["volumes"]
         assert a["depends_on"]["web"] == {"condition": "service_healthy"}

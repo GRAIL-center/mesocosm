@@ -27,7 +27,7 @@ from mesocosm.core.records import RunBundle
 from mesocosm.core.report import bundle_report
 from mesocosm.judge.flags import KINDS, flag_counts
 
-RELATIVE_PATHS = (("tasks", "path"), ("services", "wiki", "docs"), ("services", "sites"))
+RELATIVE_PATHS = (("tasks", "path"), ("services", "wiki", "docs"))
 
 
 class Stage(BaseModel):
@@ -78,11 +78,6 @@ def _absolutize(manifest: dict[str, Any], base_dir: pathlib.Path) -> None:
     wiki = services.get("wiki") or {}
     if wiki.get("docs"):
         wiki["docs"] = str((base_dir / wiki["docs"]).resolve())
-    if services.get("sites"):
-        services["sites"] = str((base_dir / services["sites"]).resolve())
-    for event in (manifest.get("world") or {}).get("events") or []:
-        if isinstance(event, dict) and event.get("file"):
-            event["file"] = str((base_dir / event["file"]).resolve())
     for agent in manifest.get("agents") or []:
         if isinstance(agent, dict) and agent.get("skills"):
             agent["skills"] = [str((base_dir / s).resolve()) for s in agent["skills"]]

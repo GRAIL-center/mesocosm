@@ -22,7 +22,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-SANDBOX_HOSTS = ("gateway", "services", "board", "wiki", "git", "pypi", "sites", "pastebin", "chat", "mcp", "proxy",
+SANDBOX_HOSTS = ("gateway", "services", "board", "wiki", "git", "pypi", "pastebin", "chat", "mcp", "proxy",
                  "control", "localhost", "host.docker.internal")
 LOCAL_SUFFIXES = (".local", ".internal", ".localhost", ".lan", ".home", ".corp")
 PORTS = (80, 443)

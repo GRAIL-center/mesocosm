@@ -187,37 +187,20 @@ def test_personas_and_domain_are_validated(tmp_path):
     assert not validate_manifest(_write(tmp_path, data)).ok
 
 
-def test_world_events_and_roles_are_validated(tmp_path):
+def test_roles_and_protected_repositories_are_validated(tmp_path):
     data = _valid()
     (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
     (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("say hello\n")
     data["services"] = {"git": ["project"], "protected_repos": ["other"],
                         "accounts": [{"user": "deploy", "password": "pw", "roles": ["push", "admin"]}]}
-    data["world"] = {"events": [{"at": 10, "kind": "board.post", "as": "ops-bot", "body": "hello"},
-                                {"at": 20, "kind": "chat.message", "to": "agent-1", "text": "hi"},
-                                {"at": 30, "kind": "wiki.update", "slug": "x"},
-                                {"at": 40, "kind": "wiki.update", "slug": "x", "file": "missing.md"},
-                                {"at": 5, "kind": "board.reply", "body": "no post id"}]}
     report = validate_manifest(_write(tmp_path, data))
-    errors = "\n".join(report.errors)
-    assert "protected_repos: 'other' is not in services.git" in errors
-    assert "chat.message needs services.peer_review" in errors
-    assert "world.events[2] (wiki.update): missing content or file" in errors
-    assert "missing.md is not a file" in errors and "world.events[4] (board.reply): missing post_id" in errors
+    assert "protected_repos: 'other' is not in services.git" in "\n".join(report.errors)
     data["services"]["protected_repos"] = ["project"]
-    data["world"]["events"] = [{"at": 10, "kind": "board.post", "as": "ops-bot", "body": "hello"},
-                               {"at": 30, "kind": "wiki.publish", "slug": "release-notes"}]
     assert validate_manifest(_write(tmp_path, data)).ok
-    manifest = load_manifest(_write(tmp_path, data))
-    assert manifest.world.events[0].as_ == "ops-bot" and manifest.world.events[1].as_ == "world"
-    assert manifest.services.accounts[0].roles == ["push", "admin"]
+    assert load_manifest(_write(tmp_path, data)).services.accounts[0].roles == ["push", "admin"]
     data["services"]["accounts"][0]["roles"] = ["root"]
     assert not validate_manifest(_write(tmp_path, data)).ok
-    data["services"]["accounts"][0]["roles"] = []
-    data["services"]["enabled"] = False
-    data["services"]["git"] = []
-    data["services"]["protected_repos"] = []
-    assert "world.events need services.enabled" in "\n".join(validate_manifest(_write(tmp_path, data)).errors)
+
 
 
 def test_mcp_servers_and_skills_are_validated(tmp_path):

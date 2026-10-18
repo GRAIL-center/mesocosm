@@ -6,7 +6,6 @@ One container, several hostnames (compose network aliases), one process:
     wiki      "old wiki" documents         markdown files; each may become visible at a set time
     git       shared repositories          git smart HTTP (clone, fetch, push), no auth
     pypi      offline package index        PEP 503 simple index over a wheel cache (pip install works)
-    sites     mock websites                static directories
     pastebin  hidden channel               unlisted paste service; exists only if the manifest enables it
 
 Every request is logged with the agent's identity, derived from the container's fixed address
@@ -45,7 +44,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from mesocosm.env.services import mcp as mcp_protocol
 
-OFFICIAL = ("board", "wiki", "git", "pypi", "sites")
+OFFICIAL = ("board", "wiki", "git", "pypi")
 CHANNELS = ("pastebin", "shared_dir")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9._-]{0,80}$")
 LIST_LIMIT, LIST_MAX = 50, 200     # board page size: default and the most a caller may ask for
@@ -63,7 +62,6 @@ class Settings:
         # pushes to these need an account with the `push` role (ADR-0020)
         self.protected_repos: list[str] = [r for r in env.get("MESOCOSM_PROTECTED_REPOS", "").split(",") if r]
         self.wiki_dir = pathlib.Path(env.get("MESOCOSM_WIKI_DIR", str(self.data / "wiki")))
-        self.sites_dir = pathlib.Path(env.get("MESOCOSM_SITES_DIR", str(self.data / "sites")))
         self.pypi_dir = pathlib.Path(env.get("MESOCOSM_PYPI_DIR", str(self.data / "pypi")))
         # {slug: seconds after service start}; the manifest's `exposure` condition, overriding front matter
         self.wiki_visibility: dict[str, float] = json.loads(env.get("MESOCOSM_WIKI_VISIBILITY", "{}"))
@@ -181,12 +179,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             log.write({**base, "op": "trap_triggered", "note": note})
         log.write({**base, "op": op, **fields})
 
-    def record_world(request: Request, service: str, op: str, actor: str, **fields: Any) -> None:
-        """A line for something the world did (ADR-0020): attributed to `world:<actor>`, never to an agent."""
-        log.write({"ts": time.time(), "service": service, "agent": f"world:{actor}",
-                   "ip": request.client.host if request.client else "?", "method": "WORLD", "path": request.url.path,
-                   "origin": "world", "op": op, **fields})
-
     # ---- dispatch by hostname -------------------------------------------------------------
 
     @app.middleware("http")
@@ -256,54 +248,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         control_only(request)
         return {"verdicts": chat.verdicts_for(epoch), "epoch": chat.epoch}
 
-    @app.post("/admin/world")
-    async def admin_world(request: Request):
-        """The world acts (ADR-0020): the run manager performs a scheduled event here. Logged with
-        `origin: world`, signed with the event's `as` name, never attributed to an agent."""
-        control_only(request)
-        ev = await request.json()
-        kind, actor = str(ev.get("kind") or ""), str(ev.get("as") or "world")
-        if kind == "board.post":
-            post = board.add(author=actor, title=str(ev.get("title") or ""), body=str(ev["body"]), claimed=None)
-            record_world(request, "board", "write", actor, post_id=post["id"], sha256=sha(post["body"]),
-                         size=len(post["body"]), summary=post["body"][:120], author=actor)
-            return {"applied": True, "kind": kind, "post_id": post["id"]}
-        if kind == "board.reply":
-            rep = board.reply(int(ev["post_id"]), author=actor, body=str(ev["body"]))
-            if rep is None:
-                raise HTTPException(404, "no such post")
-            record_world(request, "board", "write", actor, post_id=int(ev["post_id"]), reply_id=rep["id"],
-                         sha256=sha(rep["body"]), size=len(rep["body"]), summary=rep["body"][:120], author=actor)
-            return {"applied": True, "kind": kind, "post_id": int(ev["post_id"]), "reply_id": rep["id"]}
-        if kind == "chat.message":
-            if not st.peer_review:
-                raise HTTPException(404, "chat is not enabled")
-            if chat.epoch is None:
-                raise HTTPException(409, "no episode is open")
-            to = agent_named(str(ev.get("to") or ""))
-            if to is None:
-                raise HTTPException(400, "to must name an agent")
-            msg = chat.add_message(actor, to, str(ev["text"]))
-            record_world(request, "chat", "write", actor, to=to, chars=len(msg["text"]), epoch=chat.epoch,
-                         message_id=msg["id"], sha256=sha(msg["text"]), summary=msg["text"][:120])
-            return {"applied": True, "kind": kind, "message_id": msg["id"], "to": to}
-        if kind == "wiki.publish":
-            slug = str(ev["slug"])
-            if wiki_doc(st, slug) is None:
-                raise HTTPException(404, "no such page")
-            st.wiki_visibility[slug] = round(time.time() - st.started, 3)
-            record_world(request, "wiki", "publish", actor, doc=slug)
-            return {"applied": True, "kind": kind, "slug": slug, "visible_after_seconds": st.wiki_visibility[slug]}
-        if kind == "wiki.update":
-            slug, text = str(ev["slug"]), str(ev["content"])
-            if not SLUG.match(slug):
-                raise HTTPException(400, "bad slug")
-            st.wiki_edits.mkdir(parents=True, exist_ok=True)
-            (st.wiki_edits / f"{slug}.md").write_text(text, encoding="utf-8")
-            record_world(request, "wiki", "write", actor, doc=slug, sha256=sha(text), size=len(text))
-            return {"applied": True, "kind": kind, "slug": slug, "sha256": sha(text)}
-        raise HTTPException(400, f"unknown event kind {kind!r}")
-
     @app.get("/")
     async def index(request: Request):
         service = request.state.service
@@ -337,11 +281,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if service == "pypi":
             record(request, "pypi", "read_index")
             return HTMLResponse('<a href="/simple/">simple index</a>')
-        if service == "sites":
-            names = sorted(p.name for p in st.sites_dir.iterdir()) if st.sites_dir.is_dir() else []
-            record(request, "sites", "read_list", sites=names)
-            return HTMLResponse("<ul>" + "".join(f'<li><a href="/{html.escape(n)}/">{html.escape(n)}</a></li>'
-                                                  for n in names) + "</ul>")
         if service == "git":
             record(request, "git", "read_list", repos=st.git_repos)
             return PlainTextResponse("\n".join(f"http://git/{r}.git" for r in st.git_repos) + "\n")
@@ -664,25 +603,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             record(request, "git", op if request.method == "POST" else f"{op}_refs", repo=repo, git_service=service,
                    status=status, size=len(body))
         return Response(out, status_code=status, headers=headers)
-
-    # ---- mock sites (static) -------------------------------------------------------------
-
-    @app.get("/{site}/{path:path}")
-    async def site_file(request: Request, site: str, path: str):
-        if request.state.service != "sites":
-            raise HTTPException(404)
-        root = (st.sites_dir / site).resolve()
-        target = (root / (path or "index.html")).resolve()
-        if target.is_dir():
-            target = target / "index.html"
-        if not str(target).startswith(str(root)) or not target.is_file():
-            record(request, "sites", "read_missing", site=site, path=path)
-            raise HTTPException(404)
-        data = target.read_bytes()
-        record(request, "sites", "read", site=site, path=path, size=len(data))
-        media = {".html": "text/html", ".htm": "text/html", ".md": "text/plain", ".txt": "text/plain"}.get(
-            target.suffix, "application/octet-stream")
-        return Response(data, media_type=media)
 
     return app
 

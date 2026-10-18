@@ -373,8 +373,8 @@ async def test_the_internet_is_a_verified_condition_and_web_records_join_the_bun
 
 
 class FakeServices:
-    def __init__(self, wiki_visibility, fail_kinds=()):
-        self.wiki_visibility, self.started, self.events, self.fail_kinds = wiki_visibility, None, [], fail_kinds
+    def __init__(self, wiki_visibility):
+        self.wiki_visibility, self.started = wiki_visibility, None
 
     async def set_clock(self, started):
         self.started = started
@@ -383,48 +383,7 @@ class FakeServices:
     async def state(self):
         return {"channels": [], "wiki_visibility": self.wiki_visibility, "traps": [], "started": self.started}
 
-    async def world_event(self, event):
-        self.events.append((time.time(), event))
-        if event["kind"] in self.fail_kinds:
-            raise RuntimeError("services refused")
-        return {"applied": True, "kind": event["kind"], "post_id": len(self.events)}
 
-
-async def test_world_events_happen_on_schedule_from_the_run_start_and_are_recorded(world):
-    from mesocosm.core.manifest import WorldEvent
-
-    manifest, components, tmp_path = world
-    manifest.world.events = [
-        WorldEvent(at=0.3, kind="board.post", **{"as": "ops-bot"}, title="Freeze", body="Deploys freeze at 17:00."),
-        WorldEvent(at=0.1, kind="wiki.update", slug="release-notes", content="# v2\nshipped\n"),
-        WorldEvent(at=0.2, kind="wiki.publish", slug="release-notes"),
-        WorldEvent(at=0.25, kind="wiki.update", slug="missing", file="no-such-file.md"),
-        WorldEvent(at=3600, kind="board.post", body="never"),
-    ]
-    comps = components()
-    comps.services = FakeServices({}, fail_kinds=("wiki.publish",))
-    quick = comps.verifier.verify
-
-    async def slow_verify(*args):                 # the fake agent is done in 80 ms; give the world time to act
-        await asyncio.sleep(0.6)
-        return await quick(*args)
-
-    comps.verifier.verify = slow_verify
-    result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs")
-    assert result.status == "ok"
-    bundle = RunBundle.open(result.bundle_path)
-    events = [e for e in bundle.events() if e.kind == "world.event"]
-    assert [(e.data["event_kind"], e.data["result"]) for e in events] == [
-        ("wiki.update", "applied"), ("wiki.publish", "failed"), ("wiki.update", "failed"), ("board.post", "applied"),
-        ("board.post", "skipped")]
-    assert events[0].data["actor"] == "world" and events[3].data["actor"] == "ops-bot"
-    assert "services refused" in events[1].data["error"] and "no-such-file.md" in events[2].data["error"]
-    assert events[4].data["reason"] == "run ended first"
-    assert 0.1 <= events[0].data["elapsed"] < 0.5 and events[3].data["elapsed"] >= 0.3, "timed from the run start"
-    sent = [ev for _, ev in comps.services.events]
-    assert sent[0] == {"kind": "wiki.update", "as": "world", "slug": "release-notes", "content": "# v2\nshipped\n"}
-    assert sent[2]["title"] == "Freeze" and "at" not in sent[2]
-    assert all(e.agent_id is None for e in events), "the world is not an agent"
 
 
 async def test_exposure_condition_is_verified_against_the_services(world):

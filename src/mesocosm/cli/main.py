@@ -20,6 +20,7 @@ snapshot_app = typer.Typer(no_args_is_help=True, help="Snapshots of a world's de
 activations_app = typer.Typer(no_args_is_help=True, help="Activations recomputed from recorded token ids")
 flags_app = typer.Typer(no_args_is_help=True, help="Candidate incidents and their review")
 scenario_app = typer.Typer(no_args_is_help=True, help="Staged scenarios")
+export_app = typer.Typer(no_args_is_help=True, help="Run bundles in formats other tools read")
 app.add_typer(world_app, name="world")
 app.add_typer(env_app, name="env")
 app.add_typer(observe_app, name="observe")
@@ -28,6 +29,7 @@ app.add_typer(flags_app, name="flags")
 app.add_typer(scenario_app, name="scenario")
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(activations_app, name="activations")
+app.add_typer(export_app, name="export")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
 WORKSPACE_ROOT_OPT = typer.Option(pathlib.Path("spike/workspace"), "--workspace-root")
@@ -501,6 +503,22 @@ def conditions_set(bundle: pathlib.Path, agent_id: str, condition: str,
     admin = GatewayAdmin(gateway) if gateway else gateway_admin_of(bundle)
     receipt = asyncio.run(set_condition(bundle, agent_id, condition, parsed, admin))
     _emit(receipt.model_dump(mode="json"), json_, ok=receipt.result == "applied")
+
+
+@export_app.command("inspect")
+def export_inspect(bundle: pathlib.Path,
+                   out: pathlib.Path = typer.Option(None, "--out", help="Where to write; default "
+                                                                        "<bundle>/exports/<run id>.json"),
+                   json_: bool = JSON_OPT) -> None:
+    """Write the bundle as an Inspect eval log (JSON, version 2): `inspect view` opens it (ADR-0025)."""
+    import json as _json
+
+    from mesocosm.export.inspect_log import write_inspect_log
+
+    path = write_inspect_log(bundle, out)
+    log = _json.loads(path.read_text(encoding="utf-8"))
+    _emit({"written": str(path), "status": log["status"], "samples": len(log["samples"]),
+           "not_exported": log["eval"]["metadata"]["mesocosm"]["not_exported"]}, json_)
 
 
 @flags_app.command("list")

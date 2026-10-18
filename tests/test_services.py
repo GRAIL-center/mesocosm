@@ -25,7 +25,6 @@ def settings(tmp_path, channels=(), repos=("project",), extra_env=None) -> Setti
     st.channels = list(channels)
     st.git_repos = list(repos)
     st.wiki_dir = tmp_path / "wiki"
-    st.sites_dir = tmp_path / "sites"
     st.pypi_dir = tmp_path / "pypi"
     return st
 
@@ -109,13 +108,11 @@ async def test_pastebin_exists_only_when_the_channel_is_enabled(tmp_path):
         assert "pastebin" not in (await c.get("/")).text
 
 
-async def test_pypi_simple_index_and_sites(tmp_path):
+async def test_pypi_simple_index(tmp_path):
     st = settings(tmp_path)
     (st.pypi_dir / "files").mkdir(parents=True)
     (st.pypi_dir / "files" / "requests-2.32.0-py3-none-any.whl").write_bytes(b"wheel-bytes")
     (st.pypi_dir / "files" / "PyYAML-6.0.2.tar.gz").write_bytes(b"sdist")
-    (st.sites_dir / "docs").mkdir(parents=True)
-    (st.sites_dir / "docs" / "index.html").write_text("<h1>Internal docs</h1>")
     app = create_app(st)
     async with client(app, "172.30.0.11", "pypi") as c:
         idx = (await c.get("/simple/")).text
@@ -124,12 +121,8 @@ async def test_pypi_simple_index_and_sites(tmp_path):
         assert "requests-2.32.0-py3-none-any.whl#sha256=" in proj
         assert (await c.get("/files/requests-2.32.0-py3-none-any.whl")).content == b"wheel-bytes"
         assert (await c.get("/simple/nothing/")).status_code == 404
-    async with client(app, "172.30.0.12", "sites") as c:
-        assert "docs" in (await c.get("/")).text
-        assert (await c.get("/docs/")).text == "<h1>Internal docs</h1>"
-        assert (await c.get("/docs/../../etc/passwd")).status_code == 404
     ops = [(ln["service"], ln["op"]) for ln in log_lines(st.log_path)]
-    assert ("pypi", "download") in ops and ("sites", "read") in ops
+    assert ("pypi", "download") in ops
 
 
 def free_port() -> int:
@@ -440,48 +433,6 @@ async def test_roles_unlock_board_deletion_and_wiki_edits(tmp_path):
     assert ("board", "denied", 401, "admin", None) in ops and ("board", "denied", 403, "admin", "dev") in ops
     assert ("board", "delete", None, None, "ops") in ops and ("wiki", "write", None, None, "ops") in ops
 
-
-async def test_the_world_acts_through_the_control_endpoint_and_is_logged_as_the_world(tmp_path):
-    st = settings(tmp_path)
-    st.wiki_dir.mkdir()
-    (st.wiki_dir / "release-notes.md").write_text("---\ntitle: Notes\n---\nv2 shipped\n")
-    st.wiki_visibility = {"release-notes": 3600}
-    st.personas = {"agent-1": "jkim", "agent-2": "mlee"}
-    st.peer_review = {"max_chars": 50, "max_messages": 5}
-    app = create_app(st)
-    async with client(app, "172.30.0.11", "board") as b, client(app, "172.30.0.11", "wiki") as w, \
-            client(app, "172.30.0.12", "chat") as c2, client(app, "172.30.0.4", "172.30.0.3") as control:
-        assert (await b.post("/admin/world", json={"kind": "board.post", "body": "x"})).status_code == 404
-        r = await control.post("/admin/world", json={"kind": "board.post", "as": "ops-bot", "title": "Deploy window",
-                                                      "body": "Deploys freeze at 17:00 today."})
-        assert r.json() == {"applied": True, "kind": "board.post", "post_id": 1}
-        post = (await b.get("/api/posts/1")).json()
-        assert post["author"] == "ops-bot" and post["claimed_author"] is None
-        r = await control.post("/admin/world", json={"kind": "board.reply", "as": "mlee", "post_id": 1, "body": "ack"})
-        assert r.json()["reply_id"] == 1 and (await b.get("/api/posts/1")).json()["replies"][0]["author"] == "mlee"
-        assert (await control.post("/admin/world", json={"kind": "board.reply", "post_id": 9, "body": "x"})).status_code == 404
-        assert (await w.get("/release-notes.md")).status_code == 404
-        r = await control.post("/admin/world", json={"kind": "wiki.publish", "slug": "release-notes", "as": "docs"})
-        assert r.json()["applied"] and (await w.get("/release-notes.md")).text == "v2 shipped\n"
-        assert (await control.get("/admin/state")).json()["wiki_visibility"]["release-notes"] < 3600
-        assert (await control.post("/admin/world", json={"kind": "wiki.publish", "slug": "nope"})).status_code == 404
-        r = await control.post("/admin/world", json={"kind": "wiki.update", "slug": "release-notes", "as": "docs",
-                                                      "content": "v2.1 shipped\n"})
-        assert r.json()["applied"] and (await w.get("/release-notes.md")).text == "v2.1 shipped\n"
-        assert (await control.post("/admin/world", json={"kind": "chat.message", "to": "mlee", "text": "hi"})).status_code == 409
-        await control.post("/admin/epoch", json={"epoch": "ep01"})
-        r = await control.post("/admin/world", json={"kind": "chat.message", "as": "lead", "to": "mlee", "text": "status?"})
-        assert r.json() == {"applied": True, "kind": "chat.message", "message_id": 1, "to": "agent-2"}
-        inbox = (await c2.get("/api/messages")).json()["messages"]
-        assert [(m["from"], m["to"], m["text"]) for m in inbox] == [("lead", "mlee", "status?")]
-        assert (await control.post("/admin/world", json={"kind": "chat.message", "to": "nobody", "text": "x"})).status_code == 400
-        assert (await control.post("/admin/world", json={"kind": "weather", "as": "x"})).status_code == 400
-    world = [ln for ln in log_lines(st.log_path) if ln.get("origin") == "world"]
-    assert [(ln["service"], ln["op"], ln["agent"]) for ln in world] == [
-        ("board", "write", "world:ops-bot"), ("board", "write", "world:mlee"), ("wiki", "publish", "world:docs"),
-        ("wiki", "write", "world:docs"), ("chat", "write", "world:lead")]
-    assert world[0]["author"] == "ops-bot" and world[0]["post_id"] == 1 and world[-1]["to"] == "agent-2"
-    assert all(ln["agent"] in ("agent-1", "agent-2") for ln in log_lines(st.log_path) if ln["op"] == "admin_denied")
 
 
 async def test_the_world_is_an_mcp_server_whose_tool_calls_are_logged_like_any_request(tmp_path):

@@ -211,14 +211,8 @@ def fork_manifest(snapshot_root: str | pathlib.Path, patch: dict[str, Any], out_
         wiki = (manifest.get("services") or {}).get("wiki") or {}
         if wiki.get("docs") and not pathlib.Path(wiki["docs"]).is_absolute():
             wiki["docs"] = str((base_dir / wiki["docs"]).resolve())
-        sites = (manifest.get("services") or {}).get("sites")
-        if sites and not pathlib.Path(sites).is_absolute():
-            manifest["services"]["sites"] = str((base_dir / sites).resolve())
         if (manifest.get("stream") or {}).get("dir") and not pathlib.Path(manifest["stream"]["dir"]).is_absolute():
             manifest["stream"]["dir"] = str((base_dir / manifest["stream"]["dir"]).resolve())
-        for event in (manifest.get("world") or {}).get("events") or []:
-            if event.get("file") and not pathlib.Path(event["file"]).is_absolute():
-                event["file"] = str((base_dir / event["file"]).resolve())
         for agent in manifest.get("agents") or []:
             agent["skills"] = [s if pathlib.Path(s).is_absolute() else str((base_dir / s).resolve())
                                for s in agent.get("skills") or []]
