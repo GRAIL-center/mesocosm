@@ -126,19 +126,24 @@ def test_exposure_schedule_and_accounts_reach_the_services_container():
     assert service_address(manifest, "services") == "172.30.1.3" and service_address(manifest, "control") == "172.30.1.4"
 
 
-def test_peer_review_adds_the_chat_hostname_and_its_limits():
-    from mesocosm.core.manifest import PeerReviewSpec
+def test_chat_adds_the_hostname_and_carries_its_limits_and_peer_review_rides_on_it():
+    from mesocosm.core.manifest import ChatSpec, PeerReviewSpec
     manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
     manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
     manifest.services.board = False
-    manifest.services.peer_review = PeerReviewSpec(enabled=True, max_chars=200, max_messages=5)
+    manifest.services.chat = ChatSpec(enabled=True, channels=[], max_chars=200, max_messages=5)
+    manifest.services.peer_review = PeerReviewSpec(enabled=True)
     svc = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]
     assert svc["services"]["networks"]["sandbox"]["aliases"] == ["services", "wiki", "git", "pypi", "chat"]
+    chat = yaml.safe_load(svc["services"]["environment"]["MESOCOSM_CHAT"])
+    assert chat["channels"] == [] and chat["max_chars"] == 200 and chat["max_messages"] == 5
     pr = yaml.safe_load(svc["services"]["environment"]["MESOCOSM_PEER_REVIEW"])
-    assert pr["max_chars"] == 200 and pr["max_messages"] == 5 and pr["reward_per_verdict"] == 10
+    assert pr["topology"] == "all" and pr["reward_per_verdict"] == 10 and "max_chars" not in pr
     assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "wiki,git,pypi,chat"
     plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_PEER_REVIEW"] == "null"
+    assert plain["services"]["services"]["environment"]["MESOCOSM_CHAT"] == "null"
+    assert "chat" not in plain["services"]["services"]["networks"]["sandbox"]["aliases"]
 
 
 def test_agent_files_carry_the_harness_config_and_identity_and_nothing_of_the_platform(tmp_path):

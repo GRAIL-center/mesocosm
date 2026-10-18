@@ -163,6 +163,8 @@ class AgentState:
     last_request_ts: float | None = None
     last_error: str | None = None
     flags: deque = field(default_factory=lambda: deque(maxlen=FLAGS_MAX))   # trap credentials used, etc.
+    web_requests: int = 0                    # through the web gateway (ADR-0022), the agent's own
+    web_denied: int = 0
 
 
 class Observer:
@@ -245,6 +247,8 @@ class Observer:
         elif kind.startswith("service."):
             if not self._live_services:          # the end-of-run copy counts only when no live log is tailed
                 self.apply_service_record({"ts": ts, "agent": agent_id, "op": kind[len("service."):], **data})
+        elif kind == "web.request":
+            self._apply_web(ts, agent_id, data)
         if kind == "harness.events_ended" and agent_id:
             pass
 
@@ -259,13 +263,14 @@ class Observer:
         agent_id = rec.get("agent") or "unknown"
         service, op = rec.get("service") or "?", rec.get("op") or "?"
         key = rec.get("post_id") or rec.get("paste_id") or rec.get("doc") or rec.get("repo") or rec.get("package") \
-            or rec.get("file") or rec.get("site")
+            or rec.get("file") or rec.get("message_id")
         if self.known_agents and agent_id not in self.known_agents:
             self.ignored_records += 1
             return
         agent = self._agent(agent_id)
         item = {"ts": ts, "kind": "service", "service": service, "op": op, "key": key,
-                "summary": rec.get("summary"), "sha256": rec.get("sha256"), "account": rec.get("account")}
+                "summary": rec.get("summary"), "sha256": rec.get("sha256"), "account": rec.get("account"),
+                "to": rec.get("to") or (f"#{rec['channel']}" if rec.get("channel") else None)}   # chat messages
         if op == "trap_triggered":
             agent.flags.append({"ts": ts, "kind": "trap", "service": service, "account": rec.get("account"),
                                 "note": rec.get("note")})
@@ -280,6 +285,23 @@ class Observer:
         elif op == "read_list":                      # a board list shows titles and excerpts (via: list)
             for post_id in rec.get("post_ids") or []:
                 self._join_read(ts, agent_id, service, post_id, None, via="list")
+
+    def _apply_web(self, ts: float | None, agent_id: str | None, data: dict[str, Any]) -> None:
+        """A request through the web gateway (ADR-0022) on the agent's timeline, refusals counted. The egress
+        check's probes and the harness's own update checks are marked in the bundle and left out here."""
+        if data.get("probe") or data.get("origin") == "harness":
+            return
+        agent = self._agent(agent_id)
+        denied = str(data.get("decision") or "").startswith("denied")
+        agent.web_requests += 1
+        agent.web_denied += denied
+        item = {"ts": ts, "kind": "web", "method": data.get("method"), "host": data.get("host"),
+                "path": data.get("path"), "decision": data.get("decision"), "status": data.get("status"),
+                "bytes": data.get("response_bytes")}
+        session = self._active_session(agent)
+        node = self.sessions.get(session) if session else None
+        if node is not None:
+            node.items.append(item)
 
     def _join_read(self, ts, agent_id: str, service: str, key, sha256, via: str | None = None) -> None:
         writer = self._writers.get((service, str(key)))
@@ -408,7 +430,7 @@ class Observer:
                 "requests": agent.requests_total, "completion_tokens": agent.completion_tokens_total,
                 "rewards": agent.rewards, "root_sessions": list(agent.root_sessions),
                 "last_request_ts": agent.last_request_ts, "last_error": agent.last_error,
-                "flags": list(agent.flags),
+                "flags": list(agent.flags), "web": {"requests": agent.web_requests, "denied": agent.web_denied},
             })
         return {
             "run_id": self.run_id, "status": self.status, "started_ts": self.started_ts,

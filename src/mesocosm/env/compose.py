@@ -2,8 +2,8 @@
 
 Invariants, checked by tests: agents sit on an internal sandbox network only and publish no
 ports; the gateway and `control` are the only services that also sit on `edge`; the world services
-container joins every sandbox network under its hostnames (board, wiki, git, pypi and, when the
-channel is enabled, pastebin). With `isolate_agents: true` every agent gets its own internal
+container joins every sandbox network under its hostnames (board, wiki, git, pypi, chat, mcp and, when
+the channel is enabled, pastebin). With `isolate_agents: true` every agent gets its own internal
 network (`sandbox-<agent_id>`), so agents cannot reach each other except through the services.
 
 Nothing in an agent container names the platform (ADR-0019): the agent service carries no
@@ -72,7 +72,7 @@ def world_hostnames(manifest: WorldManifest) -> list[str]:
     channels = manifest.channel_types()
     offered = (("board", manifest.services.board), ("wiki", True), ("git", bool(manifest.services.git)),
                ("pypi", bool(manifest.services.pypi)),
-               ("pastebin", "pastebin" in channels), ("chat", manifest.services.peer_review.enabled),
+               ("pastebin", "pastebin" in channels), ("chat", manifest.services.chat.enabled),
                ("mcp", manifest.services.mcp))
     return [n for n, on in offered if on]
 
@@ -247,6 +247,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_MCP": "1" if manifest.services.mcp else "0",
                 "MESOCOSM_WIKI_VISIBILITY": json.dumps((manifest.conditions.get("exposure") or {}).get("wiki", {})),
                 "MESOCOSM_ACCOUNTS": json.dumps([a.model_dump() for a in manifest.services.accounts]),
+                "MESOCOSM_CHAT": json.dumps(manifest.services.chat.model_dump()
+                                            if manifest.services.chat.enabled else None),
                 "MESOCOSM_PEER_REVIEW": json.dumps(manifest.services.peer_review.model_dump()
                                                    if manifest.services.peer_review.enabled else None),
             },

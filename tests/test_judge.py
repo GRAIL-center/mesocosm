@@ -75,7 +75,7 @@ def test_accept_without_the_peers_full_log_is_flagged_and_metrics_follow_shi_et_
         ev("service.verdict", 3.0, "agent-1", service="chat", about="agent-2", epoch="ep01", verdict="accept"),
         ev("service.verdict", 3.1, "agent-2", service="chat", about="agent-1", epoch="ep01", verdict="reject"),
         ev("raw_log.closed", 4.0, "agent-2", task="ep02", entries=1, chars=300),
-        ev("service.write", 5.0, "agent-2", service="chat", to="agent-1", epoch="ep02", chars=300),
+        ev("service.write", 5.0, "agent-2", service="chat", to=None, channel="general", epoch="ep02", chars=300),
         ev("service.verdict", 6.0, "agent-1", service="chat", about="agent-2", epoch="ep02", verdict="accept"),
     ]
     flags = detect(events, RUN)

@@ -31,6 +31,8 @@ def world_on_disk(tmp_path):
     (services / "git" / "project.git").mkdir(parents=True)
     (services / "git" / "project.git" / "HEAD").write_text("ref: refs/heads/main\n")
     (services / "board.jsonl").write_text(json.dumps({"kind": "post", "id": 1, "body": "hello"}) + "\n")
+    (services / "wiki-edits").mkdir()
+    (services / "wiki-edits" / "runbook.md").write_text("# Runbook\nedited by an editor\n")
     (services / "pypi").mkdir()
     (services / "pypi" / "big.whl").write_bytes(b"x" * 10)        # not part of a snapshot: the image seeds it
     shared = tmp_path / "shared"
@@ -57,13 +59,15 @@ async def test_snapshot_restore_roundtrip_is_hash_verified_and_declares_coverage
     assert [c["component"] for c in cov["captured"]] == ["workspace", "workspace", "services", "shared_dir",
                                                          "task_queue", "manifest"]
     assert read_tar_names(root / "workspaces" / "agent-1.tar.gz") == ["notes.md", "src/a.py"]
-    assert sorted(p.name for p in (root / "services").iterdir()) == ["board.jsonl", "git"], "the index is not copied"
+    assert sorted(p.name for p in (root / "services").iterdir()) == ["board.jsonl", "git", "wiki-edits"], \
+        "the index is not copied; pages written at run time are"
     queue = json.loads((root / "queue.json").read_text())
     assert queue["pending"] == ["t2"] and queue["assigned"] == {"t1": "agent-1"} and queue["finished"] == {"agent-1/t1": 1.0}
     assert queue_state(bundle) == queue
     files = json.loads((root / "files.json").read_text())
     assert set(files) == {"workspaces/agent-1/notes.md", "workspaces/agent-1/src/a.py", "workspaces/agent-2/b.txt",
-                          "services/board.jsonl", "services/git/project.git/HEAD", "shared/handoff.txt"}
+                          "services/board.jsonl", "services/git/project.git/HEAD", "services/wiki-edits/runbook.md",
+                          "shared/handoff.txt"}
 
     # the world moves on, then comes back exactly
     (ws / "agent-1" / "notes.md").write_text("changed\n")
@@ -71,8 +75,8 @@ async def test_snapshot_restore_roundtrip_is_hash_verified_and_declares_coverage
     (services / "board.jsonl").write_text("{}")
     (shared / "handoff.txt").unlink()
     result = await restore_snapshot(root, ws, world)
-    assert result["ok"] and result["mismatches"] == [] and result["verified_files"] == 6
-    assert result["restored"] == {"workspace:agent-1": 2, "workspace:agent-2": 1, "services": 2, "shared_dir": 1}
+    assert result["ok"] and result["mismatches"] == [] and result["verified_files"] == 7
+    assert result["restored"] == {"workspace:agent-1": 2, "workspace:agent-2": 1, "services": 3, "shared_dir": 1}
     assert (ws / "agent-1" / "notes.md").read_text() == "done\n" and not (ws / "agent-1" / "extra.txt").exists()
     assert json.loads((services / "board.jsonl").read_text())["body"] == "hello"
     assert (shared / "handoff.txt").read_text() == "psst\n" and (services / "pypi" / "big.whl").exists()

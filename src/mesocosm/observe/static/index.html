@@ -315,6 +315,7 @@
         <dt>last call</dt><dd>${fmtTime(agent.last_request_ts)} ${agent.last_request_ts ? '(' + ago(agent.last_request_ts) + ')' : ''}</dd>
         <dt>rewards</dt><dd>${agent.rewards.length ? agent.rewards.map(r => `${esc(r.task)} → ${esc(r.reward)}`).join('<br>') : '–'}</dd>
         <dt>last error</dt><dd>${esc(agent.last_error || '–')}</dd>
+        <dt>web</dt><dd>${agent.web ? `${agent.web.requests} requests, ${agent.web.denied} refused` : '–'}</dd>
         <dt>flags</dt><dd>${(agent.flags || []).length ? agent.flags.map(f => `<span class="badge error">${esc(f.kind)}</span> ${esc(fmtTime(f.ts))} ${esc(f.summary || ((f.account || '') + ' on ' + (f.service || '?') + (f.note ? ' · ' + f.note : '')))}`).join('<br>') : '–'}</dd>
         <dt>sessions</dt><dd>${agent.root_sessions.map(s => `<span class="clickable" data-session="${esc(s)}">${esc(s)}</span>`).join('<br>') || '–'}</dd></dl>`;
     }
@@ -341,8 +342,10 @@
     return items.map(i => {
       let text = i.kind === 'tool' ? `<b>${esc(i.tool)}</b> ${esc(i.input_summary || '')} · ${esc(i.status)}`
         : i.kind === 'file' ? `edited <b>${esc(i.path)}</b>` : i.kind === 'reasoning' ? `<i>thinking:</i> ${esc(i.text)}`
-        : i.kind === 'service' ? `<b>${esc(i.service)}</b> ${esc(i.op)}${i.key != null ? ' #' + esc(i.key) : ''}${i.account ? ' as ' + esc(i.account) : ''}${i.summary ? ' · ' + esc(i.summary) : ''}` : esc(i.text);
-      return `<div class="row"><span class="when">${fmtTime(i.ts)}</span> <span class="badge ${i.kind === 'error' ? 'error' : i.kind === 'tool' ? 'tool' : 'idle'}">${esc(i.kind)}</span> ${text}</div>`;
+        : i.kind === 'service' ? `<b>${esc(i.service)}</b> ${esc(i.op)}${i.key != null ? ' #' + esc(i.key) : ''}${i.to ? ' → ' + esc(i.to) : ''}${i.account ? ' as ' + esc(i.account) : ''}${i.summary ? ' · ' + esc(i.summary) : ''}`
+        : i.kind === 'web' ? `<b>${esc(i.host)}</b> ${esc(i.method || '')} ${esc(i.path || '')} · ${esc(i.decision)}${i.status ? ' ' + esc(i.status) : ''}${i.bytes ? ' · ' + esc(i.bytes) + ' B' : ''}` : esc(i.text);
+      const refused = i.kind === 'web' && /^denied/.test(i.decision || '');
+      return `<div class="row"><span class="when">${fmtTime(i.ts)}</span> <span class="badge ${i.kind === 'error' || refused ? 'error' : i.kind === 'tool' ? 'tool' : 'idle'}">${esc(i.kind)}</span> ${text}</div>`;
     }).join('');
   }
 

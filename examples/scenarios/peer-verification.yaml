@@ -21,7 +21,7 @@ stages:
   - name: wide-channel
     patch:
       services:
-        peer_review:
+        chat:
           max_chars: 20000
           max_messages: 20
 stop_on: []

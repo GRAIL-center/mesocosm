@@ -7,6 +7,7 @@ One container, several hostnames (compose network aliases), one process:
     git       shared repositories          git smart HTTP (clone, fetch, push), no auth
     pypi      offline package index        PEP 503 simple index over a wheel cache (pip install works)
     pastebin  hidden channel               unlisted paste service; exists only if the manifest enables it
+    chat      team messages                 public channels and direct messages; caps are conditions (ADR-0027)
 
 Every request is logged with the agent's identity, derived from the container's fixed address
 (MESOCOSM_AGENT_IPS), so an agent cannot claim to be another one. The log is the environment-level
@@ -68,7 +69,9 @@ class Settings:
         self.accounts: list[dict[str, Any]] = json.loads(env.get("MESOCOSM_ACCOUNTS", "[]"))
         # {agent id: username}: how each agent appears to the others (ADR-0019); the log keeps the agent id
         self.personas: dict[str, str] = json.loads(env.get("MESOCOSM_PERSONAS", "{}"))
-        # peer review (ADR-0017): a constrained message channel and verdicts, under the `chat` hostname
+        # the chat service (ADR-0027): {channels, max_chars, max_messages}, under the `chat` hostname
+        self.chat: dict[str, Any] | None = json.loads(env.get("MESOCOSM_CHAT", "null"))
+        # peer review (ADR-0017) on top of the chat: verdicts, message counts per episode
         self.peer_review: dict[str, Any] | None = json.loads(env.get("MESOCOSM_PEER_REVIEW", "null"))
         self.mcp = env.get("MESOCOSM_MCP", "0") == "1"       # the board and wiki as MCP tools (ADR-0021)
         self.started = time.time()
@@ -187,7 +190,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request.state.service = service
         if service == "pastebin" and "pastebin" not in st.channels:
             return PlainTextResponse("not found", status_code=404)
-        if service == "chat" and not st.peer_review:
+        if service == "chat" and not st.chat:
             return PlainTextResponse("not found", status_code=404)
         if service == "mcp" and not st.mcp:
             return PlainTextResponse("not found", status_code=404)
@@ -209,7 +212,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "protected_repos": st.protected_repos, "mcp": st.mcp,
                 "personas": st.personas, "accounts": [a["user"] for a in st.accounts],
                 "traps": [a["user"] for a in st.accounts if a.get("trap")],
-                "peer_review": st.peer_review, "epoch": chat.epoch,
+                "chat": st.chat, "peer_review": st.peer_review, "epoch": chat.epoch,
                 "started": st.started, "log_records": log.count}
 
     def control_only(request: Request) -> None:
@@ -266,14 +269,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                      "GET  /api/paste/<id>\nGET  /api/pastes            (recent)\n")
         if service == "chat":
             record(request, "chat", "read_usage")
-            pr = st.peer_review or {}
-            members = ", ".join(username(a) for a in sorted(st.agent_ips.values()))
-            return PlainTextResponse(f"chat (peer review)\nmembers: {members}\n\n"
-                                     f"POST /api/messages  {{\"to\": <username>, \"text\": ...}}  "
-                                     f"(max {pr.get('max_chars')} chars, {pr.get('max_messages')} per episode)\n"
-                                     "GET  /api/messages            (yours, incl. runner feedback)\n"
-                                     "POST /api/verdicts  {\"about\": <username>, \"verdict\": accept|reject}\n"
-                                     "GET  /api/verdicts\n")
+            return PlainTextResponse(chat_usage())
         if service == "mcp":
             record(request, "mcp", "read_usage")
             return PlainTextResponse("method not allowed: POST JSON-RPC (MCP Streamable HTTP)", status_code=405,
@@ -433,49 +429,90 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                summary=text[:120], author=rep["author"])
         return JSONResponse(rep, status_code=201)
 
-    # ---- chat: the constrained peer-review channel and verdicts (ADR-0017) --------------------
+    # ---- chat: channels and direct messages (ADR-0027); peer-review verdicts on top (ADR-0017) ----
 
     def chat_only(request: Request) -> dict[str, Any]:
-        if request.state.service != "chat" or not st.peer_review:
+        if request.state.service != "chat" or not st.chat:
             raise HTTPException(404)
-        return st.peer_review
+        return st.chat
+
+    def review_only(request: Request) -> None:
+        chat_only(request)
+        if not st.peer_review:
+            raise HTTPException(404)
+
+    def chat_usage() -> str:
+        cfg = st.chat or {}
+        members = ", ".join(username(a) for a in sorted(st.agent_ips.values()))
+        channels = ", ".join(f"#{c}" for c in cfg.get("channels") or []) or "none (direct messages only)"
+        limits = []
+        if cfg.get("max_chars") is not None:
+            limits.append(f"max {cfg['max_chars']} chars")
+        if cfg.get("max_messages") is not None:
+            limits.append(f"{cfg['max_messages']} per {'episode' if st.peer_review else 'run'}")
+        text = (f"chat\nmembers: {members}\nchannels: {channels}\n\n"
+                f"POST /api/messages  {{\"to\": <username> | \"#<channel>\", \"text\": ...}}"
+                + (f"  ({', '.join(limits)})" if limits else "") + "\n"
+                "GET  /api/messages[?since=<ts>&channel=<name>]   (your direct messages and the channels)\n")
+        if st.peer_review:
+            text += ("POST /api/verdicts  {\"about\": <username>, \"verdict\": accept|reject}\n"
+                     "GET  /api/verdicts\n")
+        return text
 
     @app.get("/api/messages")
-    async def list_messages(request: Request, since: float | None = None):
-        chat_only(request)
+    async def list_messages(request: Request, since: float | None = None, channel: str | None = None):
+        """The agent's direct messages (sent and received, with the runner's feedback) and the public
+        channels; `channel` narrows to one channel, `since` to what is new."""
+        cfg = chat_only(request)
         agent, _ = who(request)
-        items = chat.messages_for(agent, since)
-        record(request, "chat", "read_list", count=len(items), epoch=chat.epoch,
-               chars_received=sum(len(m["text"]) for m in items if m["to"] == agent and m["from"] != "runner"))
+        name = channel.lstrip("#") if channel is not None else None
+        if name is not None and name not in (cfg.get("channels") or []):
+            raise HTTPException(404, "no such channel")
+        items = chat.messages_for(agent, since, name)
+        received = [m for m in items if m["from"] not in (agent, "runner")]
+        record(request, "chat", "read_list", count=len(items), epoch=chat.epoch, channel=name,
+               chars_received=sum(len(m["text"]) for m in received))
         return {"messages": [shown(m, "from", "to") for m in items], "epoch": chat.epoch}
 
     @app.post("/api/messages")
     async def send_message(request: Request):
-        pr = chat_only(request)
+        """`to` names a member (a direct message) or a `#channel`. The caps are conditions: a refusal is
+        logged with its reason, and the count is per episode under peer review, per run otherwise."""
+        cfg = chat_only(request)
         agent, _ = who(request)
         body = await request.json()
-        to, text = agent_named(str(body.get("to") or "")), str(body.get("text") or "")
-        if chat.epoch is None:
+        target, text = str(body.get("to") or ""), str(body.get("text") or "")
+        channel = target[1:] if target.startswith("#") else None
+        to = None if channel is not None else agent_named(target)
+        if st.peer_review and chat.epoch is None:
             raise HTTPException(409, "no episode is open")
-        if to is None or to == agent:
-            raise HTTPException(400, "to must name another user")
-        if len(text) > int(pr["max_chars"]):
-            record(request, "chat", "message_rejected", to=to, chars=len(text), epoch=chat.epoch, reason="too_long")
-            return JSONResponse({"success": False, "error": f"MessageError: exceeds {pr['max_chars']} char limit",
+        if channel is not None and channel not in (cfg.get("channels") or []):
+            raise HTTPException(400, "no such channel")
+        if channel is None and (to is None or to == agent):
+            raise HTTPException(400, "to must name another member or a #channel")
+        if not text.strip():
+            raise HTTPException(400, "text is required")
+        where = {"to": to, "channel": channel, "epoch": chat.epoch}
+        max_chars, max_messages = cfg.get("max_chars"), cfg.get("max_messages")
+        if max_chars is not None and len(text) > int(max_chars):
+            record(request, "chat", "message_rejected", chars=len(text), reason="too_long", **where)
+            return JSONResponse({"success": False, "error": f"MessageError: exceeds {max_chars} char limit",
                                  "chars_sent": 0}, status_code=400)
-        if chat.sent_in_epoch(agent) >= int(pr["max_messages"]):
-            record(request, "chat", "message_rejected", to=to, chars=len(text), epoch=chat.epoch, reason="limit")
-            return JSONResponse({"success": False, "error": f"MessageError: message limit ({pr['max_messages']}) "
-                                                              "reached for this episode", "chars_sent": 0},
+        sent = chat.sent_in_epoch(agent) if st.peer_review else chat.sent_total(agent)
+        if max_messages is not None and sent >= int(max_messages):
+            record(request, "chat", "message_rejected", chars=len(text), reason="limit", **where)
+            scope = "this episode" if st.peer_review else "this run"
+            return JSONResponse({"success": False, "error": f"MessageError: message limit ({max_messages}) "
+                                                              f"reached for {scope}", "chars_sent": 0},
                                 status_code=400)
-        msg = chat.add_message(agent, to, text)
-        record(request, "chat", "write", to=to, chars=len(text), epoch=chat.epoch, message_id=msg["id"],
-               sha256=sha(text), summary=text[:120])
+        msg = chat.add_message(agent, to, text, channel)
+        record(request, "chat", "write", chars=len(text), message_id=msg["id"], sha256=sha(text), summary=text[:120],
+               **where)
         return JSONResponse({"success": True, "chars_sent": len(text), "id": msg["id"]}, status_code=201)
 
     @app.get("/api/verdicts")
     async def my_verdicts(request: Request):
-        chat_only(request)
+        review_only(request)
         agent, _ = who(request)
         items = [v for v in chat.verdicts_for(None) if v["from"] == agent]
         record(request, "chat", "read_verdicts", count=len(items), epoch=chat.epoch)
@@ -483,7 +520,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/verdicts")
     async def submit_verdict(request: Request):
-        chat_only(request)
+        review_only(request)
         agent, _ = who(request)
         body = await request.json()
         about, verdict = agent_named(str(body.get("about") or "")), str(body.get("verdict") or "").lower()
@@ -710,7 +747,7 @@ class Board(Journal):
 
 
 class Chat(Journal):
-    """Peer-review channel state: the open episode, messages (capped per episode by the caller),
+    """The team's chat: channel and direct messages (capped by the caller), the open peer-review episode,
     verdicts (one per agent per peer per episode) and the runner's feedback messages."""
 
     def __init__(self, path: pathlib.Path):
@@ -735,21 +772,29 @@ class Chat(Journal):
     def sent_in_epoch(self, sender: str) -> int:
         return sum(1 for m in self.messages if m["from"] == sender and m["epoch"] == self.epoch)
 
-    def add_message(self, sender: str, to: str, text: str) -> dict[str, Any]:
+    def sent_total(self, sender: str) -> int:
+        return sum(1 for m in self.messages if m["from"] == sender)
+
+    def add_message(self, sender: str, to: str | None, text: str, channel: str | None = None) -> dict[str, Any]:
         with self.lock:
             self.append({"kind": "message", "id": len(self.messages) + 1, "ts": time.time(), "epoch": self.epoch,
-                         "from": sender, "to": to, "text": text})
+                         "from": sender, "to": to, "channel": channel, "text": text})
             return self.messages[-1]
 
     def add_feedback(self, to: str, epoch: str, text: str) -> dict[str, Any]:
         with self.lock:
             self.append({"kind": "message", "id": len(self.messages) + 1, "ts": time.time(), "epoch": epoch,
-                         "from": "runner", "to": to, "text": text})
+                         "from": "runner", "to": to, "channel": None, "text": text})
             return self.messages[-1]
 
-    def messages_for(self, agent: str, since: float | None = None) -> list[dict[str, Any]]:
-        return [m for m in self.messages
-                if (m["to"] == agent or m["from"] == agent) and (since is None or m["ts"] > since)]
+    def messages_for(self, agent: str, since: float | None = None,
+                     channel: str | None = None) -> list[dict[str, Any]]:
+        """Direct messages the agent sent or received and every channel message (one channel when named)."""
+        def visible(m: dict[str, Any]) -> bool:
+            if channel is not None:
+                return m.get("channel") == channel
+            return m.get("channel") is not None or m["to"] == agent or m["from"] == agent
+        return [m for m in self.messages if visible(m) and (since is None or m["ts"] > since)]
 
     def add_verdict(self, sender: str, about: str, verdict: str, reason: str) -> dict[str, Any] | None:
         with self.lock:

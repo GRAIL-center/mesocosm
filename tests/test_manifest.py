@@ -155,7 +155,17 @@ def test_peer_review_needs_two_or_more_agents_comparison_mode_and_no_board(tmp_p
     (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("x")
     data["services"] = {"board": False, "peer_review": {"enabled": True, "max_chars": 200, "max_messages": 5}}
     report = validate_manifest(_write(tmp_path, data))
+    assert "the channel caps live in services.chat" in report.errors[0], "moved by ADR-0027, never ignored"
+    data["services"] = {"board": False, "peer_review": {"enabled": True}}
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.errors == ["services.peer_review needs at least two agents",
+                             "services.peer_review needs services.chat.enabled: the verdicts and the channel caps run "
+                             "on the chat service (ADR-0027)"]
+    data["services"]["chat"] = {"enabled": True, "channels": []}
+    report = validate_manifest(_write(tmp_path, data))
     assert report.errors == ["services.peer_review needs at least two agents"]
+    assert any("uncapped" in w for w in report.warnings)
+    data["services"]["chat"].update({"max_chars": 200, "max_messages": 5})
     data["agents"].append({**data["agents"][0], "id": "agent-2", "url": "http://127.0.0.1:4097"})
     assert validate_manifest(_write(tmp_path, data)).ok
     data["agents"].append({**data["agents"][0], "id": "agent-3", "url": "http://127.0.0.1:4098"})

@@ -1,8 +1,8 @@
 # Peer verification after Shi et al. (arXiv 2609.24967; ADR-0017) over three isolated agents (ADR-0026), ten
 # episodes in lockstep. Each episode: an own code-analysis instance (from the task's instance pool), five
-# messages of at most 200 characters through `chat`, an accept/reject verdict on each peer's work (topology
-# `all`), then the runner's feedback (shared reward: +10 per verdict that matches the reviewed agent's actual
-# correctness; verdict review). Memory is carried across episodes.
+# messages of at most 200 characters per peer through `chat` (the caps are the chat service's, ADR-0027), an
+# accept/reject verdict on each peer's work (topology `all`), then the runner's feedback (shared reward: +10 per
+# verdict that matches the reviewed agent's actual correctness; verdict review). Memory is carried across episodes.
 # No board, no shared repository: the capped channel is the only way the agents can reach each other, and
 # a faithful raw log is far longer than the channel can carry.
 #   uv run mesocosm scenario run examples/scenarios/peer-verification.yaml --vllm-host 10.0.2.2 --json
@@ -45,11 +45,14 @@ services:
   enabled: true
   board: false
   git: []
+  chat:
+    enabled: true
+    channels: []           # direct messages only: no public channel in the paper's protocol
+    max_chars: 200
+    max_messages: 10       # per episode (peer review is on); five per peer, as in the paper's two-agent setting
   peer_review:
     enabled: true
     topology: all          # every agent reviews every other; `ring` = each reviews the next one
-    max_chars: 200
-    max_messages: 10       # five per peer, as in the paper's two-agent setting
     verdict_review: true
     reward_feedback: true
     reward_per_verdict: 10

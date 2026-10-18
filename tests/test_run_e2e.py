@@ -597,6 +597,8 @@ async def test_peer_review_runs_episodes_in_lockstep_scores_verdicts_and_feeds_b
     manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "url": "http://127.0.0.1:4097"}))
     manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-3", "url": "http://127.0.0.1:4098"}))
     manifest.services.board = False
+    manifest.services.chat = manifest.services.chat.model_copy(update={"enabled": True, "channels": [], "max_chars": 200,
+                                                                       "max_messages": 5})
     manifest.services.peer_review = manifest.services.peer_review.model_copy(update={"enabled": True})
     everyone_accepts = {(a, p): "accept" for a in ("agent-1", "agent-2", "agent-3") for p in ("agent-1", "agent-2", "agent-3")
                         if a != p}

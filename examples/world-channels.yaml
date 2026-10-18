@@ -56,6 +56,8 @@ services:
   enabled: true
   domain: corp.example     # board.corp.example, wiki.corp.example, ... also resolve; e-mail domain of the personas
   mcp: true                # the board and the wiki also as MCP tools (server `team`, http://mcp/; ADR-0021)
+  chat:
+    enabled: true          # http://chat/: #general and direct messages between jkim and mlee (ADR-0027); uncapped
   git: [project]
   wiki:
     docs: world/wiki

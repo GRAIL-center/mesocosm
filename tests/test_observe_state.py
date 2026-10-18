@@ -281,3 +281,30 @@ def test_lifecycle_events_show_in_the_snapshot():
     assert snap["paused"] is False and snap["stop_requested"] is True and snap["status"] == "running"
     obs.apply_bundle_event(ev("run.stopped", 4.0, "agent-1", before_task="second"))
     assert obs.snapshot()["status"] == "stopped"
+
+
+def test_web_requests_and_chat_messages_show_on_the_timeline():
+    obs = Observer()
+    obs.apply_manifest({"manifest": {"agents": [{"id": "agent-1"}, {"id": "agent-2"}]}})
+    obs.apply_bundle_event(ev("harness.session", 1.0, "agent-1", session_id="s1", task="t"))
+    obs.apply_bundle_event(oc("session.status", 1.5, "s1", "agent-1", status={"type": "busy"}))
+    obs.apply_bundle_event(ev("web.request", 2.0, "agent-1", method="GET", host="pypi.org", path="/pypi/requests/json",
+                              decision="allowed", status=200, response_bytes=193000))
+    obs.apply_bundle_event(ev("web.request", 2.5, "agent-1", method="CONNECT", host="example.com", path="/",
+                              decision="denied_policy", status=403))
+    obs.apply_bundle_event(ev("web.request", 0.5, "agent-1", host="example.com", decision="denied_policy", probe=True))
+    obs.apply_bundle_event(ev("web.request", 2.6, "agent-1", host="registry.npmjs.org", decision="denied_policy",
+                              origin="harness"))
+    obs.apply_service_record({"ts": 3.0, "service": "chat", "op": "write", "agent": "agent-1", "message_id": 1,
+                              "to": None, "channel": "general", "chars": 5, "summary": "hello"})
+    obs.apply_service_record({"ts": 3.5, "service": "chat", "op": "write", "agent": "agent-1", "message_id": 2,
+                              "to": "agent-2", "channel": None, "chars": 3, "summary": "psst"})
+    snap = obs.snapshot()
+    agent = next(a for a in snap["agents"] if a["agent_id"] == "agent-1")
+    assert agent["web"] == {"requests": 2, "denied": 1}, "the egress check's probe and the harness's own check are not the agent's"
+    items = obs.session_details("s1")["items"]
+    web = [i for i in items if i["kind"] == "web"]
+    assert [(i["host"], i["decision"], i["status"], i["bytes"]) for i in web] == [
+        ("pypi.org", "allowed", 200, 193000), ("example.com", "denied_policy", 403, None)]
+    chat = [i for i in items if i["kind"] == "service" and i["service"] == "chat"]
+    assert [(i["key"], i["to"], i["summary"]) for i in chat] == [(1, "#general", "hello"), (2, "agent-2", "psst")]

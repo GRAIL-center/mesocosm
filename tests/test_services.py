@@ -272,7 +272,8 @@ async def test_board_pages_newest_first_and_the_log_names_only_the_page(tmp_path
 
 async def test_journals_are_appended_and_replayed_at_start(tmp_path):
     st = settings(tmp_path, channels=("pastebin",))
-    st.peer_review = {"max_chars": 50, "max_messages": 5}
+    st.chat = {"channels": [], "max_chars": 50, "max_messages": 5}
+    st.peer_review = {"topology": "all"}
     app = create_app(st)
     async with client(app, "172.30.0.11", "board") as b, client(app, "172.30.0.11", "pastebin") as pb, \
             client(app, "172.30.0.11", "chat") as ch, client(app, "172.30.0.4", "172.30.0.3") as control:
@@ -341,7 +342,8 @@ def test_distribution_hashes_are_cached_per_file_version(tmp_path):
 async def test_personas_are_what_agents_see_while_the_log_keeps_agent_ids(tmp_path):
     st = settings(tmp_path, channels=("pastebin",))
     st.personas = {"agent-1": "jkim", "agent-2": "mlee"}
-    st.peer_review = {"max_chars": 50, "max_messages": 5}
+    st.chat = {"channels": [], "max_chars": 50, "max_messages": 5}
+    st.peer_review = {"topology": "all"}
     app = create_app(st)
     async with client(app, "172.30.0.11", "board") as b1, client(app, "172.30.0.12", "board") as b2, \
             client(app, "172.30.0.11", "chat") as c1, client(app, "172.30.0.12", "chat") as c2, \

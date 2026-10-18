@@ -63,7 +63,9 @@ class LocalWorldState:
             shutil.copytree(src, self.shared_dir, dirs_exist_ok=True)
 
 
-SERVICES_ITEMS = ("board.jsonl", "pastes.jsonl", "chat.jsonl", "git")   # the services' journals and repositories
+# The services' journals, repositories and the wiki pages written at run time; the image seeds the rest
+# (the mounted wiki, the package index), so those are not copied.
+SERVICES_ITEMS = ("board.jsonl", "pastes.jsonl", "chat.jsonl", "git", "wiki-edits")
 
 
 def _copy_tree(src: pathlib.Path, dest: pathlib.Path, items: tuple[str, ...], replace: bool = False) -> None:

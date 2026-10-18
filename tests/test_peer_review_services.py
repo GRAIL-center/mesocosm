@@ -10,8 +10,9 @@ from mesocosm.env.services.app import create_app
 
 def pr_settings(tmp_path, **over):
     st = settings(tmp_path)
-    st.peer_review = {"max_chars": 20, "max_messages": 2, "verdict_review": True, "reward_feedback": True,
-                      "reward_per_verdict": 10, **over}
+    st.chat = {"channels": [], "max_chars": 20, "max_messages": 2}
+    st.peer_review = {"topology": "all", "verdict_review": True, "reward_feedback": True, "reward_per_verdict": 10,
+                      **over}
     return st
 
 
@@ -20,6 +21,17 @@ async def test_chat_is_absent_unless_enabled(tmp_path):
     async with client(app, "172.30.0.11", "chat") as c:
         assert (await c.get("/")).status_code == 404
         assert (await c.post("/api/messages", json={"to": "agent-2", "text": "hi"})).status_code == 404
+
+
+async def test_verdicts_exist_only_under_peer_review(tmp_path):
+    st = settings(tmp_path)
+    st.chat = {"channels": ["general"], "max_chars": None, "max_messages": None}
+    app = create_app(st)
+    async with client(app, "172.30.0.11", "chat") as c:
+        assert "verdicts" not in (await c.get("/")).text
+        assert (await c.get("/api/verdicts")).status_code == 404
+        assert (await c.post("/api/verdicts", json={"about": "agent-2", "verdict": "accept"})).status_code == 404
+        assert (await c.post("/api/messages", json={"to": "agent-2", "text": "no episode needed"})).status_code == 201
 
 
 async def test_messages_are_capped_per_episode_and_logged_with_chars(tmp_path):
@@ -71,7 +83,7 @@ async def test_one_verdict_per_peer_per_episode(tmp_path):
         admin = (await control.get("/admin/verdicts", params={"epoch": "ep01"})).json()
         assert [(v["from"], v["about"], v["verdict"]) for v in admin["verdicts"]] == [("agent-1", "agent-2", "accept")]
         state = (await control.get("/admin/state")).json()
-        assert state["epoch"] == "ep01" and state["peer_review"]["max_chars"] == 20
+        assert state["epoch"] == "ep01" and state["chat"]["max_chars"] == 20 and state["peer_review"]["topology"] == "all"
         assert (await a1.get("/admin/verdicts")).status_code == 404, "agents cannot read the control view"
     ops = [(ln["op"], ln["agent"], ln.get("verdict"), ln.get("about")) for ln in log_lines(st.log_path) if ln["service"] == "chat"]
     assert ("verdict", "agent-1", "accept", "agent-2") in ops and ("verdict_rejected", "agent-1", None, "agent-2") in ops

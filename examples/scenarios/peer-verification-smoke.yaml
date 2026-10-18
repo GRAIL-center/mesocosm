@@ -16,7 +16,7 @@ stages:
         - {source: harbor, path: tasks/peer-review/ep02}
         - {source: harbor, path: tasks/peer-review/ep03}
       services:
-        peer_review:
+        chat:
           max_chars: 20000
           max_messages: 20
 stop_on: []

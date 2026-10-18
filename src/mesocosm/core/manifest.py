@@ -16,7 +16,7 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 SUPPORTED_HARNESSES = {"opencode"}
 SUPPORTED_TASK_SOURCES = {"harbor"}
@@ -157,20 +157,48 @@ class WikiSpec(BaseModel):
                                                        "visible_from / visible_after_seconds); default: the seed wiki")
 
 
+CHANNEL_NAME = r"^[a-z0-9][a-z0-9_-]{0,30}$"
+
+
+class ChatSpec(BaseModel):
+    """The team's message service at the `chat` hostname (ADR-0027): public channels (`#name`) every member
+    reads and direct messages between members, all logged by identity. The limits are conditions: a message
+    above `max_chars` is refused and logged; `max_messages` caps what one agent may send, per episode when
+    peer review runs on top of the chat, per run otherwise."""
+    enabled: bool = False
+    channels: list[str] = Field(default_factory=lambda: ["general"],
+                                description="Public channels; empty = direct messages only")
+    max_chars: int | None = Field(default=None, ge=1)
+    max_messages: int | None = Field(default=None, ge=1)
+
+    @field_validator("channels")
+    @classmethod
+    def _channel_names(cls, channels: list[str]) -> list[str]:
+        bad = [c for c in channels if not re.fullmatch(CHANNEL_NAME, c)]
+        if bad or len(set(channels)) != len(channels):
+            raise ValueError(f"channel names must match {CHANNEL_NAME} and be unique: {bad or channels}")
+        return channels
+
+
 class PeerReviewSpec(BaseModel):
-    """The peer-verification protocol after Shi et al. (ADR-0017) over any number of agents (ADR-0026): a
-    `chat` service with a message channel capped per episode, verdicts on the peers' work along a review
-    topology, a shared reward when verdicts match the peers' actual correctness, and runner feedback
-    between episodes."""
+    """The peer-verification protocol after Shi et al. (ADR-0017) over any number of agents (ADR-0026) on top
+    of the chat service (ADR-0027): verdicts on the peers' work along a review topology, message counts per
+    episode, a shared reward when verdicts match the peers' actual correctness, and runner feedback between
+    episodes. The channel's caps are `services.chat.max_chars` / `max_messages`."""
     enabled: bool = False
     topology: Literal["all", "ring"] = Field(default="all", description="Who reviews whom: `all` = every agent "
                                                                         "reviews every other; `ring` = each reviews "
                                                                         "the next agent in manifest order")
-    max_chars: int = Field(default=200, ge=1)
-    max_messages: int = Field(default=5, ge=1)
     verdict_review: bool = Field(default=True, description="Feedback says whether each verdict was right")
     reward_feedback: bool = Field(default=True, description="Feedback states the episode reward")
     reward_per_verdict: int = Field(default=10, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _caps_moved_to_chat(cls, data: object) -> object:
+        if isinstance(data, dict) and ({"max_chars", "max_messages"} & set(data)):
+            raise ValueError("the channel caps live in services.chat (max_chars, max_messages) since ADR-0027")
+        return data
 
 
 def reviewers(agent_ids: list[str], topology: str = "all") -> dict[str, list[str]]:
@@ -184,6 +212,7 @@ class ServicesSpec(BaseModel):
     """The shared world inside the sandbox (mesocosm.env.services). Enabled by default."""
     enabled: bool = True
     board: bool = True
+    chat: ChatSpec = Field(default_factory=ChatSpec)
     peer_review: PeerReviewSpec = Field(default_factory=PeerReviewSpec)
     wiki: WikiSpec = Field(default_factory=WikiSpec)
     git: list[str] = Field(default_factory=lambda: ["project"], description="Shared repository names")
@@ -417,9 +446,17 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             errors.append("conditions.exposure: expected {wiki: {<page slug>: <seconds after start>}}")
         elif not manifest.services.enabled:
             errors.append("rejected_unsupported: conditions.exposure needs services.enabled")
+    if manifest.services.chat.enabled and not manifest.services.enabled:
+        errors.append("rejected_unsupported: services.chat needs services.enabled")
     if manifest.services.peer_review.enabled:
         if len(manifest.agents) < 2:
             errors.append("services.peer_review needs at least two agents")
+        if not manifest.services.chat.enabled:
+            errors.append("services.peer_review needs services.chat.enabled: the verdicts and the channel caps run "
+                          "on the chat service (ADR-0027)")
+        elif manifest.services.chat.max_chars is None and manifest.services.chat.max_messages is None:
+            warnings.append("services.peer_review without services.chat.max_chars / max_messages: the channel is "
+                            "uncapped (the paper's setting is 200 characters, 5 messages per peer per episode)")
         if manifest.mode != "comparison":
             errors.append("rejected_unsupported: services.peer_review runs episodes in lockstep; use mode: comparison")
         if not manifest.services.enabled:
