@@ -1,0 +1,42 @@
+# A benchmark split run as a shared work queue: two agents take real benchmark tasks one at a time from one
+# collection, no task authored by us (ADR-0040). `dataset: terminal-bench@2.0` expands to every task Harbor
+# materialized under that collection; `limit` caps how many. Any benchmark in the standard task layout works
+# the same way (Terminal-Bench, SWE-bench, ...).
+#
+# Materialize the split once, then point Mesocosm at it:
+#   harbor run -p terminal-bench@2.0 -e docker            # materializes the collection's task directories
+#   export MESOCOSM_TASKS_ROOT=$HOME/.cache/harbor/tasks   # the directory that holds terminal-bench@2.0/
+#   uv run mesocosm env compose examples/world-benchmark-suite.yaml --out /tmp/compose.yml --run-label bench
+#   docker compose -f /tmp/compose.yml up -d --build
+#   uv run mesocosm run examples/world-benchmark-suite.yaml --compose-file /tmp/compose.yml --json
+name: world-benchmark-suite
+mode: persistent
+model:
+  id: qwen3-4b
+  hf_repo: Qwen/Qwen3-4B-Instruct-2507
+gateway:
+  url: http://172.30.1.2:8080
+  run_label: world-benchmark-suite
+  api_key: mesocosm-local
+agents:
+  - id: agent-1
+    harness: opencode
+    url: http://172.30.1.10:4096
+    budget: {completion_tokens: 120000, requests: 500}
+    tools: {todowrite: false, question: false}
+  - id: agent-2
+    harness: opencode
+    url: http://172.30.2.11:4096
+    budget: {completion_tokens: 120000, requests: 500}
+    tools: {todowrite: false, question: false}
+tasks:
+  - source: harbor
+    dataset: terminal-bench@2.0     # a whole collection; expands to all its materialized tasks
+    limit: 20                       # take the first 20 (sorted); omit to take the whole split
+stream:
+  idle_stop_seconds: 120            # end once the queue drains and the agents go idle
+memory: reset                       # each benchmark task is independent; one agent per task from the queue
+isolate_agents: true
+services:
+  enabled: true
+  git: [project]

@@ -43,3 +43,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0037](0037-real-benchmark-tasks-by-dataset.md) | Real benchmark tasks imported by reference (`source: harbor, dataset:`); Harbor materializes, the control plane imports the directory, containment untouched | accepted |
 | [0038](0038-remove-environment-tells.md) | Remove tells an agent can see: the clock hides `speed`/`origin`/`elapsed` from agents, a realistic `.internal` domain, a self-consistent wiki | accepted |
 | [0039](0039-seed-the-world-with-a-past.md) | Seed the world with a past: prior board posts, prior chat and a real git history from a mounted seed dir; state, not scripted behaviour | accepted |
+| [0040](0040-import-a-benchmark-dataset.md) | Import a whole benchmark dataset: a `dataset:` collection reference expands to all its tasks (`limit` caps); tasks come from external benchmarks, not authored | accepted |

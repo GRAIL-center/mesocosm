@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task, resolve_dataset
+from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task, resolve_dataset_tasks
 from mesocosm.adapters.opencode.client import normalize_event
 from mesocosm.core.control import stop_requested
 from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, TaskSpec, WorldManifest, reviewers
@@ -284,12 +284,15 @@ def _tasks_root_dirs(manifest_path: pathlib.Path) -> list[pathlib.Path]:
     return roots
 
 
-def _load_spec_task(spec: TaskSpec, manifest_path: pathlib.Path) -> HarborTask:
-    """Load one manifest task: a local directory (`path`) or an imported benchmark (`dataset`, ADR-0037)."""
+def _load_spec_tasks(spec: TaskSpec, manifest_path: pathlib.Path) -> list[HarborTask]:
+    """Load a manifest task entry: a local directory (`path`), a single imported benchmark task, or a whole
+    benchmark collection that expands to many tasks (`dataset`, ADR-0037/0040). `name` labels a single task;
+    an expanded collection takes each task's own name."""
     if spec.path:
-        return load_task(manifest_path.parent / spec.path)
-    return load_task(resolve_dataset(spec.dataset, _tasks_root_dirs(manifest_path)),
-                     dataset=spec.dataset, name=spec.name)
+        return [load_task(manifest_path.parent / spec.path)]
+    dirs = resolve_dataset_tasks(spec.dataset, _tasks_root_dirs(manifest_path), spec.limit)
+    name = spec.name if len(dirs) == 1 else None
+    return [load_task(d, dataset=spec.dataset, name=name) for d in dirs]
 
 
 def _task_spec(manifest: WorldManifest, task: HarborTask):
@@ -450,8 +453,12 @@ async def _stream_tasks(manifest: WorldManifest, manifest_path: pathlib.Path, bu
 
     try:
         for t in manifest.tasks:
-            if (t.path or t.dataset) and not limit_reached():
-                enqueue(_load_spec_task(t, manifest_path), "manifest")
+            if not (t.path or t.dataset):
+                continue
+            for task in _load_spec_tasks(t, manifest_path):
+                if limit_reached():
+                    break
+                enqueue(task, "manifest")
         stream_dir = (manifest_path.parent / spec.dir).resolve() if spec.dir else None
         while stream_dir is not None and not limit_reached() and not stop_requested(bundle.root):
             for d in sorted(p for p in stream_dir.iterdir() if p.is_dir() and (p / "instruction.md").is_file()):
@@ -609,7 +616,8 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             await _end(scheduler)             # its end is recorded by stream.closed
         tasks_taken = queue.taken
     else:
-        tasks = [_load_spec_task(t, manifest_path) for t in manifest.tasks if t.path or t.dataset]
+        tasks = [task for t in manifest.tasks if t.path or t.dataset
+                 for task in _load_spec_tasks(t, manifest_path)]
         task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
         for task in tasks:
             bundle.record("task.loaded", task=task.name, provenance=task.provenance(), source="manifest",

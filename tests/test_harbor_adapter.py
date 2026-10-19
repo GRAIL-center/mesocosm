@@ -8,6 +8,7 @@ from mesocosm.adapters.harbor.task import (
     load_task,
     read_reward,
     resolve_dataset,
+    resolve_dataset_tasks,
     verifier_command,
 )
 
@@ -20,7 +21,7 @@ def _materialize_tb_task(root: pathlib.Path, ref: str) -> pathlib.Path:
     (d / "environment").mkdir(parents=True)
     (d / "tests").mkdir(parents=True)
     (d / "instruction.md").write_text("Fix the failing git hook so `git commit` succeeds.\n", encoding="utf-8")
-    (d / "task.toml").write_text('[metadata]\nname = "fix-git"\ntags = ["terminal-bench"]\n', encoding="utf-8")
+    (d / "task.toml").write_text(f'[metadata]\nname = "{d.name}"\ntags = ["terminal-bench"]\n', encoding="utf-8")
     (d / "environment" / "Dockerfile").write_text("FROM ubuntu:24.04\n", encoding="utf-8")
     (d / "tests" / "test.sh").write_text("#!/bin/sh\necho 1 > /logs/verifier/reward.txt\n", encoding="utf-8")
     return d
@@ -154,20 +155,43 @@ def test_round_prompts_sequence_announced_deadlines_and_the_side_task_on_round_o
     assert "Quietly" not in task.round_prompts("agent-2", ["agent-1"])[0]["prompt"], "not a side-task recipient"
 
 
-def test_run_manager_loads_a_dataset_task_from_the_tasks_root(tmp_path, monkeypatch):
-    """A manifest `dataset:` task is imported through the run manager's loader, resolved from
-    MESOCOSM_TASKS_ROOT, exactly as a local `path:` task would be (ADR-0037)."""
+def test_resolve_dataset_collection_expands_to_all_its_tasks(tmp_path):
+    """A reference that names a whole collection (a directory of task subdirectories) expands to every task in
+    it, sorted and capped at `limit`; a reference that names a single task returns just that one (ADR-0040)."""
+    root = tmp_path / "tasks"
+    for name in ("fix-git", "add-logging", "repair-build"):
+        _materialize_tb_task(root, f"terminal-bench@2.0/{name}")
+    all_tasks = resolve_dataset_tasks("terminal-bench@2.0", [root])
+    assert [p.name for p in all_tasks] == ["add-logging", "fix-git", "repair-build"]      # sorted
+    assert [p.name for p in resolve_dataset_tasks("terminal-bench@2.0", [root], limit=2)] == ["add-logging", "fix-git"]
+    assert [p.name for p in resolve_dataset_tasks("terminal-bench@2.0/fix-git", [root])] == ["fix-git"]  # single
+
+
+def test_resolve_dataset_collection_without_tasks_fails(tmp_path):
+    (tmp_path / "tasks" / "empty-bench").mkdir(parents=True)
+    with pytest.raises(FileNotFoundError, match="no task directories"):
+        resolve_dataset_tasks("empty-bench", [tmp_path / "tasks"])
+
+
+def test_run_manager_imports_a_benchmark_collection_from_the_tasks_root(tmp_path, monkeypatch):
+    """A manifest `dataset:` entry is imported through the run manager's loader from MESOCOSM_TASKS_ROOT: a
+    single task, or a whole collection that expands to many (ADR-0037/0040)."""
     from mesocosm.core.manifest import TaskSpec
-    from mesocosm.core.run import _load_spec_task, _tasks_root_dirs
+    from mesocosm.core.run import _load_spec_tasks, _tasks_root_dirs
 
     cache = tmp_path / "harbor" / "tasks"
-    _materialize_tb_task(cache, "terminal-bench@2.0/fix-git")
+    for name in ("fix-git", "add-logging"):
+        _materialize_tb_task(cache, f"terminal-bench@2.0/{name}")
     monkeypatch.setenv("MESOCOSM_TASKS_ROOT", str(cache))
     manifest_path = tmp_path / "world.yaml"
     manifest_path.write_text("name: w\n", encoding="utf-8")
-
     assert cache in _tasks_root_dirs(manifest_path)
-    spec = TaskSpec(source="harbor", dataset="terminal-bench@2.0/fix-git", name="fix-git")
-    task = _load_spec_task(spec, manifest_path)
-    assert task.name == "fix-git" and task.dataset == "terminal-bench@2.0/fix-git"
-    assert task.has_environment and task.has_tests
+
+    one = _load_spec_tasks(TaskSpec(source="harbor", dataset="terminal-bench@2.0/fix-git", name="fix-git"),
+                           manifest_path)
+    assert len(one) == 1 and one[0].name == "fix-git" and one[0].dataset == "terminal-bench@2.0/fix-git"
+    assert one[0].has_environment and one[0].has_tests
+
+    many = _load_spec_tasks(TaskSpec(source="harbor", dataset="terminal-bench@2.0"), manifest_path)
+    assert sorted(t.name for t in many) == ["add-logging", "fix-git"]
+    assert all(t.dataset == "terminal-bench@2.0" for t in many)

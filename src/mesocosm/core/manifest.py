@@ -112,6 +112,8 @@ class TaskSpec(BaseModel):
                                                                   "(ADR-0030); default: every agent")
     stagger_seconds: float = Field(default=0.0, ge=0, description="Cohorts: agent k (manifest order) starts this "
                                                                  "task k x stagger_seconds after agent 0 (ADR-0035)")
+    limit: int | None = Field(default=None, ge=1, description="For a dataset collection reference (ADR-0040): "
+                                                              "import at most this many tasks (first N, sorted)")
 
 
 class ModelSpec(BaseModel):
@@ -485,14 +487,15 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             errors.append(f"rejected_unsupported: tasks[{i}] source {task.source!r}; "
                           f"supported: {sorted(SUPPORTED_TASK_SOURCES)}")
             continue
-        if task.path is None and task.name is None:
-            errors.append(f"tasks[{i}]: either path or dataset+name is required")
+        if task.path is None and task.dataset is None:
+            errors.append(f"tasks[{i}]: either a path (a local task directory) or a dataset (a benchmark "
+                          f"reference, ADR-0037/0040) is required")
         elif task.path is not None:
             task_dir = (path.parent / task.path).resolve()
             if not (task_dir / "instruction.md").is_file():
                 errors.append(f"tasks[{i}]: {task_dir} has no instruction.md")
-        elif task.dataset is None:
-            errors.append(f"tasks[{i}]: name given without dataset")
+        # a dataset is resolved to one or many materialized task directories at run time; `name` is an
+        # optional label and a collection reference expands to all its tasks (ADR-0040)
         for agent_id in task.side_task or []:
             if agent_id not in {a.id for a in manifest.agents}:
                 errors.append(f"tasks[{i}].side_task: {agent_id!r} is not an agent id")

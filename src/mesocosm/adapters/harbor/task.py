@@ -105,28 +105,62 @@ def load_task(path: str | pathlib.Path, *, dataset: str | None = None, name: str
     )
 
 
+def _dataset_rel(ref: str) -> pathlib.PurePosixPath:
+    if not ref or not ref.strip():
+        raise ValueError("dataset: empty reference")
+    rel = pathlib.PurePosixPath(ref.strip())
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ValueError(f"dataset {ref!r}: must be a relative registry reference like 'terminal-bench@2.0/fix-git'")
+    return rel
+
+
+def _dataset_not_found(ref: str, roots: list[pathlib.Path]) -> FileNotFoundError:
+    searched = ", ".join(str(pathlib.Path(r)) for r in roots) or "(no task roots)"
+    return FileNotFoundError(
+        f"dataset {ref!r} not found under: {searched}. Materialize the benchmark task(s) first "
+        f"(e.g. `harbor run -p {ref} ...`, or copy the task directory) and point MESOCOSM_TASKS_ROOT at the "
+        f"directory that contains it.")
+
+
 def resolve_dataset(ref: str, roots: list[pathlib.Path]) -> pathlib.Path:
-    """Resolve a Harbor dataset reference (e.g. `terminal-bench@2.0/fix-git`) to a materialized task directory
+    """Resolve a Harbor dataset reference (e.g. `terminal-bench@2.0/fix-git`) to one materialized task directory
     under one of `roots`, so a run can use a real benchmark task instead of a hand-written one (ADR-0037).
 
     Mesocosm imports the task *directory*; Harbor is what materializes it (`harbor run -p <ref> ...`, or its task
     cache). This runs on the control plane: no agent container gains any new route. The reference maps to a
     relative path (`terminal-bench@2.0/fix-git` -> `<root>/terminal-bench@2.0/fix-git/`) and the first root that
     holds an `instruction.md` there wins. Unresolvable references fail explicitly, naming the roots searched."""
-    if not ref or not ref.strip():
-        raise ValueError("dataset: empty reference")
-    rel = pathlib.PurePosixPath(ref.strip())
-    if rel.is_absolute() or ".." in rel.parts:
-        raise ValueError(f"dataset {ref!r}: must be a relative registry reference like 'terminal-bench@2.0/fix-git'")
+    rel = _dataset_rel(ref)
     for root in roots:
         candidate = pathlib.Path(root).joinpath(*rel.parts)
         if (candidate / "instruction.md").is_file():
             return candidate.resolve()
-    searched = ", ".join(str(pathlib.Path(r)) for r in roots) or "(no task roots)"
-    raise FileNotFoundError(
-        f"dataset {ref!r} not found under: {searched}. Materialize the Harbor task directory first "
-        f"(e.g. `harbor run -p {ref} ...`, or copy the task directory) and point MESOCOSM_TASKS_ROOT at the "
-        f"directory that contains it.")
+    raise _dataset_not_found(ref, roots)
+
+
+def resolve_dataset_tasks(ref: str, roots: list[pathlib.Path], limit: int | None = None) -> list[pathlib.Path]:
+    """Resolve a dataset reference to one or many task directories, so tasks come from external benchmarks
+    rather than being hand-written (ADR-0040). The reference may name a single task (its directory holds an
+    `instruction.md`) or a whole collection/split (its directory holds task subdirectories, each with an
+    `instruction.md`): a collection expands to all of them, sorted, capped at `limit`. Works for any benchmark
+    materialized into the standard task layout (Terminal-Bench, SWE-bench, ...). Resolution is control-plane
+    only; containment (ADR-0022) is untouched."""
+    rel = _dataset_rel(ref)
+    base: pathlib.Path | None = None
+    for root in roots:
+        candidate = pathlib.Path(root).joinpath(*rel.parts)
+        if (candidate / "instruction.md").is_file():
+            return [candidate.resolve()]                       # the reference names a single task
+        if base is None and candidate.is_dir():
+            base = candidate
+    if base is None:
+        raise _dataset_not_found(ref, roots)
+    tasks = sorted(d.resolve() for d in base.iterdir() if d.is_dir() and (d / "instruction.md").is_file())
+    if not tasks:
+        raise FileNotFoundError(
+            f"dataset {ref!r}: {base} holds no task directories (looked for <task>/instruction.md). Materialize "
+            f"the benchmark's tasks there first.")
+    return tasks[: limit] if limit else tasks
 
 
 def adaptation(*, mode: str, memory: str, budget: dict[str, Any] | None,
