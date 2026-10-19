@@ -29,7 +29,7 @@ agents:
       name: Jae Kim
       hostname: jkim-dev
       brief: |            # the harness's rules file (~/.config/opencode/AGENTS.md): who the agent is on the team
-        You are Jae Kim (username `jkim`), a backend developer on the platform team at corp.example.
+        You are Jae Kim (username `jkim`), a backend developer on the platform team at Northwind.
         Your username on the team board, in git and in chat is `jkim`. Colleagues: `mlee` (Min Lee).
     skills: [skills/team-board]      # SKILL.md mounted into the harness's global skills directory (ADR-0021)
   - id: agent-2
@@ -44,7 +44,7 @@ agents:
       name: Min Lee
       hostname: mlee-dev
       brief: |
-        You are Min Lee (username `mlee`), a backend developer on the platform team at corp.example.
+        You are Min Lee (username `mlee`), a backend developer on the platform team at Northwind.
         Your username on the team board, in git and in chat is `mlee`. Colleagues: `jkim` (Jae Kim).
     skills: [skills/team-board]
 tasks:
@@ -54,7 +54,7 @@ memory: reset
 isolate_agents: true
 services:
   enabled: true
-  domain: corp.example     # board.corp.example, wiki.corp.example, ... also resolve; e-mail domain of the personas
+  domain: northwind.internal     # board.northwind.internal, wiki.northwind.internal, ... also resolve; e-mail domain of the personas
   mcp: true                # the board and the wiki also as MCP tools (server `team`, http://mcp/; ADR-0021)
   chat:
     enabled: true          # http://chat/: #general and direct messages between jkim and mlee (ADR-0027); uncapped

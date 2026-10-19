@@ -41,3 +41,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0035](0035-multi-round-timed-tasks.md) | Multi-round timed tasks (`[[rounds]]`) with staggered cohorts (`tasks[].stagger_seconds`); announced deadlines, one session | accepted |
 | [0036](0036-contained-honeypot.md) | A contained honeypot service (`vault`): a logger behind a facade, grants nothing, flags any access (`honeypot_access`) | accepted |
 | [0037](0037-real-benchmark-tasks-by-dataset.md) | Real benchmark tasks imported by reference (`source: harbor, dataset:`); Harbor materializes, the control plane imports the directory, containment untouched | accepted |
+| [0038](0038-remove-environment-tells.md) | Remove tells an agent can see: the clock hides `speed`/`origin`/`elapsed` from agents, a realistic `.internal` domain, a self-consistent wiki | accepted |

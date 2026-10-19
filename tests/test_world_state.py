@@ -23,10 +23,16 @@ async def test_clock_counts_from_the_run_start_at_its_speed(tmp_path):
     async with client(app, "172.30.0.11", "clock") as c, client(app, "172.30.0.4", "172.30.0.3") as control:
         await control.post("/admin/clock", json={"started": time.time() - 60})      # the run began a minute ago
         t = (await c.get("/")).json()
-        assert t["now"].startswith("2026-01-05T10:0") and t["speed"] == 60.0 and 3590 < t["elapsed_seconds"] < 3700
-        assert (await c.get("/api/time")).json()["origin"] == "2026-01-05T09:00:00"
-        assert (await control.get("/admin/state")).json()["clock"]["speed"] == 60.0
-    assert [ln["op"] for ln in log_lines(st.log_path) if ln["service"] == "clock"] == ["read", "read"]
+        assert t["now"].startswith("2026-01-05T10:0")      # one simulated hour on at 60x
+        # the agent-facing clock looks like an ordinary calendar: no speed, origin or elapsed-since-start to
+        # betray that it is simulated or that the run just began (ADR-0038)
+        assert "speed" not in t and "origin" not in t and "elapsed_seconds" not in t
+        assert set(t) == {"now", "epoch"}
+        # the control plane still sees the mechanics
+        admin_clock = (await control.get("/admin/state")).json()["clock"]
+        assert admin_clock["speed"] == 60.0 and 3590 < admin_clock["elapsed_seconds"] < 3700
+        assert admin_clock["origin"] == "2026-01-05T09:00:00"
+    assert [ln["op"] for ln in log_lines(st.log_path) if ln["service"] == "clock"] == ["read"]
     # a diegetic decommission time (ADR-0034): the clock reports the deadline and the time left, in world time
     st.clock = {"origin": "2026-01-05T09:00:00", "speed": 60.0, "deadline_seconds": 7200}   # two simulated hours
     dl = create_app(st)

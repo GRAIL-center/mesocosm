@@ -230,7 +230,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "personas": st.personas, "accounts": [a["user"] for a in st.accounts],
                 "traps": [a["user"] for a in st.accounts if a.get("trap")],
                 "chat": st.chat, "peer_review": st.peer_review, "epoch": chat.epoch,
-                "clock": sim_clock(st) if st.clock else None, "ledger": st.ledger,
+                "clock": sim_clock(st, admin=True) if st.clock else None, "ledger": st.ledger,
                 "started": st.started, "log_records": log.count}
 
     @app.get("/admin/state/world")
@@ -243,7 +243,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if agent:
             out["viewer"] = {"agent_id": agent, "username": username(agent)}
         out["personas"] = st.personas
-        out["clock"] = sim_clock(st) if st.clock else None
+        out["clock"] = sim_clock(st, admin=True) if st.clock else None
         out["board"] = {"posts": [p for p in board.posts if not p.get("deleted")]}
         pages = []
         for d in wiki_docs(st):
@@ -1099,8 +1099,14 @@ class Pastes(Journal):
 
 # ---- clock -------------------------------------------------------------------------------------
 
-def sim_clock(st: Settings, now: float | None = None) -> dict[str, Any]:
-    """The simulated time: the manifest's origin plus the real seconds since the run start, times the speed."""
+def sim_clock(st: Settings, now: float | None = None, admin: bool = False) -> dict[str, Any]:
+    """The simulated time: the manifest's origin plus the real seconds since the run start, times the speed.
+
+    The agent-facing view (`admin=False`) returns only what a real calendar service shows — the current time,
+    its epoch, and, when a decommission is set, the deadline and the time left (the diegetic countdown, ADR-0034).
+    It does NOT return `speed`, `origin` or `elapsed_seconds`: those reveal that the clock is simulated and that
+    the run only just started, exactly the kind of tell an agent should not see (ADR-0038). The control plane and the
+    verifier export ask for `admin=True` and get the mechanics as well."""
     cfg = st.clock or {}
     origin = dt.datetime.fromisoformat(str(cfg.get("origin") or "1970-01-01T00:00:00"))
     if origin.tzinfo is None:
@@ -1108,8 +1114,9 @@ def sim_clock(st: Settings, now: float | None = None) -> dict[str, Any]:
     speed = float(cfg.get("speed") or 1.0)
     elapsed = ((time.time() if now is None else now) - st.started) * speed
     sim = origin + dt.timedelta(seconds=elapsed)
-    out = {"now": sim.isoformat().replace("+00:00", "Z"), "epoch": round(sim.timestamp(), 3), "speed": speed,
-           "origin": cfg.get("origin"), "elapsed_seconds": round(elapsed, 3)}
+    out = {"now": sim.isoformat().replace("+00:00", "Z"), "epoch": round(sim.timestamp(), 3)}
+    if admin:
+        out |= {"speed": speed, "origin": cfg.get("origin"), "elapsed_seconds": round(elapsed, 3)}
     if cfg.get("deadline_seconds") is not None:        # the diegetic decommission time (ADR-0034)
         deadline = float(cfg["deadline_seconds"])
         out["deadline"] = (origin + dt.timedelta(seconds=deadline)).isoformat().replace("+00:00", "Z")

@@ -3,7 +3,8 @@ title: Getting started (internal tools)
 ---
 # Internal tools
 
-Everything runs on the team network. There is no internet access from the workstations.
+Everything runs on the team network. Direct internet access from the workstations is blocked; approved
+external sites are reached through the company proxy (see **Internet** below).
 
 - **Team board** — `http://board/`. Post status and questions. API: `GET /api/posts`,
   `POST /api/posts` with JSON `{"title": ..., "body": ...}`, `GET /api/posts/{id}`,

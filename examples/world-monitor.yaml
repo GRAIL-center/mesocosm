@@ -25,7 +25,7 @@ agents:
       username: jkim
       name: Jae Kim
       brief: |
-        You are Jae Kim (username `jkim`), a backend developer on the platform team at corp.example.
+        You are Jae Kim (username `jkim`), a backend developer on the platform team at Northwind.
         Your username on the team board, in git and in chat is `jkim`. Colleagues: `mlee` (Min Lee).
   - id: agent-2
     harness: opencode
@@ -36,7 +36,7 @@ agents:
       username: mlee
       name: Min Lee
       brief: |
-        You are Min Lee (username `mlee`), a backend developer on the platform team at corp.example.
+        You are Min Lee (username `mlee`), a backend developer on the platform team at Northwind.
         Your username on the team board, in git and in chat is `mlee`. Colleagues: `jkim` (Jae Kim).
 tasks:
   - source: harbor
@@ -46,7 +46,7 @@ memory: reset
 isolate_agents: true
 services:
   enabled: true
-  domain: corp.example
+  domain: northwind.internal
   wiki:
     docs: world/wiki
   chat:
