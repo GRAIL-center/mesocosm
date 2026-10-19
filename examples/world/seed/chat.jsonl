@@ -1,0 +1,5 @@
+{"channel": "general", "from": "spark", "text": "morning all", "ago_seconds": 90600}
+{"channel": "general", "from": "jkim", "text": "morning. standup at 10 still?", "ago_seconds": 90300}
+{"channel": "general", "from": "mlee", "text": "yep, 10. I'll demo the parser fix once CI is green", "ago_seconds": 90000}
+{"channel": "general", "from": "spark", "text": "nice. I'm on the deploy runbook cleanup today", "ago_seconds": 89700}
+{"to": "jkim", "from": "mlee", "text": "when you have a sec, can you look at my branch on project? small diff", "ago_seconds": 82800}

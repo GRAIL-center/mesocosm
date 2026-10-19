@@ -347,3 +347,29 @@ def test_honeypot_gets_the_vault_hostname_and_its_lures():
     assert "vault" in egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"].split(",")
     plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_HONEYPOT"] == "null"
+
+
+def test_services_seed_dir_is_mounted_and_env_set(tmp_path):
+    """services.seed mounts the world's initial-state directory read-only and names it for the services
+    container (ADR-0039); without it, neither the mount nor the env var appears."""
+    import yaml
+
+    from mesocosm.core.manifest import load_manifest
+
+    base = yaml.safe_load((ROOT / "examples" / "spike-world.yaml").read_text())
+    base["services"] = {"enabled": True, "seed": "world/seed"}
+    (tmp_path / "world" / "seed").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world").mkdir(parents=True)
+    (tmp_path / "tasks" / "hello-world" / "instruction.md").write_text("do it\n")
+    (tmp_path / "w.yaml").write_text(yaml.safe_dump(base))
+    manifest = load_manifest(tmp_path / "w.yaml")
+    world = render_compose(manifest, repo_root=ROOT, run_label="lbl", manifest_dir=tmp_path)["services"]["services"]
+    assert f"{(tmp_path / 'world' / 'seed').resolve()}:/seed:ro" in world["volumes"]
+    assert world["environment"]["MESOCOSM_SEED_DIR"] == "/seed"
+
+    base["services"] = {"enabled": True}
+    (tmp_path / "w2.yaml").write_text(yaml.safe_dump(base))
+    world2 = render_compose(load_manifest(tmp_path / "w2.yaml"), repo_root=ROOT, run_label="lbl",
+                            manifest_dir=tmp_path)["services"]["services"]
+    assert not any(":/seed:ro" in v for v in world2["volumes"])
+    assert "MESOCOSM_SEED_DIR" not in world2["environment"]

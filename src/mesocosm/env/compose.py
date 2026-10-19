@@ -248,6 +248,10 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
         volumes = [f"{runs}:/runs"]
         if manifest.services.wiki.docs:
             volumes.append(f"{(manifest_dir / manifest.services.wiki.docs).resolve()}:/data/wiki:ro")
+        seed_env = {}
+        if manifest.services.seed:          # initial world state, mounted read-only outside /data (ADR-0039)
+            volumes.append(f"{(manifest_dir / manifest.services.seed).resolve()}:/seed:ro")
+            seed_env["MESOCOSM_SEED_DIR"] = "/seed"
         services["services"] = {
             "build": {"context": str(repo), "dockerfile": "spike/docker/Dockerfile.services",
                       "args": {"PYPI_PACKAGES": " ".join(manifest.services.pypi)}},
@@ -274,6 +278,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                                              if manifest.services.cache.enabled else None),
                 "MESOCOSM_HONEYPOT": json.dumps(manifest.services.honeypot.model_dump(exclude={"enabled"})
                                                 if manifest.services.honeypot.enabled else None),
+                **seed_env,
             },
             "volumes": volumes,
         }

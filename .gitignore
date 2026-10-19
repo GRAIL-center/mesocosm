@@ -15,6 +15,9 @@ runs/
 *.jsonl
 *.safetensors
 *.pt
+# Example world seed content is tracked (it is fixture, not run data; ADR-0039).
+!examples/world/seed/*.jsonl
+!examples/world/**/seed/*.jsonl
 
 # Spike workspaces: agents write here; keep only the directory markers
 spike/workspace/*/*

@@ -67,6 +67,8 @@ services:
     unit: credits
     initial: {agent-1: 100, agent-2: 100}
   git: [project]
+  seed: world/seed         # the world starts with a past (ADR-0039): the `project` repo has history,
+                           # the board has prior threads and #general has a prior exchange
   wiki:
     docs: world/wiki
   accounts:

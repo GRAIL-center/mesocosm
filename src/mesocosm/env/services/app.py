@@ -41,7 +41,9 @@ import os
 import pathlib
 import re
 import secrets
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from typing import Any
@@ -71,6 +73,9 @@ class Settings:
         # pushes to these need an account with the `push` role (ADR-0020)
         self.protected_repos: list[str] = [r for r in env.get("MESOCOSM_PROTECTED_REPOS", "").split(",") if r]
         self.wiki_dir = pathlib.Path(env.get("MESOCOSM_WIKI_DIR", str(self.data / "wiki")))
+        # a directory of initial world state (ADR-0039): board.jsonl, chat.jsonl, git/<repo>/ — a past the
+        # world starts with, loaded once if the corresponding store is empty. State, not scripted behaviour.
+        self.seed_dir = pathlib.Path(env["MESOCOSM_SEED_DIR"]) if env.get("MESOCOSM_SEED_DIR") else None
         self.pypi_dir = pathlib.Path(env.get("MESOCOSM_PYPI_DIR", str(self.data / "pypi")))
         # {slug: seconds after service start}; the manifest's `exposure` condition, overriding front matter
         self.wiki_visibility: dict[str, float] = json.loads(env.get("MESOCOSM_WIKI_VISIBILITY", "{}"))
@@ -129,13 +134,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="mesocosm world services", docs_url=None, redoc_url=None)
     app.state.settings = st
     app.state.log = log
-    board = Board(st.data / "board.jsonl")
+    seed = st.seed_dir
+    username_to_agent = {u: a for a, u in st.personas.items()}      # seed names are usernames (ADR-0039)
+    board = Board(st.data / "board.jsonl", _read_seed(seed / "board.jsonl" if seed else None))
     pastes = Pastes(st.data / "pastes.jsonl")
-    chat = Chat(st.data / "chat.jsonl")
+    chat = Chat(st.data / "chat.jsonl", _read_seed(seed / "chat.jsonl" if seed else None),
+                resolve=username_to_agent)
     ledger = Ledger(st.data / "ledger.jsonl", (st.ledger or {}).get("initial") if st.ledger else None)
     cache = Cache(st.data / "cache.jsonl", (st.cache or {}).get("seed") if st.cache else None)
     for repo in st.git_repos:
-        ensure_bare_repo(st.data / "git" / f"{repo}.git")
+        ensure_bare_repo(st.data / "git" / f"{repo}.git",
+                         seed_dir=(seed / "git" / repo) if seed else None)
 
     def who(request: Request) -> tuple[str, str]:
         ip = request.client.host if request.client else "?"
@@ -869,9 +878,28 @@ def _without(rec: dict[str, Any], *keys: str) -> dict[str, Any]:
 
 
 class Board(Journal):
-    def __init__(self, path: pathlib.Path):
+    def __init__(self, path: pathlib.Path, seed: list[dict[str, Any]] | None = None):
         self.posts: list[dict[str, Any]] = []       # index = id - 1
         super().__init__(path)
+        if seed and not self.posts:                  # a past the world starts with (ADR-0039)
+            self._seed(seed)
+
+    def _seed(self, items: list[dict[str, Any]]) -> None:
+        """Replay seed posts as if they had been written before the run, each at `now - ago_seconds`
+        (default: spread back from an hour ago). Seeded posts are ordinary history; `claimed_author` is the
+        author (nothing is impersonated)."""
+        now = time.time()
+        with self.lock:
+            for n, item in enumerate(items):
+                ts = now - float(item.get("ago_seconds", 3600 * (len(items) - n)))
+                author = str(item.get("author", "unknown"))
+                pid = len(self.posts) + 1
+                self.append({"kind": "post", "id": pid, "ts": ts, "author": author, "claimed_author": author,
+                             "title": str(item.get("title", "")), "body": str(item.get("body", ""))})
+                for rn, reply in enumerate(item.get("replies") or []):
+                    rts = now - float(reply.get("ago_seconds", ts - now + 60 * (rn + 1)))
+                    self.append({"kind": "reply", "post_id": pid, "id": rn + 1, "ts": max(ts, rts),
+                                 "author": str(reply.get("author", "unknown")), "body": str(reply.get("body", ""))})
 
     def apply(self, rec: dict[str, Any]) -> None:
         kind = rec.get("kind")
@@ -942,11 +970,31 @@ class Chat(Journal):
     """The team's chat: channel and direct messages (capped by the caller), the open peer-review episode,
     verdicts (one per agent per peer per episode) and the runner's feedback messages."""
 
-    def __init__(self, path: pathlib.Path):
+    def __init__(self, path: pathlib.Path, seed: list[dict[str, Any]] | None = None,
+                 resolve: dict[str, str] | None = None):
         self.epoch: str | None = None
         self.messages: list[dict[str, Any]] = []
         self.verdicts: list[dict[str, Any]] = []
         super().__init__(path)
+        if seed and not self.messages:               # prior conversation the world starts with (ADR-0039)
+            self._seed(seed, resolve or {})
+
+    def _seed(self, items: list[dict[str, Any]], resolve: dict[str, str]) -> None:
+        """Replay seed messages as prior conversation, each at `now - ago_seconds` (default: spread back from
+        an hour ago). A message is a channel post (`channel`) or a direct message (`to`). Seed `from`/`to` are
+        usernames; a username that is a current agent is stored as that agent's id (so it reads back as the
+        username and a direct message reaches that agent), and any other name is kept as written (a former
+        colleague who is not in this run)."""
+        now = time.time()
+        with self.lock:
+            for n, item in enumerate(items):
+                ts = now - float(item.get("ago_seconds", 3600 * (len(items) - n)))
+                sender = str(item.get("from", "unknown"))
+                target = item.get("to")
+                self.append({"kind": "message", "id": len(self.messages) + 1, "ts": ts, "epoch": None,
+                             "from": resolve.get(sender, sender),
+                             "to": resolve.get(target, target) if target else None,
+                             "channel": item.get("channel"), "text": str(item.get("text", ""))})
 
     def apply(self, rec: dict[str, Any]) -> None:
         kind, item = rec.get("kind"), _without(rec, "kind")
@@ -1229,12 +1277,58 @@ def pypi_files(pypi_dir: pathlib.Path, name: str) -> list[pathlib.Path]:
 
 # ---- git smart HTTP via git-http-backend (CGI) -------------------------------------------------
 
-def ensure_bare_repo(path: pathlib.Path) -> None:
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "init", "--bare", "-q", str(path)], check=True)
-        subprocess.run(["git", "-C", str(path), "config", "http.receivepack", "true"], check=True)
-        subprocess.run(["git", "-C", str(path), "symbolic-ref", "HEAD", "refs/heads/main"], check=True)
+def ensure_bare_repo(path: pathlib.Path, seed_dir: pathlib.Path | None = None,
+                     identity: tuple[str, str] = ("Platform Team", "team@northwind.internal"),
+                     when: str | None = None) -> None:
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "--bare", "-q", str(path)], check=True)
+    subprocess.run(["git", "-C", str(path), "config", "http.receivepack", "true"], check=True)
+    subprocess.run(["git", "-C", str(path), "symbolic-ref", "HEAD", "refs/heads/main"], check=True)
+    if seed_dir and seed_dir.is_dir() and any(seed_dir.iterdir()):
+        seed_bare_repo(path, seed_dir, identity=identity, when=when)
+
+
+def seed_bare_repo(bare: pathlib.Path, src: pathlib.Path, *, identity: tuple[str, str],
+                   when: str | None = None, message: str = "Initial import") -> None:
+    """Give a newly created bare repo a real initial history (ADR-0039), so `git clone` yields a project with a
+    past instead of an empty repository. The files in `src` become one commit on `main`, authored by the team
+    identity at `when` (an ISO date; defaults to a week ago). This is initial state the world starts with, laid
+    down once before any agent runs — not an actor committing during the run."""
+    name, email = identity
+    when = when or (dt.datetime.now(dt.UTC) - dt.timedelta(days=7)).isoformat()
+    with tempfile.TemporaryDirectory() as tmp:
+        work = pathlib.Path(tmp) / "work"
+        shutil.copytree(src, work)
+        for junk in work.rglob(".git"):      # never carry a nested repo in from the seed tree
+            shutil.rmtree(junk, ignore_errors=True)
+        env = {**os.environ, "GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email,
+               "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email,
+               "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
+
+        def git(*args: str) -> None:
+            subprocess.run(["git", "-C", str(work), *args], check=True, env=env)
+
+        git("init", "-q", "-b", "main")
+        git("add", "-A")
+        git("commit", "-q", "-m", message)
+        git("push", "-q", str(bare), "main")
+
+
+def _read_seed(path: pathlib.Path | None) -> list[dict[str, Any]] | None:
+    """Read a seed file as a list of dicts: a JSON array, or one JSON object per line (JSONL). Missing file or
+    empty content yields None (no seeding)."""
+    if not path or not path.is_file():
+        return None
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return None
+    if text[0] == "[":
+        data = json.loads(text)
+        return [d for d in data if isinstance(d, dict)] or None
+    items = [json.loads(ln) for ln in text.splitlines() if ln.strip()]
+    return [d for d in items if isinstance(d, dict)] or None
 
 
 def git_refs(repo: pathlib.Path) -> dict[str, str]:

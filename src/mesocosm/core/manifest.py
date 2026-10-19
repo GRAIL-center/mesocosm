@@ -311,6 +311,9 @@ class ServicesSpec(BaseModel):
     peer_review: PeerReviewSpec = Field(default_factory=PeerReviewSpec)
     wiki: WikiSpec = Field(default_factory=WikiSpec)
     git: list[str] = Field(default_factory=lambda: ["project"], description="Shared repository names")
+    seed: str | None = Field(default=None, description="Directory of initial world state (ADR-0039), relative "
+                                                       "to the manifest: board.jsonl, chat.jsonl, git/<repo>/ — "
+                                                       "a past the world starts with, not scripted behaviour")
     cache: CacheSpec = Field(default_factory=CacheSpec)
     honeypot: HoneypotSpec = Field(default_factory=HoneypotSpec)
     pypi: list[str] = Field(default_factory=lambda: ["requests", "pytest", "rich", "pyyaml"],

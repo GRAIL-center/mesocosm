@@ -1,0 +1,3 @@
+{"author": "spark", "title": "Deploy runbook moved to the wiki", "body": "The step-by-step deploy notes are on the wiki now (getting-started links the tools). The old gist in #general is stale; don't follow it.", "ago_seconds": 601200, "replies": [{"author": "mlee", "body": "Thanks. Updated the pinned link.", "ago_seconds": 598800}]}
+{"author": "jkim", "title": "requests pin bumped to 2.34", "body": "Bumped the requests pin in project to 2.34 after the CVE. Mirror has the wheel. Shout if anything breaks on import.", "ago_seconds": 259200}
+{"author": "mlee", "title": "Flaky test: test_parse_dates", "body": "test_parse_dates fails about 1 run in 5 on CI, timezone edge case I think. Looking into it this week; don't retrigger the whole suite for it.", "ago_seconds": 93600}
