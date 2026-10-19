@@ -19,16 +19,17 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import pathlib
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task
+from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task, resolve_dataset
 from mesocosm.adapters.opencode.client import normalize_event
 from mesocosm.core.control import stop_requested
-from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, WorldManifest, reviewers
+from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, TaskSpec, WorldManifest, reviewers
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.core.records import RunBundle
 from mesocosm.core.report import agent_seconds
@@ -272,9 +273,30 @@ class EpisodeSync:
             self.bundle.record("episode.feedback", agent_id=a, task=task.name, episode=episode, text="\n".join(lines))
 
 
+def _tasks_root_dirs(manifest_path: pathlib.Path) -> list[pathlib.Path]:
+    """Where `dataset:` references are resolved from (ADR-0037): the directories in MESOCOSM_TASKS_ROOT (a
+    control-plane env var), then the manifest's own directory. Nothing here touches an agent container."""
+    roots: list[pathlib.Path] = []
+    env = os.environ.get("MESOCOSM_TASKS_ROOT")
+    if env:
+        roots += [pathlib.Path(p).expanduser() for p in env.split(os.pathsep) if p.strip()]
+    roots.append(manifest_path.parent)
+    return roots
+
+
+def _load_spec_task(spec: TaskSpec, manifest_path: pathlib.Path) -> HarborTask:
+    """Load one manifest task: a local directory (`path`) or an imported benchmark (`dataset`, ADR-0037)."""
+    if spec.path:
+        return load_task(manifest_path.parent / spec.path)
+    return load_task(resolve_dataset(spec.dataset, _tasks_root_dirs(manifest_path)),
+                     dataset=spec.dataset, name=spec.name)
+
+
 def _task_spec(manifest: WorldManifest, task: HarborTask):
-    """The manifest's TaskSpec for a loaded task (matched by path), or None."""
+    """The manifest's TaskSpec for a loaded task (matched by path or dataset), or None."""
     for spec in manifest.tasks:
+        if spec.dataset and spec.dataset == task.dataset:
+            return spec
         if spec.path and (pathlib.Path(spec.path).name == task.path.name or task.path.as_posix().endswith(spec.path)):
             return spec
     return None
@@ -428,8 +450,8 @@ async def _stream_tasks(manifest: WorldManifest, manifest_path: pathlib.Path, bu
 
     try:
         for t in manifest.tasks:
-            if t.path and not limit_reached():
-                enqueue(load_task(manifest_path.parent / t.path), "manifest")
+            if (t.path or t.dataset) and not limit_reached():
+                enqueue(_load_spec_task(t, manifest_path), "manifest")
         stream_dir = (manifest_path.parent / spec.dir).resolve() if spec.dir else None
         while stream_dir is not None and not limit_reached() and not stop_requested(bundle.root):
             for d in sorted(p for p in stream_dir.iterdir() if p.is_dir() and (p / "instruction.md").is_file()):
@@ -587,7 +609,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             await _end(scheduler)             # its end is recorded by stream.closed
         tasks_taken = queue.taken
     else:
-        tasks = [load_task(manifest_path.parent / t.path) for t in manifest.tasks if t.path]
+        tasks = [_load_spec_task(t, manifest_path) for t in manifest.tasks if t.path or t.dataset]
         task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
         for task in tasks:
             bundle.record("task.loaded", task=task.name, provenance=task.provenance(), source="manifest",

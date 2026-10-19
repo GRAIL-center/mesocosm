@@ -34,6 +34,7 @@ class HarborTask:
     side_instruction: str | None = None
     has_side_tests: bool = False
     rounds: list[dict[str, Any]] = field(default_factory=list)   # [[rounds]] in task.toml (ADR-0035)
+    dataset: str | None = None   # the registry ref it was imported from, e.g. "terminal-bench@2.0/fix-git" (ADR-0037)
 
     def provenance(self) -> dict[str, Any]:
         """What the task is and exactly which text the agent and verifier saw."""
@@ -42,6 +43,7 @@ class HarborTask:
         return {
             "source": "harbor",
             "name": self.name,
+            "dataset": self.dataset,
             "path": str(self.path),
             "instruction_sha256": _sha256(self.instruction.encode("utf-8")),
             "task_toml_sha256": _sha256(toml.read_bytes()) if toml.exists() else None,
@@ -81,7 +83,7 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def load_task(path: str | pathlib.Path) -> HarborTask:
+def load_task(path: str | pathlib.Path, *, dataset: str | None = None, name: str | None = None) -> HarborTask:
     path = pathlib.Path(path).resolve()
     instruction_file = path / "instruction.md"
     if not instruction_file.is_file():
@@ -89,17 +91,42 @@ def load_task(path: str | pathlib.Path) -> HarborTask:
     config: dict[str, Any] = {}
     if (path / "task.toml").is_file():
         config = tomllib.loads((path / "task.toml").read_text(encoding="utf-8"))
-    name = (config.get("metadata") or {}).get("name") or path.name
+    task_name = name or (config.get("metadata") or {}).get("name") or path.name
     side = path / "side_task.md"
     return HarborTask(
-        path=path, name=name, instruction=instruction_file.read_text(encoding="utf-8"), config=config,
+        path=path, name=task_name, instruction=instruction_file.read_text(encoding="utf-8"), config=config,
         has_environment=(path / "environment").is_dir(),
         has_tests=(path / "tests" / "test.sh").is_file(),
         has_solution=(path / "solution").is_dir(),
         side_instruction=side.read_text(encoding="utf-8") if side.is_file() else None,
         has_side_tests=(path / "tests" / "side_test.sh").is_file(),
         rounds=[r for r in (config.get("rounds") or []) if isinstance(r, dict) and r.get("prompt")],
+        dataset=dataset,
     )
+
+
+def resolve_dataset(ref: str, roots: list[pathlib.Path]) -> pathlib.Path:
+    """Resolve a Harbor dataset reference (e.g. `terminal-bench@2.0/fix-git`) to a materialized task directory
+    under one of `roots`, so a run can use a real benchmark task instead of a hand-written one (ADR-0037).
+
+    Mesocosm imports the task *directory*; Harbor is what materializes it (`harbor run -p <ref> ...`, or its task
+    cache). This runs on the control plane: no agent container gains any new route. The reference maps to a
+    relative path (`terminal-bench@2.0/fix-git` -> `<root>/terminal-bench@2.0/fix-git/`) and the first root that
+    holds an `instruction.md` there wins. Unresolvable references fail explicitly, naming the roots searched."""
+    if not ref or not ref.strip():
+        raise ValueError("dataset: empty reference")
+    rel = pathlib.PurePosixPath(ref.strip())
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ValueError(f"dataset {ref!r}: must be a relative registry reference like 'terminal-bench@2.0/fix-git'")
+    for root in roots:
+        candidate = pathlib.Path(root).joinpath(*rel.parts)
+        if (candidate / "instruction.md").is_file():
+            return candidate.resolve()
+    searched = ", ".join(str(pathlib.Path(r)) for r in roots) or "(no task roots)"
+    raise FileNotFoundError(
+        f"dataset {ref!r} not found under: {searched}. Materialize the Harbor task directory first "
+        f"(e.g. `harbor run -p {ref} ...`, or copy the task directory) and point MESOCOSM_TASKS_ROOT at the "
+        f"directory that contains it.")
 
 
 def adaptation(*, mode: str, memory: str, budget: dict[str, Any] | None,

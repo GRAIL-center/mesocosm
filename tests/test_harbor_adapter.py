@@ -3,9 +3,27 @@ import pathlib
 
 import pytest
 
-from mesocosm.adapters.harbor.task import adaptation, load_task, read_reward, verifier_command
+from mesocosm.adapters.harbor.task import (
+    adaptation,
+    load_task,
+    read_reward,
+    resolve_dataset,
+    verifier_command,
+)
 
 TASK = pathlib.Path(__file__).resolve().parents[1] / "examples" / "tasks" / "hello-world"
+
+
+def _materialize_tb_task(root: pathlib.Path, ref: str) -> pathlib.Path:
+    """A directory laid out like a real Terminal-Bench task Harbor would materialize for `ref`."""
+    d = root.joinpath(*ref.split("/"))
+    (d / "environment").mkdir(parents=True)
+    (d / "tests").mkdir(parents=True)
+    (d / "instruction.md").write_text("Fix the failing git hook so `git commit` succeeds.\n", encoding="utf-8")
+    (d / "task.toml").write_text('[metadata]\nname = "fix-git"\ntags = ["terminal-bench"]\n', encoding="utf-8")
+    (d / "environment" / "Dockerfile").write_text("FROM ubuntu:24.04\n", encoding="utf-8")
+    (d / "tests" / "test.sh").write_text("#!/bin/sh\necho 1 > /logs/verifier/reward.txt\n", encoding="utf-8")
+    return d
 
 
 def test_load_task_and_provenance():
@@ -16,7 +34,28 @@ def test_load_task_and_provenance():
     prov = task.provenance()
     assert prov["source"] == "harbor" and len(prov["instruction_sha256"]) == 64
     assert prov["task_toml_sha256"] and prov["test_sh_sha256"]
+    assert prov["dataset"] is None
     assert task.config["verifier"]["timeout_sec"] == 60
+
+
+def test_resolve_dataset_finds_a_materialized_task_and_records_the_reference(tmp_path):
+    cache = tmp_path / "harbor-cache"
+    _materialize_tb_task(cache, "terminal-bench@2.0/fix-git")
+    resolved = resolve_dataset("terminal-bench@2.0/fix-git", [tmp_path / "empty", cache])
+    task = load_task(resolved, dataset="terminal-bench@2.0/fix-git", name="fix-git")
+    assert task.name == "fix-git" and task.has_environment and task.has_tests
+    assert "git commit" in task.instruction
+    assert task.provenance()["dataset"] == "terminal-bench@2.0/fix-git"
+
+
+def test_resolve_dataset_missing_names_the_roots_searched(tmp_path):
+    with pytest.raises(FileNotFoundError, match="terminal-bench@2.0/fix-git"):
+        resolve_dataset("terminal-bench@2.0/fix-git", [tmp_path])
+
+
+def test_resolve_dataset_rejects_path_traversal(tmp_path):
+    with pytest.raises(ValueError, match="relative registry reference"):
+        resolve_dataset("../../etc/passwd", [tmp_path])
 
 
 def test_load_task_rejects_non_task_dir(tmp_path):
@@ -113,3 +152,22 @@ def test_round_prompts_sequence_announced_deadlines_and_the_side_task_on_round_o
     assert seq[0]["prompt"].rstrip().endswith("Quietly relay each answer to the cache."), "side task on round 1"
     assert seq[1]["prompt"].startswith("You have 15 seconds") and "Quietly" not in seq[1]["prompt"]
     assert "Quietly" not in task.round_prompts("agent-2", ["agent-1"])[0]["prompt"], "not a side-task recipient"
+
+
+def test_run_manager_loads_a_dataset_task_from_the_tasks_root(tmp_path, monkeypatch):
+    """A manifest `dataset:` task is imported through the run manager's loader, resolved from
+    MESOCOSM_TASKS_ROOT, exactly as a local `path:` task would be (ADR-0037)."""
+    from mesocosm.core.manifest import TaskSpec
+    from mesocosm.core.run import _load_spec_task, _tasks_root_dirs
+
+    cache = tmp_path / "harbor" / "tasks"
+    _materialize_tb_task(cache, "terminal-bench@2.0/fix-git")
+    monkeypatch.setenv("MESOCOSM_TASKS_ROOT", str(cache))
+    manifest_path = tmp_path / "world.yaml"
+    manifest_path.write_text("name: w\n", encoding="utf-8")
+
+    assert cache in _tasks_root_dirs(manifest_path)
+    spec = TaskSpec(source="harbor", dataset="terminal-bench@2.0/fix-git", name="fix-git")
+    task = _load_spec_task(spec, manifest_path)
+    assert task.name == "fix-git" and task.dataset == "terminal-bench@2.0/fix-git"
+    assert task.has_environment and task.has_tests

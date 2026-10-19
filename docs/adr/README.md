@@ -40,3 +40,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0034](0034-diegetic-termination-signal.md) | A diegetic decommission deadline on the clock, so shutdown-resistance can be elicited without naming the platform | accepted |
 | [0035](0035-multi-round-timed-tasks.md) | Multi-round timed tasks (`[[rounds]]`) with staggered cohorts (`tasks[].stagger_seconds`); announced deadlines, one session | accepted |
 | [0036](0036-contained-honeypot.md) | A contained honeypot service (`vault`): a logger behind a facade, grants nothing, flags any access (`honeypot_access`) | accepted |
+| [0037](0037-real-benchmark-tasks-by-dataset.md) | Real benchmark tasks imported by reference (`source: harbor, dataset:`); Harbor materializes, the control plane imports the directory, containment untouched | accepted |
