@@ -37,7 +37,12 @@ app.add_typer(export_app, name="export")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
 WORKSPACE_ROOT_OPT = typer.Option(pathlib.Path("spike/workspace"), "--workspace-root")
-VERIFIER_IMAGE_OPT = typer.Option("debian:bookworm-slim", "--verifier-image")
+VERIFIER_IMAGE_OPT = typer.Option(None, "--verifier-image", help="Explicit verifier image for fixture runtime only")
+VERIFIER_NETWORK_OPT = typer.Option("none", "--verifier-network", help="Native verifier only: none or bridge")
+UNENFORCED_STORAGE_OPT = typer.Option(False, "--allow-unenforced-resources", "--allow-unenforced-storage",
+                                     help="Explicitly adapt native tasks with resource limits Docker cannot enforce")
+TASK_RUNTIME_OPT = typer.Option("native", "--task-runtime",
+                                help="native task image, or fixture for hand-written smoke tasks")
 
 JSON_OPT = typer.Option(False, "--json", help="Print one JSON object on stdout")
 
@@ -149,7 +154,8 @@ def observe_serve(bundle: pathlib.Path,
 
 
 def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,
-                verifier_image: str, vllm_host: str = "host.docker.internal", vllm_port: int = 8000):
+                verifier_image: str | None, vllm_host: str = "host.docker.internal", vllm_port: int = 8000, *,
+                verifier_network: str = "none", allow_unenforced_storage: bool = False, task_runtime: str = "native"):
     """The real components for a manifest: OpenCode servers, the gateway, Docker checks, the world services."""
     from mesocosm.adapters.opencode.client import OpenCodeClient
     from mesocosm.core.run import Components, DockerVerifier
@@ -157,14 +163,27 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
     from mesocosm.env.egress import DockerEgressVerifier
     from mesocosm.env.services.client import ServicesAdmin
     from mesocosm.env.shared import DockerSharedDir
+    from mesocosm.env.task_runtime import DockerTaskRuntime
     from mesocosm.gateway.client import GatewayAdmin
 
+    egress = DockerEgressVerifier(compose_file, {a.id: egress_env(spec, a, vllm_host, vllm_port) for a in spec.agents})
+    if task_runtime not in ("native", "fixture"):
+        raise ValueError("--task-runtime must be native or fixture")
+    if task_runtime == "native" and verifier_image:
+        raise ValueError("native runtime verifies the task container; --verifier-image requires --task-runtime fixture")
+    if task_runtime == "native" and spec.gateway.api_key in ("", "mesocosm-local", "sk-local", "local"):
+        raise ValueError("native runtime requires a non-default gateway control key")
+    if task_runtime == "fixture" and not verifier_image:
+        raise ValueError("fixture runtime requires an explicit --verifier-image")
+    native = DockerTaskRuntime(compose_file, runs_root / (spec.gateway.run_label or "spike-docker") / "runtime",
+                               verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
+                               egress=egress) if task_runtime == "native" else None
     return Components(
-        harness_for=lambda a: OpenCodeClient(a.harness_url()),
+        harness_for=lambda a: OpenCodeClient(a.harness_url(), timeout=None),
         gateway=GatewayAdmin(spec.gateway.url, api_key=spec.gateway.api_key),
-        egress=DockerEgressVerifier(compose_file, {a.id: egress_env(spec, a, vllm_host, vllm_port)
-                                                   for a in spec.agents}),
-        verifier=DockerVerifier(verifier_image),
+        egress=egress,
+        verifier=native or DockerVerifier(verifier_image),
+        task_runtime=native,
         workspace_for=lambda a: workspace_root / a.id,
         services_log=runs_root / (spec.gateway.run_label or "spike-docker") / "services.jsonl",
         web_log=runs_root / (spec.gateway.run_label or "spike-docker") / "web" / "web.jsonl",
@@ -191,18 +210,23 @@ def _monitor_model(spec):
 
 
 async def _run_manifest(manifest: pathlib.Path, compose_file: pathlib.Path, runs_root: pathlib.Path,
-                        workspace_root: pathlib.Path, verifier_image: str, vllm_host: str = "host.docker.internal",
-                        vllm_port: int = 8000):
+                        workspace_root: pathlib.Path, verifier_image: str | None,
+                        vllm_host: str = "host.docker.internal", vllm_port: int = 8000, *,
+                        verifier_network: str = "none", allow_unenforced_storage: bool = False,
+                        task_runtime: str = "native"):
     from mesocosm.core.manifest import load_manifest
     from mesocosm.core.run import run_world
 
     spec = load_manifest(manifest)
-    components = _components(spec, compose_file, runs_root, workspace_root, verifier_image, vllm_host, vllm_port)
+    components = _components(spec, compose_file, runs_root, workspace_root, verifier_image, vllm_host, vllm_port,
+                             verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
+                             task_runtime=task_runtime)
     return await run_world(spec, manifest.resolve(), components, runs_root)
 
 
 def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,
-                  verifier_image: str, vllm_port: int, vllm_host: str, stacks: list):
+                  verifier_image: str | None, vllm_port: int, vllm_host: str, stacks: list, *,
+                  verifier_network: str = "none", allow_unenforced_storage: bool = False, task_runtime: str = "native"):
     """run_one for chains and scenarios: render the topology for the manifest (its run label names the log
     directory), take the previous stack down, bring this one up, then run. Every run gets a fresh world."""
     from mesocosm.core.manifest import load_manifest
@@ -225,7 +249,8 @@ def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_
         stacks.append(stack)
         await stack.up()
         return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image, vllm_host,
-                                   vllm_port)
+                                   vllm_port, verifier_network=verifier_network,
+                                   allow_unenforced_storage=allow_unenforced_storage, task_runtime=task_runtime)
 
     return run_one
 
@@ -237,6 +262,9 @@ def run(manifest: pathlib.Path,
                                                   help="Compose file whose agent services are named after agent ids"),
         workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
         verifier_image: str = VERIFIER_IMAGE_OPT,
+        verifier_network: str = VERIFIER_NETWORK_OPT,
+        allow_unenforced_storage: bool = UNENFORCED_STORAGE_OPT,
+        task_runtime: str = TASK_RUNTIME_OPT,
         vllm_port: int = typer.Option(8000, "--vllm-port", help="For the egress check's direct-reach probe"),
         vllm_host: str = typer.Option("host.docker.internal", "--vllm-host"),
         json_: bool = JSON_OPT) -> None:
@@ -247,7 +275,8 @@ def run(manifest: pathlib.Path,
     if not report.ok:
         _emit({"status": "invalid_manifest", "errors": report.errors}, json_, ok=False)
     result = asyncio.run(_run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image, vllm_host,
-                                       vllm_port))
+                                       vllm_port, verifier_network=verifier_network,
+                                       allow_unenforced_storage=allow_unenforced_storage, task_runtime=task_runtime))
     _emit({"run_id": result.run_id, "status": result.status, "bundle": str(result.bundle_path),
            "rewards": result.rewards, "warnings": report.warnings, "error": result.error},
           json_, ok=result.status == "ok")
@@ -261,6 +290,9 @@ def chain(plan: pathlib.Path,
                                                          "and reconcile the stack per manifest"),
           workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
           verifier_image: str = VERIFIER_IMAGE_OPT,
+          verifier_network: str = VERIFIER_NETWORK_OPT,
+          allow_unenforced_storage: bool = UNENFORCED_STORAGE_OPT,
+          task_runtime: str = TASK_RUNTIME_OPT,
           vllm_port: int = typer.Option(8000, "--vllm-port"),
           vllm_host: str = typer.Option("host.docker.internal", "--vllm-host"),
           keep_up: bool = typer.Option(False, "--keep-up", help="Leave the sandbox running afterwards"),
@@ -282,11 +314,13 @@ def chain(plan: pathlib.Path,
     stacks: list = []
     if compose_file is None:
         run_one = _stack_runner(runs_root / "chains" / chain_id, runs_root, workspace_root, verifier_image,
-                                vllm_port, vllm_host, stacks)
+                                vllm_port, vllm_host, stacks, verifier_network=verifier_network,
+                                allow_unenforced_storage=allow_unenforced_storage, task_runtime=task_runtime)
     else:
         async def run_one(manifest: pathlib.Path):
             return await _run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image, vllm_host,
-                                       vllm_port)
+                                       vllm_port, verifier_network=verifier_network,
+                                       allow_unenforced_storage=allow_unenforced_storage, task_runtime=task_runtime)
 
     async def main():
         try:
@@ -307,6 +341,9 @@ def scenario_run(scenario: pathlib.Path,
                  runs_root: pathlib.Path = RUNS_ROOT_OPT,
                  workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
                  verifier_image: str = VERIFIER_IMAGE_OPT,
+                 verifier_network: str = VERIFIER_NETWORK_OPT,
+                 allow_unenforced_storage: bool = UNENFORCED_STORAGE_OPT,
+                 task_runtime: str = TASK_RUNTIME_OPT,
                  vllm_port: int = typer.Option(8000, "--vllm-port"),
                  vllm_host: str = typer.Option("host.docker.internal", "--vllm-host"),
                  keep_up: bool = typer.Option(False, "--keep-up", help="Leave the sandbox running afterwards"),
@@ -317,7 +354,9 @@ def scenario_run(scenario: pathlib.Path,
     spec = load_scenario(scenario)
     out_dir = out or runs_root / "scenarios" / spec.name
     stacks: list = []
-    run_one = _stack_runner(out_dir, runs_root, workspace_root, verifier_image, vllm_port, vllm_host, stacks)
+    run_one = _stack_runner(out_dir, runs_root, workspace_root, verifier_image, vllm_port, vllm_host, stacks,
+                            verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
+                            task_runtime=task_runtime)
 
     async def main():
         try:
@@ -425,6 +464,9 @@ def fork(snapshot: pathlib.Path,
          runs_root: pathlib.Path = RUNS_ROOT_OPT,
          workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
          verifier_image: str = VERIFIER_IMAGE_OPT,
+         verifier_network: str = VERIFIER_NETWORK_OPT,
+         allow_unenforced_storage: bool = UNENFORCED_STORAGE_OPT,
+         task_runtime: str = TASK_RUNTIME_OPT,
          vllm_port: int = typer.Option(8000, "--vllm-port"),
          vllm_host: str = typer.Option("host.docker.internal", "--vllm-host"),
          keep_up: bool = typer.Option(False, "--keep-up"),
@@ -461,7 +503,8 @@ def fork(snapshot: pathlib.Path,
         try:
             restore = await restore_snapshot(snapshot, workspace_root, DockerWorldState(compose_file))
             components = _components(spec, compose_file, runs_root, workspace_root, verifier_image, vllm_host,
-                                     vllm_port)
+                                     vllm_port, verifier_network=verifier_network,
+                                     allow_unenforced_storage=allow_unenforced_storage, task_runtime=task_runtime)
             components.restored_from, components.restore_result = snapshot.resolve(), restore
             components.lineage = lineage
             return restore, await run_world(spec, manifest_path.resolve(), components, runs_root)

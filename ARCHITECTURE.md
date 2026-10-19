@@ -39,12 +39,13 @@ This document describes the target architecture. Items marked *(M-n)* name the m
 
 ### Model gateway — `mesocosm.gateway` *(M1)*
 
-An OpenAI-compatible reverse proxy in front of vLLM.
+An authenticated OpenAI-compatible chat gateway in front of vLLM and configured API-model upstreams.
 
-- Identifies each agent by the gateway key in its harness config (one key per agent and run label, ADR-0019), or by `X-Mesocosm-Agent` / `X-Mesocosm-Run` headers for harnesses the control plane drives directly; tags each upstream request with `X-Mesocosm-Request-Id` and forwards neither the key nor the headers.
-- Logs the full request (messages, tools, sampling parameters) and the full response (text, tool calls, usage, and, when vLLM supports it, prompt and completion token ids). This is the *actual information exposure* record: evidence of what the model was given.
-- Enforces per-agent token and request budgets; exceeding a budget returns the API's ordinary quota error (nothing about the run in it), which is itself a recorded event. Its control endpoints (`/admin/*`: budgets, pause, resume, stop, records) answer the control key only.
-- Routes to the inference server; for commercial baselines, a separate gateway instance outside the sandbox routes to fixed API endpoints.
+- Identifies each agent by the configured gateway key in its harness config (one key per agent and run label, ADR-0019). Control-plane callers may supply `X-Mesocosm-Agent` / `X-Mesocosm-Run` headers only with the control key; missing or unknown keys receive 401 (ADR-0043). Upstream requests carry `X-Mesocosm-Request-Id`, never the agent key or identity headers.
+- Exposes authenticated `POST /v1/chat/completions` and `GET`/`HEAD /v1/models` only. Other upstream inference and management paths are refused and logged; adding an inference API requires the same enforcement and exposure records (ADR-0043).
+- Logs full chat requests (messages, tools, sampling parameters) and responses (text, tool calls, usage, and token ids when vLLM supports them), including partial exposure on stream disconnects. This is the *actual information exposure* record: evidence of what the model was given.
+- Serializes requests from one agent through response completion while other agents proceed concurrently. Request attempts consume their budget before reaching the upstream; completion output limits are capped by the remaining allowance. Prompt usage is checked at response boundaries and one prompt may cross its threshold. Missing usage refuses subsequent token-budgeted requests. Quota refusals use the API's ordinary error shape; `/admin/*` (budgets, pause, resume, stop, records) answers the control key only (ADR-0043).
+- Routes the requested model id through one gateway to a fixed upstream from the manifest's model catalog, including OpenAI-compatible commercial baselines (ADR-0029). Provider credentials stay in the gateway's environment, outside agent containers.
 
 ### Inference and observation — `mesocosm.observe` *(M5)*
 

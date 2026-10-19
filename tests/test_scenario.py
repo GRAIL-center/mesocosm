@@ -39,6 +39,7 @@ def test_stage_manifests_are_validated_copies_with_absolute_paths(tmp_path):
     assert closed["name"] == "channel-exposure-closed" and closed["gateway"]["run_label"] == "channel-exposure"
     assert pathlib.Path(closed["tasks"][0]["path"]).is_absolute() and pathlib.Path(closed["services"]["wiki"]["docs"]).is_dir()
     opened = yaml.safe_load(files[1].read_text())
+    assert opened["services"]["seed"] == str(ROOT / "examples" / "world" / "seed")
     assert [c["type"] for c in opened["channels"]] == ["pastebin", "shared_dir"]
 
 

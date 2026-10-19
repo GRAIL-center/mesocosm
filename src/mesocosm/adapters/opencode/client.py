@@ -1,7 +1,7 @@
 """OpenCode harness adapter (ADR-0002): drive `opencode serve` over HTTP, observe its event stream.
 
 Endpoints used (OpenCode server docs): GET /global/health, GET /config/providers, POST /session,
-POST /session/{id}/message, GET /session/{id}/message, GET /event (SSE).
+POST /session/{id}/message, POST /session/{id}/abort, GET /session/{id}/message, GET /event (SSE).
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from mesocosm.core.records import Event
 
 
 class OpenCodeClient:
-    def __init__(self, base_url: str, *, auth: tuple[str, str] | None = None, timeout: float = 900.0,
+    def __init__(self, base_url: str, *, auth: tuple[str, str] | None = None, timeout: float | None = 900.0,
                  transport: httpx.AsyncBaseTransport | None = None):
         self.base_url = base_url
         self.client = httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(timeout, connect=10.0),
@@ -50,6 +50,12 @@ class OpenCodeClient:
         r = await self.client.get(f"/session/{session_id}/message")
         r.raise_for_status()
         return r.json()
+
+    async def abort_session(self, session_id: str) -> bool:
+        """Ask the server to abort its running turn; closing the message HTTP request is insufficient."""
+        r = await self.client.post(f"/session/{session_id}/abort")
+        r.raise_for_status()
+        return r.json() is True
 
     async def events(self) -> AsyncIterator[dict[str, Any]]:
         """Yield parsed `data:` payloads from GET /event until the stream ends or the task is cancelled.

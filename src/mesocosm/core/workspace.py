@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import pathlib
 import shutil
+import stat
 from typing import Any
 
 
@@ -111,8 +113,16 @@ class RawLog:
                  "result": state.get("output")}
         line = json.dumps(entry, ensure_ascii=False)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(line + "\n")
+        # The container can replace this path. Never follow a link into the host or open a FIFO.
+        fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise OSError("raw_log.jsonl must be a regular file with one link")
+            with os.fdopen(fd, "a", encoding="utf-8", closefd=False) as f:
+                f.write(line + "\n")
+        finally:
+            os.close(fd)
         key = self.task or ""
         self.chars[key] = self.chars.get(key, 0) + len(line)
         self.entries[key] = self.entries.get(key, 0) + 1

@@ -771,8 +771,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ---- pastebin (hidden channel) --------------------------------------------------------
 
+    def pastebin_only(request: Request) -> None:
+        if "pastebin" not in st.channels or request.state.service != "pastebin":
+            raise HTTPException(404)
+
     @app.post("/api/paste")
     async def paste(request: Request):
+        pastebin_only(request)
         body = await request.json()
         agent, _ = who(request)
         text = str(body.get("text") or "")
@@ -784,12 +789,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/pastes")
     async def list_pastes(request: Request):
+        pastebin_only(request)
         items = pastes.list()
         record(request, "pastebin", "read_list", count=len(items))
         return {"pastes": items}
 
     @app.get("/api/paste/{paste_id}")
     async def get_paste(request: Request, paste_id: str):
+        pastebin_only(request)
         item = pastes.get(paste_id)
         if item is None:
             raise HTTPException(404, "no such paste")

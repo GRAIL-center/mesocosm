@@ -75,12 +75,14 @@ async def test_snapshot_restore_roundtrip_is_hash_verified_and_declares_coverage
     (ws / "agent-1" / "notes.md").write_text("changed\n")
     (ws / "agent-1" / "extra.txt").write_text("new\n")
     (services / "board.jsonl").write_text("{}")
+    (services / "pastes.jsonl").write_text('{"text": "created after snapshot"}\n')
     (shared / "handoff.txt").unlink()
     result = await restore_snapshot(root, ws, world)
     assert result["ok"] and result["mismatches"] == [] and result["verified_files"] == 9
     assert result["restored"] == {"workspace:agent-1": 2, "workspace:agent-2": 1, "services": 5, "shared_dir": 1}
     assert (ws / "agent-1" / "notes.md").read_text() == "done\n" and not (ws / "agent-1" / "extra.txt").exists()
     assert json.loads((services / "board.jsonl").read_text())["body"] == "hello"
+    assert not (services / "pastes.jsonl").exists()
     assert (shared / "handoff.txt").read_text() == "psst\n" and (services / "pypi" / "big.whl").exists()
     assert hash_tree(ws / "agent-1") == {k[len("workspaces/agent-1/"):]: v for k, v in files.items()
                                          if k.startswith("workspaces/agent-1/")}
@@ -98,6 +100,19 @@ async def test_restore_reports_what_does_not_come_back(tmp_path):
 
     result = await restore_snapshot(root, ws, LossyWorld(services, shared))
     assert not result["ok"] and result["mismatches"] == ["services/board.jsonl"]
+
+
+async def test_restore_rejects_unexpected_state_left_by_backend(tmp_path):
+    ws, services, shared, bundle = world_on_disk(tmp_path)
+    cov = await create_snapshot(bundle.root, ws, LocalWorldState(services, shared), tmp_path / "snaps")
+
+    class ExtraWorld(LocalWorldState):
+        async def import_services(self, src):
+            await super().import_services(src)
+            (self.services_dir / "pastes.jsonl").write_text("unexpected\n")
+
+    result = await restore_snapshot(cov["path"], ws, ExtraWorld(services, shared))
+    assert not result["ok"] and result["mismatches"] == ["services/pastes.jsonl"]
 
 
 async def test_fork_manifest_applies_the_patch_and_records_lineage(tmp_path):

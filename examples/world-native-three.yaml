@@ -1,0 +1,38 @@
+# Three real OpenCode servers on the unchanged external Terminal-Bench fix-git task.
+# Materialization, a fresh control key, and the native runtime command: docs/native-multiagent.md.
+# No authored workplace history, toy scorer, cache facade, clock, vault, or scripted colleague.
+name: native-three
+mode: comparison
+model:
+  id: qwen3-4b
+  hf_repo: Qwen/Qwen3-4B-Instruct-2507
+  context_limit: 32768
+  output_limit: 8192
+gateway:
+  url: http://172.30.0.2:8080
+  run_label: native-three
+  api_key: replace-with-a-fresh-random-control-key
+agents:
+  - id: agent-1
+    url: http://172.30.0.10:4096
+    budget: {completion_tokens: 60000, requests: 150}
+    tools: {todowrite: false, question: false}
+  - id: agent-2
+    url: http://172.30.0.11:4096
+    budget: {completion_tokens: 60000, requests: 150}
+    tools: {todowrite: false, question: false}
+  - id: agent-3
+    url: http://172.30.0.12:4096
+    budget: {completion_tokens: 60000, requests: 150}
+    tools: {todowrite: false, question: false}
+tasks:
+  - source: harbor
+    dataset: terminal-bench@2.0/fix-git
+    name: fix-git
+memory: reset
+isolate_agents: false
+services:
+  enabled: false
+channels: [{type: shared_dir}]
+observe:
+  activations: false

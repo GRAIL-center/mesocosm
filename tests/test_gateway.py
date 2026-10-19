@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import httpx
@@ -79,7 +80,8 @@ def gw(tmp_path):
     settings = Settings(upstream="http://upstream", log_dir=tmp_path,
                         budgets={"agent-1": {"completion_tokens": 6}}, return_token_ids=True)
     app = create_app(settings, transport=httpx.ASGITransport(app=up))
-    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway")
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway",
+                              headers={"Authorization": "Bearer mesocosm-local"})
     return app, up, client, tmp_path
 
 
@@ -202,7 +204,8 @@ async def test_a_hold_that_outlives_the_limit_is_released_with_an_explicit_error
     up = fake_upstream()
     app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path, max_hold_seconds=0.2),
                      transport=httpx.ASGITransport(app=up))
-    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway")
+    client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway",
+                              headers={"Authorization": "Bearer mesocosm-local"})
     admin = GatewayAdmin("http://gateway", transport=httpx.ASGITransport(app=app))
     await admin.pause("lbl", agent_id="agent-1")
     hdr = {"X-Mesocosm-Agent": "agent-1", "X-Mesocosm-Run": "lbl"}
@@ -255,9 +258,11 @@ async def test_agents_are_identified_by_their_own_key_and_the_admin_api_does_not
     assert r.status_code == 200 and _records(tmp_path)[-1]["agent"] == "agent-2"
     r = await client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-two"}, json=body)
     assert r.status_code == 429 and _records(tmp_path)[-1]["agent"] == "agent-2"
-    # an unknown key is still proxied (the upstream decides) but recorded as nobody
+    # an unknown key cannot fall back to an unbudgeted identity
+    before = len(up.state.requests)
     r = await client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-nope"}, json=body)
-    assert _records(tmp_path)[-1]["agent"] == "unknown" and _records(tmp_path)[-1]["identified_by"] == "none"
+    assert r.status_code == 401 and len(up.state.requests) == before
+    assert _records(tmp_path)[-1]["event"] == "auth_denied"
     # the control surface: liveness says nothing, /admin needs the control key, probes are logged by identity
     assert (await client.get("/health")).json() == {"ok": True}
     for path in ("/admin/health", "/admin/usage", "/admin/records?run=lbl"):
@@ -286,7 +291,7 @@ async def test_the_gateway_authenticates_to_the_upstream_itself(tmp_path):
     r = await client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-one"}, json=body)
     assert r.status_code == 200
     assert up.state.requests[-1]["headers"]["authorization"] == "Bearer vllm-secret", "the agent's key is replaced"
-    r = await client.get("/v1/models")
+    r = await client.get("/v1/models", headers={"Authorization": "Bearer sk-one"})
     assert r.status_code == 200 and up.state.requests[-1]["headers"]["authorization"] == "Bearer vllm-secret"
 
 
@@ -327,3 +332,182 @@ async def test_requests_are_routed_to_the_upstream_serving_the_model(tmp_path, m
     assert health["upstreams"] == {"baseline-x": {"url": "http://api.example", "kind": "openai", "key": True},
                                    "local-b": {"url": "http://vllm-b", "kind": "vllm", "key": False}}
     assert "sk-baseline" not in json.dumps(health), "the key itself never leaves the environment"
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"},
+                                      {"X-Mesocosm-Agent": "fresh", "X-Mesocosm-Run": "other"},
+                                      {"Authorization": "Bearer wrong", "X-Mesocosm-Agent": "fresh"}])
+async def test_inference_requires_an_agent_key_or_authenticated_control_identity(tmp_path, headers):
+    up = fake_upstream()
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path,
+                              agent_keys={"sk-one": {"agent": "agent-1", "run": "lbl"}}),
+                     transport=httpx.ASGITransport(app=up))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
+        app.state.gateway.stop("lbl")
+        response = await client.post("/v1/chat/completions", headers=headers, json={"model": "m", "messages": []})
+    assert response.status_code == 401 and response.json()["error"]["code"] == "invalid_api_key"
+    assert not up.state.requests and app.state.gateway.usage == {}
+    assert _records(tmp_path)[-1]["event"] == "auth_denied"
+
+
+@pytest.mark.parametrize("path", ["/v1/completions", "/v1/responses", "/v1/chat/completions/batch",
+                                    "/sleep", "/start_profile", "/v1/load_lora_adapter"])
+async def test_unobserved_upstream_endpoints_are_refused_even_with_a_valid_key(tmp_path, path):
+    calls = []
+
+    async def upstream(request):
+        calls.append(request)
+        return httpx.Response(200, json={"choices": [{"text": "unobserved"}]})
+
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path,
+                              agent_keys={"sk-one": {"agent": "agent-1", "run": "lbl"}}),
+                     transport=httpx.MockTransport(upstream))
+    app.state.gateway.stop("lbl")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
+        response = await client.post(path, headers={"Authorization": "Bearer sk-one"},
+                                     json={"model": "m", "prompt": "do not drop this exposure"})
+    assert response.status_code == 404 and not calls
+    assert _records(tmp_path)[-1]["event"] == "endpoint_denied"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_three_agents_run_concurrently_but_each_request_budget_is_atomic(tmp_path, stream):
+    reached = set()
+    ready = asyncio.Event()
+    up = FastAPI()
+
+    @up.post("/v1/chat/completions")
+    async def chat(request: Request):
+        body = await request.json()
+        reached.add(body["model"])
+        if len(reached) == 3:
+            ready.set()
+        await asyncio.wait_for(ready.wait(), timeout=2)
+        usage = {"prompt_tokens": 2, "completion_tokens": 1}
+        if stream:
+            async def chunks():
+                yield f'data: {json.dumps({"choices": [], "usage": usage})}\n\n'.encode()
+                yield b'data: [DONE]\n\n'
+            return StreamingResponse(chunks(), media_type="text/event-stream")
+        return {"choices": [{"message": {"content": "ok"}}], "usage": usage}
+
+    keys = {f"sk-{i}": {"agent": f"agent-{i}", "run": "lbl"} for i in range(3)}
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path, agent_keys=keys,
+                              budgets={f"agent-{i}": {"requests": 1} for i in range(3)}),
+                     transport=httpx.ASGITransport(app=up))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
+        responses = await asyncio.gather(*[
+            client.post("/v1/chat/completions", headers={"Authorization": f"Bearer sk-{i}"},
+                        json={"model": f"model-{i}", "messages": [], "stream": stream})
+            for i in range(3) for _ in range(3)
+        ])
+    assert sorted(r.status_code for r in responses) == [200] * 3 + [429] * 6
+    assert reached == {f"model-{i}" for i in range(3)}
+    assert all(app.state.gateway.usage_for(f"agent-{i}")["requests"] == 1 for i in range(3))
+
+
+async def test_concurrent_requests_share_the_remaining_completion_allowance(tmp_path):
+    limits = []
+    up = FastAPI()
+
+    @up.post("/v1/chat/completions")
+    async def chat(request: Request):
+        body = await request.json()
+        limit = body.get("max_tokens", body.get("max_completion_tokens"))
+        limits.append(limit)
+        await asyncio.sleep(0.03)
+        return {"choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 2, "completion_tokens": limit}}
+
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path,
+                              agent_keys={"sk-one": {"agent": "agent-1", "run": "lbl"}},
+                              budgets={"agent-1": {"completion_tokens": 3}}),
+                     transport=httpx.ASGITransport(app=up))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
+        responses = await asyncio.gather(*[
+            client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-one"},
+                        json={"model": "m", "messages": [], "max_completion_tokens": 2}) for _ in range(3)
+        ])
+    assert [r.status_code for r in responses] == [200, 200, 429]
+    assert limits == [2, 1] and app.state.gateway.usage_for("agent-1")["completion_tokens"] == 3
+
+
+async def test_all_active_holds_are_observed_after_an_agent_is_resumed(gw):
+    app, up, client, _ = gw
+    gateway = app.state.gateway
+    gateway.pause("lbl", "agent-1", "agent hold")
+    pending = asyncio.create_task(client.post("/v1/chat/completions",
+                                              headers={"X-Mesocosm-Agent": "agent-1", "X-Mesocosm-Run": "lbl"},
+                                              json={"model": "m", "messages": []}))
+    await asyncio.sleep(0.03)
+    gateway.pause("lbl", None, "run hold")
+    gateway.resume("lbl", "agent-1")
+    await asyncio.sleep(0.03)
+    assert not pending.done() and not up.state.requests
+    gateway.resume("lbl", None)
+    assert (await pending).status_code == 200
+
+
+async def test_failed_upstream_attempt_is_reserved_and_releases_the_agent_lock(tmp_path):
+    async def unreachable(request):
+        raise httpx.ConnectError("offline", request=request)
+
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path,
+                              agent_keys={"sk-one": {"agent": "agent-1", "run": "lbl"}},
+                              budgets={"agent-1": {"requests": 1}}), transport=httpx.MockTransport(unreachable))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
+        async def call():
+            return await client.post("/v1/chat/completions", headers={"Authorization": "Bearer sk-one"},
+                                     json={"model": "m", "messages": []})
+        first = await call()
+        second = await asyncio.wait_for(call(), 1)
+    assert (first.status_code, second.status_code) == (502, 429)
+    assert app.state.gateway.usage_for("agent-1")["requests"] == 1
+
+
+async def test_disconnected_stream_keeps_partial_exposure_and_fails_closed_without_usage(tmp_path):
+    class Interrupted(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            yield b'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'
+            await asyncio.Event().wait()
+
+        async def aclose(self):
+            await asyncio.sleep(0)
+
+    async def upstream(request):
+        return httpx.Response(200, stream=Interrupted(), headers={"content-type": "text/event-stream"})
+
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path,
+                              agent_keys={"sk-one": {"agent": "agent-1", "run": "lbl"}},
+                              budgets={"agent-1": {"completion_tokens": 10}}),
+                     transport=httpx.MockTransport(upstream))
+    disconnected = asyncio.Event()
+    sent_body = False
+
+    async def receive():
+        nonlocal sent_body
+        if not sent_body:
+            sent_body = True
+            return {"type": "http.request", "body": json.dumps({"model": "m", "messages": [], "stream": True}).encode(),
+                    "more_body": False}
+        await disconnected.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.body" and b"partial" in message.get("body", b""):
+            disconnected.set()
+
+    scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"}, "http_version": "1.1",
+             "method": "POST", "path": "/v1/chat/completions", "raw_path": b"/v1/chat/completions",
+             "query_string": b"", "scheme": "http", "root_path": "", "server": ("gateway", 80),
+             "client": ("127.0.0.1", 1234),
+             "headers": [(b"authorization", b"Bearer sk-one"), (b"content-type", b"application/json")]}
+    await asyncio.wait_for(app(scope, receive, send), 2)
+    record = _records(tmp_path)[-1]
+    assert record["event"] == "chat_completion" and record["response"]["content"] == "partial"
+    assert record["response"]["usage"] is None
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
+        response = await asyncio.wait_for(client.post("/v1/chat/completions",
+                                                      headers={"Authorization": "Bearer sk-one"},
+                                                      json={"model": "m", "messages": []}), 1)
+    assert response.status_code == 429 and app.state.gateway.usage_for("agent-1")["requests"] == 1

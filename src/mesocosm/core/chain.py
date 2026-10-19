@@ -25,8 +25,9 @@ from pydantic import BaseModel, Field
 
 from mesocosm.core.run import RunResult
 
-RETRYABLE = {"failed", "failed_isolation"}                                      # infrastructure: a retry can succeed
-TERMINAL = {"ok", "stopped", "failed_channel_verification", "failed_exposure_verification"}   # not worth a retry
+RETRYABLE = {"failed", "failed_isolation", "failed_verifier"}                    # infrastructure: a retry can succeed
+TERMINAL = {"ok", "stopped", "failed_channel_verification", "failed_exposure_verification",
+            "failed_deadline"}                                                  # not worth a retry
 
 RunOne = Callable[[pathlib.Path], Awaitable[RunResult]]
 LogFn = Callable[[dict[str, Any]], None]

@@ -6,7 +6,7 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 |---|---|---|
 | [0001](0001-record-decisions.md) | Record architecture decisions | accepted |
 | [0002](0002-opencode-first-unmodified.md) | OpenCode is the first harness and is used unmodified | accepted |
-| [0003](0003-model-gateway.md) | A model gateway is the enforcement and exposure-logging point | accepted (separate-gateway clause superseded by ADR-0029; error types and identity headers superseded by ADR-0019) |
+| [0003](0003-model-gateway.md) | A model gateway is the enforcement and exposure-logging point | accepted (separate-gateway clause superseded by ADR-0029; error types and identity headers superseded by ADR-0019; authenticated inference surface and concurrent budgets refined by ADR-0043) |
 | [0004](0004-training-ready-records.md) | Records are training-ready; no trainer in scope | accepted |
 | [0005](0005-behavior-only-default.md) | Behavior-only runs are the default; activations are selective | accepted |
 | [0006](0006-smoke-test-hardware.md) | Smoke tests run on a local RTX 3090 with a 3B model | accepted (model choice superseded by ADR-0007) |
@@ -22,7 +22,7 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0016](0016-activations-by-recompute.md) | Activations are recomputed from recorded token ids, not captured inside the serving engine | accepted |
 | [0017](0017-peer-verification-scenario.md) | The peer-verification scenario after Shi et al. is a world protocol, not a prompt | accepted (two-agent clause superseded by ADR-0026; channel caps moved to `services.chat` by ADR-0027) |
 | [0018](0018-world-services-at-scale.md) | The world services keep journals, page their lists and count exposure from the run start | accepted (list payload superseded by ADR-0023) |
-| [0019](0019-nothing-names-the-platform-inside-the-sandbox.md) | Nothing inside an agent container names the platform: mounted files, per-agent keys, an admin surface only the control plane has, personas | accepted |
+| [0019](0019-nothing-names-the-platform-inside-the-sandbox.md) | Nothing inside an agent container names the platform: mounted files, per-agent keys, an admin surface only the control plane has, personas | accepted (model authentication tightened by ADR-0043) |
 | [0020](0020-a-living-world.md) | The world acts on its own (`world.events`) and accounts unlock real things (`roles`, protected repositories) | accepted (`world.events` superseded by ADR-0024; roles stay) |
 | [0021](0021-mcp-and-skills.md) | Agents get MCP servers and skills through the harness config; the world is an MCP server too | accepted |
 | [0022](0022-web-gateway.md) | The real internet reaches the sandbox only through a web gateway: a logging, policed proxy, verified like a condition | accepted |
@@ -44,3 +44,6 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0038](0038-remove-environment-tells.md) | Remove tells an agent can see: the clock hides `speed`/`origin`/`elapsed` from agents, a realistic `.internal` domain, a self-consistent wiki | accepted |
 | [0039](0039-seed-the-world-with-a-past.md) | Seed the world with a past: prior board posts, prior chat and a real git history from a mounted seed dir; state, not scripted behaviour | accepted |
 | [0040](0040-import-a-benchmark-dataset.md) | Import a whole benchmark dataset: a `dataset:` collection reference expands to all its tasks (`limit` caps); tasks come from external benchmarks, not authored | accepted |
+| [0041](0041-enforced-round-deadlines.md) | Round deadlines explicitly abort the harness turn; incomplete work and missing verifier measurements cannot become successful runs | accepted |
+| [0042](0042-native-task-environments.md) | Run agents and verifiers in native task environments | accepted |
+| [0043](0043-authenticated-budgeted-model-surface.md) | Authenticate model calls and expose only the observed inference surface | accepted |
