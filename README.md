@@ -40,6 +40,23 @@ Agents run commands and use tools inside Docker task environments. A model gatew
 to inference and records model requests; the controller collects harness events and activity from
 the configured services. The researcher operates these controls from outside the agent workspaces.
 
+```mermaid
+flowchart LR
+    subgraph world["Docker task environments"]
+        direction TB
+        a["Agent 1 + workspace"]
+        b["Agent 2 + workspace"]
+        n["Agent N + workspace"]
+    end
+    world <--> shared["Optional shared resources<br/>files · Git · services"]
+    world --> gateway["Model gateway"]
+    gateway --> model["Models"]
+    world --> records["Run bundle<br/>events · logs · results"]
+    gateway --> records
+    shared --> records
+    records --> observer["Live observer<br/>and replay"]
+```
+
 ## How it works
 
 1. **Define the experiment.** Choose the agents, tasks, models, shared resources and conditions in a
@@ -53,6 +70,21 @@ the configured services. The researcher operates these controls from outside the
 
 The output is a **run bundle**: the configuration, collected events, native logs and verifier results.
 Automatic flags help identify activity for further review.
+
+## See the observer
+
+The observer shows agent activity as a live map. Each character represents an agent session;
+select an agent to inspect its model requests and tool calls, or replay the timeline to follow an
+interaction. The agents themselves execute tools in Docker task environments.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/observer-replay-dark.gif">
+    <img src="docs/assets/observer-replay-light.gif" alt="Observer replay showing agent sessions, activity summaries and a trail when one agent reads another agent's post." width="100%">
+  </picture>
+  <br>
+  <sub>Observer replay of an authored example task. The map visualizes recorded agent activity.</sub>
+</p>
 
 ## Get started
 

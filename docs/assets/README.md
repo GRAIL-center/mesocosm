@@ -1,6 +1,9 @@
 # README figures
 
-Every image has a light and a dark version; the README picks one with `<picture>` and `prefers-color-scheme`.
+The README uses the observer replay GIF to show the actual interface, selecting its light or dark
+version with `<picture>` and `prefers-color-scheme`. Its system overview is a Mermaid diagram written
+directly in the README. The earlier banner, overview, constraint legend and board screenshots below
+remain as historical assets; they are not part of the current introduction.
 
 | File | What it is | Made from |
 |---|---|---|
