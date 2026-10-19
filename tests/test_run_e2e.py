@@ -62,7 +62,7 @@ def fake_opencode(gateway: httpx.AsyncClient, agent_id: str, run_label: str,
         if on_message is not None:
             on_message(body)
         await asyncio.sleep(0.05)                       # a model turn takes time; lets the other agents interleave
-        hdr = {"X-Mesocosm-Agent": agent_id, "X-Mesocosm-Run": run_label}
+        hdr = {"Authorization": "Bearer mesocosm-local", "X-Mesocosm-Agent": agent_id, "X-Mesocosm-Run": run_label}
         for i in range(2):
             r = await gateway.post("/v1/chat/completions", headers=hdr,
                                    json={"model": "mesocosm-3b", "messages": [{"role": "user", "content": "x"}] * (i + 1)})
@@ -766,3 +766,196 @@ async def test_staggered_cohorts_start_later_agents_after_a_delay(world):
     assert staggered == {"agent-2": 0.2}, "agent-1 (index 0) is not delayed; agent-2 (index 1) waits one interval"
     sessions = {e.agent_id: e.ts for e in bundle.events() if e.kind == "harness.session"}
     assert sessions["agent-2"] - sessions["agent-1"] >= 0.15, "the cohort behind started later"
+
+
+@pytest.mark.parametrize("scope", ["round", "task"])
+async def test_deadline_aborts_the_remote_turn_and_never_grades_partial_work(world, scope):
+    manifest, components, root = world
+    task = root / "timed-task"
+    task.mkdir()
+    (task / "instruction.md").write_text("Timed regression fixture\n")
+    config = ('[agent]\ntimeout_sec = 0.01\n' if scope == "task" else "")
+    config += (f'[[rounds]]\nprompt = "first"\nseconds = {1 if scope == "task" else 0.01}\n'
+               '[[rounds]]\nprompt = "must not run"\nseconds = 1\n')
+    (task / "task.toml").write_text(config)
+    manifest.tasks = [TaskSpec(path=str(task))]
+    comps = components()
+    original = comps.harness_for
+    aborted, sent = [], []
+
+    def harness_for(agent):
+        harness = original(agent)
+
+        async def blocked(session_id, text, **kwargs):
+            sent.append(text)
+            await asyncio.Event().wait()
+
+        async def abort(session_id):
+            aborted.append(session_id)
+            return True
+
+        harness.send_message, harness.abort_session = blocked, abort
+        return harness
+
+    async def must_not_grade(*args, **kwargs):
+        pytest.fail("a timed-out turn must not be graded")
+
+    comps.harness_for, comps.verifier.verify = harness_for, must_not_grade
+    result = await asyncio.wait_for(run_world(manifest, root / "world.yaml", comps, root / "runs"), 3)
+    assert result.status == "failed_deadline" and f"{scope} 1" in result.error
+    assert len(sent) == 1 and len(aborted) == 1
+    events = RunBundle.open(result.bundle_path).events()
+    assert any(e.kind == f"harness.{scope}_timeout" for e in events)
+    assert next(e for e in events if e.kind == "harness.aborted").data["confirmed"] is True
+    assert not any(e.kind == "verifier.reward" for e in events)
+
+
+async def test_missing_verifier_reward_fails_instead_of_marking_the_run_ok(world):
+    manifest, components, root = world
+    comps = components()
+
+    async def missing_reward(*args, **kwargs):
+        return Reward(value=None, source=None)
+
+    comps.verifier.verify = missing_reward
+    result = await run_world(manifest, MANIFEST, comps, root / "runs")
+    assert result.status == "failed_verifier" and "no finite reward" in result.error
+    assert not any(e.kind == "verifier.reward" for e in RunBundle.open(result.bundle_path).events())
+
+
+async def test_three_active_turns_receive_remote_abort_when_one_agent_fails(world):
+    manifest, components, root = world
+    for index in (2, 3):
+        manifest.agents.append(manifest.agents[0].model_copy(
+            update={"id": f"agent-{index}", "url": f"http://127.0.0.1:{4095 + index}"}))
+    comps = components()
+    original = comps.harness_for
+    ready, active, aborted = asyncio.Event(), set(), set()
+
+    def harness_for(agent):
+        harness = original(agent)
+
+        async def send(session_id, text, **kwargs):
+            active.add(agent.id)
+            if len(active) == 3:
+                ready.set()
+            await ready.wait()
+            if agent.id == "agent-1":
+                raise RuntimeError("model connection lost")
+            await asyncio.Event().wait()
+
+        async def abort(session_id):
+            aborted.add(agent.id)
+            return True
+
+        harness.send_message, harness.abort_session = send, abort
+        return harness
+
+    comps.harness_for = harness_for
+    result = await asyncio.wait_for(run_world(manifest, MANIFEST, comps, root / "runs"), 3)
+    assert result.status == "failed" and "model connection lost" in result.error
+    assert active == aborted == {"agent-1", "agent-2", "agent-3"}
+    assert not any(e.kind == "verifier.reward" for e in RunBundle.open(result.bundle_path).events())
+
+
+async def test_native_environment_is_prepared_after_reset_before_session_creation(world):
+    manifest, components, root = world
+    comps = components()
+    workspace = comps.workspace_for(manifest.agents[0])
+    workspace.mkdir(parents=True)
+    (workspace / "stale.txt").write_text("previous task")
+
+    class Runtime:
+        async def prepare(self, agent, task, workspace, *, reset, restored=False):
+            assert reset and not restored and not any(workspace.iterdir())
+            (workspace / "native.txt").write_text("native task files")
+            return {"image_id": "sha256:native-regression", "workspace": "/workspace"}
+
+    original = comps.harness_for
+
+    def harness_for(agent):
+        harness = original(agent)
+        create = harness.create_session
+
+        async def create_after_prepare(title):
+            assert (workspace / "native.txt").is_file() and not (workspace / "stale.txt").exists()
+            return await create(title)
+
+        harness.create_session = create_after_prepare
+        return harness
+
+    comps.task_runtime, comps.harness_for = Runtime(), harness_for
+    result = await run_world(manifest, MANIFEST, comps, root / "runs")
+    assert result.status == "ok"
+    memory = next(r for r in RunBundle.open(result.bundle_path).receipts()
+                  if r["requested"].get("condition") == "memory")
+    assert memory["verification"]["detail"]["environment"]["workspace"] == "/workspace"
+
+
+async def test_unsafe_workspace_raw_log_does_not_stop_authoritative_event_collection(tmp_path):
+    from mesocosm.core.run import _collect_events
+
+    class Harness:
+        async def events(self):
+            for index in range(2):
+                yield {"type": "message.part.updated", "properties": {
+                    "part": {"type": "tool", "sessionID": "s", "callID": str(index)}}}
+
+    class UnsafeRawLog:
+        def append(self, part):
+            raise OSError("unsafe link in workspace")
+
+    bundle = RunBundle.create(tmp_path, "run_collection")
+    await _collect_events(Harness(), bundle, {"s": "agent-1"}, UnsafeRawLog())
+    kinds = [e.kind for e in bundle.events()]
+    assert kinds.count("opencode.message.part.updated") == 2
+    assert kinds.count("workspace.raw_log_rejected") == 2
+    assert "harness.events_ended" not in kinds
+
+
+async def test_native_task_boundaries_reconnect_clients_and_event_streams(world):
+    manifest, components, root = world
+    manifest_path = two_tasks(root)
+    manifest.tasks = [TaskSpec(path="tasks/first"), TaskSpec(path="tasks/second")]
+    comps = components()
+    original = comps.harness_for
+    started, ended, closed = [], [], []
+
+    class Runtime:
+        generation = 0
+
+        async def prepare(self, agent, task, workspace, *, reset, restored=False):
+            self.generation += 1
+            return {"generation": self.generation}
+
+    runtime = Runtime()
+
+    def harness_for(agent):
+        harness = original(agent)
+        identity = len(closed)
+        close = harness.aclose
+
+        async def events():
+            generation = runtime.generation
+            started.append(generation)
+            try:
+                yield {"type": "message.part.updated", "properties": {"generation": generation, "part": {
+                    "type": "tool", "sessionID": "ses_agent-1_1", "callID": f"call-{generation}",
+                    "state": {"status": "completed", "input": {"command": "native"}, "output": "ok"}}}}
+                await asyncio.Event().wait()
+            finally:
+                ended.append(generation)
+
+        async def aclose():
+            closed.append(identity)
+            await close()
+
+        harness.events, harness.aclose = events, aclose
+        return harness
+
+    comps.task_runtime, comps.harness_for = runtime, harness_for
+    result = await run_world(manifest, manifest_path, comps, root / "runs")
+    assert result.status == "ok"
+    assert started == ended == [1, 2] and len(closed) == 3
+    raw = [e for e in RunBundle.open(result.bundle_path).events() if e.kind == "raw_log.closed"]
+    assert [(e.data["task"], e.data["entries"]) for e in raw] == [("first", 1), ("second", 1)]

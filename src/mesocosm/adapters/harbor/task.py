@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import pathlib
+import shlex
 import tomllib
 from dataclasses import dataclass, field
 from typing import Any
@@ -40,6 +42,7 @@ class HarborTask:
         """What the task is and exactly which text the agent and verifier saw."""
         toml = self.path / "task.toml"
         test_sh, side_sh = self.path / "tests" / "test.sh", self.path / "tests" / "side_test.sh"
+        dockerfile = self.path / "environment" / "Dockerfile"
         return {
             "source": "harbor",
             "name": self.name,
@@ -48,6 +51,8 @@ class HarborTask:
             "instruction_sha256": _sha256(self.instruction.encode("utf-8")),
             "task_toml_sha256": _sha256(toml.read_bytes()) if toml.exists() else None,
             "test_sh_sha256": _sha256(test_sh.read_bytes()) if self.has_tests else None,
+            "environment_image": (self.config.get("environment") or {}).get("docker_image"),
+            "environment_dockerfile_sha256": _sha256(dockerfile.read_bytes()) if dockerfile.is_file() else None,
             "side_task_sha256": _sha256(self.side_instruction.encode("utf-8")) if self.side_instruction else None,
             "side_test_sh_sha256": _sha256(side_sh.read_bytes()) if self.has_side_tests else None,
         }
@@ -91,6 +96,11 @@ def load_task(path: str | pathlib.Path, *, dataset: str | None = None, name: str
     config: dict[str, Any] = {}
     if (path / "task.toml").is_file():
         config = tomllib.loads((path / "task.toml").read_text(encoding="utf-8"))
+    for r in config.get("rounds") or []:
+        seconds = r.get("seconds") if isinstance(r, dict) else None
+        if seconds is not None and (isinstance(seconds, bool) or not isinstance(seconds, int | float)
+                                    or not math.isfinite(seconds) or seconds <= 0):
+            raise ValueError(f"{path}: rounds[].seconds must be a positive finite number")
     task_name = name or (config.get("metadata") or {}).get("name") or path.name
     side = path / "side_task.md"
     return HarborTask(
@@ -236,19 +246,30 @@ def _reward_file(vdir: pathlib.Path) -> Reward | None:
 
 
 def verifier_command(task: HarborTask, *, workspace: pathlib.Path, logs_dir: pathlib.Path,
-                     image: str = "debian:bookworm-slim", timeout_sec: int | None = None,
-                     script: str = "test.sh") -> list[str]:
-    """`docker run` that executes tests/<script> against the agent's workspace with no network.
+                     image: str | None = None, timeout_sec: int | None = None,
+                     script: str = "test.sh", workdir: str = "/app", network: str = "none",
+                     container_name: str | None = None) -> list[str]:
+    """Run the native verifier in an explicitly selected environment, retaining its interpreter.
 
     The workspace is mounted at /app (where the task environment works) and the task's tests/
     read-only at /tests; the verifier writes /logs/verifier/reward.*."""
-    if not (task.path / "tests" / script).is_file():
+    test = task.path / "tests" / script
+    if not test.is_file():
         raise FileNotFoundError(f"{task.path}: tests/{script} missing")
-    timeout = timeout_sec or int(((task.config.get("verifier") or {}).get("timeout_sec")) or 600)
+    if not image:
+        raise ValueError(f"{task.name}: verifier needs its native task image or an explicit verifier image")
+    if timeout_sec is not None and (not math.isfinite(timeout_sec) or timeout_sec <= 0):
+        raise ValueError("verifier timeout must be positive and finite; the controller enforces it")
+    first = test.read_text(encoding="utf-8").splitlines()[0] if test.stat().st_size else ""
+    interpreter = shlex.split(first[2:]) if first.startswith("#!") else ["/bin/sh"]
+    env = (task.config.get("verifier") or {}).get("env") or {}
     return [
-        "docker", "run", "--rm", "--network", "none",
-        "-v", f"{workspace.resolve()}:/app",
+        "docker", "run", "--rm", "--network", network,
+        *(["--name", container_name] if container_name else []),
+        "--workdir", workdir, "--entrypoint", interpreter[0],
+        *[part for key, value in sorted(env.items()) for part in ("-e", f"{key}={value}")],
+        "-v", f"{workspace.resolve()}:{workdir}",
         "-v", f"{(task.path / 'tests').resolve()}:/tests:ro",
         "-v", f"{logs_dir.resolve()}:/logs",
-        image, "timeout", str(timeout), "sh", f"/tests/{script}",
+        image, *interpreter[1:], f"/tests/{script}",
     ]

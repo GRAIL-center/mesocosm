@@ -75,9 +75,15 @@ def _absolutize(manifest: dict[str, Any], base_dir: pathlib.Path) -> None:
         if isinstance(task, dict) and task.get("path"):
             task["path"] = str((base_dir / task["path"]).resolve())
     services = manifest.get("services") or {}
+    if services.get("seed"):
+        services["seed"] = str((base_dir / services["seed"]).resolve())
     wiki = services.get("wiki") or {}
     if wiki.get("docs"):
         wiki["docs"] = str((base_dir / wiki["docs"]).resolve())
+    if (manifest.get("stream") or {}).get("dir"):
+        manifest["stream"]["dir"] = str((base_dir / manifest["stream"]["dir"]).resolve())
+    if (manifest.get("internet") or {}).get("replay_file"):
+        manifest["internet"]["replay_file"] = str((base_dir / manifest["internet"]["replay_file"]).resolve())
     for agent in manifest.get("agents") or []:
         if isinstance(agent, dict) and agent.get("skills"):
             agent["skills"] = [str((base_dir / s).resolve()) for s in agent["skills"]]

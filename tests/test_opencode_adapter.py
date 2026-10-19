@@ -44,6 +44,11 @@ def fake_opencode() -> FastAPI:
     async def list_messages(sid: str):
         return app.state.messages[sid]
 
+    @app.post("/session/{sid}/abort")
+    async def abort(sid: str):
+        app.state.aborted = sid
+        return True
+
     @app.get("/event")
     async def events():
         async def gen():
@@ -76,6 +81,8 @@ async def test_client_drives_a_session_and_reads_events():
     assert tool_ev.data["summary"] == {"part_type": "tool", "tool": "bash", "tool_status": "running"}
     assert tool_ev.data["raw"] == raws[1]
     assert normalized[3].data["summary"] == {"status": "idle"} and normalized[3].agent_id == "agent-1"
+    assert await oc.abort_session(sid) is True
+    assert app.state.aborted == sid
     await oc.aclose()
 
 

@@ -73,10 +73,10 @@ def _copy_tree(src: pathlib.Path, dest: pathlib.Path, items: tuple[str, ...], re
     dest.mkdir(parents=True, exist_ok=True)
     for item in items:
         source, target = src / item, dest / item
+        if replace and (target.exists() or target.is_symlink()):
+            shutil.rmtree(target) if target.is_dir() and not target.is_symlink() else target.unlink()
         if not source.exists():
             continue
-        if target.exists() and replace:
-            shutil.rmtree(target) if target.is_dir() else target.unlink()
         if source.is_dir():
             shutil.copytree(source, target, dirs_exist_ok=True)
         else:
@@ -194,7 +194,7 @@ async def restore_snapshot(snapshot_root: str | pathlib.Path, workspace_root: pa
             actual.update({f"shared/{k}": v for k, v in hash_tree(check).items()})
             shutil.rmtree(check, ignore_errors=True)
             restored["shared_dir"] = sum(1 for k in expected if k.startswith("shared/"))
-    mismatches = sorted(k for k in expected if actual.get(k) != expected[k])
+    mismatches = sorted(k for k in expected.keys() | actual.keys() if actual.get(k) != expected.get(k))
     return {"snapshot_id": root.name, "ok": not mismatches, "restored": restored, "verified_files": len(expected),
             "mismatches": mismatches[:50], "not_captured": NOT_CAPTURED}
 
@@ -214,6 +214,9 @@ def fork_manifest(snapshot_root: str | pathlib.Path, patch: dict[str, Any], out_
         wiki = (manifest.get("services") or {}).get("wiki") or {}
         if wiki.get("docs") and not pathlib.Path(wiki["docs"]).is_absolute():
             wiki["docs"] = str((base_dir / wiki["docs"]).resolve())
+        services = manifest.get("services") or {}
+        if services.get("seed") and not pathlib.Path(services["seed"]).is_absolute():
+            services["seed"] = str((base_dir / services["seed"]).resolve())
         if (manifest.get("stream") or {}).get("dir") and not pathlib.Path(manifest["stream"]["dir"]).is_absolute():
             manifest["stream"]["dir"] = str((base_dir / manifest["stream"]["dir"]).resolve())
         for agent in manifest.get("agents") or []:

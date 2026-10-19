@@ -24,12 +24,13 @@ import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TextIO
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 
@@ -69,6 +70,10 @@ class Settings:
 # What a refused request looks like to the harness: the shapes an OpenAI-compatible API returns for
 # the same situations, with nothing about the run in them (ADR-0019). The gateway log says why.
 REFUSALS = {
+    "auth": (401, {"message": "Incorrect API key provided.", "type": "invalid_request_error",
+                   "code": "invalid_api_key"}),
+    "invalid": (400, {"message": "Invalid chat completion request.", "type": "invalid_request_error",
+                      "code": "invalid_request"}),
     "paused": (503, {"message": "The server is temporarily unable to handle the request. Please try again later.",
                      "type": "server_error", "code": "service_unavailable"}),
     "stopped": (403, {"message": "Your account has been deactivated.", "type": "invalid_request_error",
@@ -205,9 +210,11 @@ class Gateway:
         self.clients: dict[str, httpx.AsyncClient] = {settings.upstream: self.client}
         self.budgets: dict[str, dict[str, int]] = {k: dict(v) for k, v in settings.budgets.items()}
         self.usage: dict[str, dict[str, int]] = {}
+        self.request_locks: dict[str, asyncio.Lock] = {}
+        self.missing_usage: set[str] = set()
         self.holds: dict[tuple[str, str | None], Hold] = {}
         self.stopped: dict[str, float] = {}
-        self._log_file = None
+        self._log_file: TextIO | None = None
 
     def route(self, model: str | None) -> Route:
         """The upstream for a model id (ADR-0029): a configured one, else the default inference server."""
@@ -253,16 +260,19 @@ class Gateway:
         used = self.usage_for(agent)
         for key in BUDGET_KEYS:
             limit = budget.get(key)
+            if limit is not None and key != "requests" and agent in self.missing_usage:
+                return key
             if limit is not None and used[key] >= limit:
                 return key
         return None
 
     def add_usage(self, agent: str, usage: dict[str, Any] | None) -> None:
         used = self.usage_for(agent)
-        used["requests"] += 1
         if usage:
             used["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
             used["completion_tokens"] += int(usage.get("completion_tokens") or 0)
+        else:
+            self.missing_usage.add(agent)
 
     def set_budget(self, agent: str, budget: dict[str, int], run_id: str | None = None) -> Receipt:
         """Apply a budget and return the receipt. Enforcement is this object's counters."""
@@ -372,12 +382,11 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
     app.state.gateway = gw
 
     def identity(request: Request) -> tuple[str, str, str]:
-        """(agent, run, how): by the agent's own key, else by the identity headers a control-plane
-        harness sends, else unknown."""
+        """Only the agent's key or an authenticated control-plane caller may name an identity."""
         known = gw.settings.agent_keys.get(bearer(request) or "")
         if known:
             return known["agent"], known["run"], "key"
-        if "x-mesocosm-agent" in request.headers or "x-mesocosm-run" in request.headers:
+        if bearer(request) == gw.settings.control_key:
             return request.headers.get("x-mesocosm-agent", "unknown"), request.headers.get("x-mesocosm-run",
                                                                                             "unknown"), "header"
         return "unknown", "unknown", "none"
@@ -455,6 +464,16 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         t0 = time.time()
         request_id = str(uuid.uuid4())
         agent, run, identified_by = identity(request)
+        base = {"ts": t0, "request_id": request_id, "run": run, "agent": agent, "identified_by": identified_by,
+                "path": "/" + path, "method": request.method}
+        if identified_by == "none":
+            gw.log({**base, "event": "auth_denied"})
+            return refusal("auth")
+        is_chat = path.rstrip("/") == "v1/chat/completions" and request.method == "POST"
+        is_models = path.rstrip("/") == "v1/models" and request.method in ("GET", "HEAD")
+        if not is_chat and not is_models:
+            gw.log({**base, "event": "endpoint_denied"})
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
         body_bytes = await request.body()
         body: dict[str, Any] | None = None
         if body_bytes:
@@ -462,95 +481,153 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 body = json.loads(body_bytes)
             except json.JSONDecodeError:
                 body = None
-        is_chat = path.rstrip("/").endswith("chat/completions") and isinstance(body, dict)
-        route = gw.route(body.get("model") if is_chat else None)
-        base = {"ts": t0, "request_id": request_id, "run": run, "agent": agent, "identified_by": identified_by,
-                "path": "/" + path, "method": request.method, "upstream": route.upstream, "model_kind": route.kind}
-
+        model = None
         if is_chat:
-            hold = gw.hold_for(run, agent)
-            if hold is not None:
-                waited, released = await gw.wait_while_paused(hold)
-                gw.log({**base, "event": "held" if released else "hold_expired", "held_ms": round(waited * 1000),
-                        "reason": hold.reason})
-                if not released:
-                    return refusal("paused")
-            if run in gw.stopped:
-                gw.log({**base, "event": "run_stopped", "request_summary": request_summary(body)})
-                return refusal("stopped")
-            exhausted = gw.budget_exhausted(agent)
-            if exhausted:
-                gw.log({**base, "event": "budget_exhausted", "dimension": exhausted,
-                        "usage": gw.usage_for(agent), "budget": gw.budgets.get(agent),
-                        "request": body, "request_summary": request_summary(body)})
-                return refusal("budget", param=exhausted)
-            if body.get("stream"):
-                body.setdefault("stream_options", {})["include_usage"] = True
-            if gw.settings.return_token_ids and route.kind == "vllm":     # only vLLM understands the field
-                body["return_token_ids"] = True
-            body_bytes = json.dumps(body).encode("utf-8")
+            if not isinstance(body, dict):
+                return refusal("invalid")
+            if (not isinstance(body.get("model", ""), str)
+                    or not isinstance(body.get("messages", []), list)
+                    or any(not isinstance(m, dict) for m in body.get("messages", []))):
+                return refusal("invalid")
+            model = body.get("model")
+        route = gw.route(model)
+        base.update({"upstream": route.upstream, "model_kind": route.kind})
+        # A lease lasts through the final stream chunk. Other agents keep their own independent leases.
+        lock = gw.request_locks.setdefault(agent, asyncio.Lock()) if is_chat else None
+        lock_released = False
+        streaming = False
 
-        headers = {k: v for k, v in request.headers.items()
-                   if k.lower() not in HOP_BY_HOP and k.lower() not in ("authorization", "x-mesocosm-agent",
-                                                                          "x-mesocosm-run")}
-        if route.key:                           # the gateway authenticates to the inference server itself
-            headers["authorization"] = f"Bearer {route.key}"
-        headers["x-mesocosm-request-id"] = request_id
-        if is_chat:
-            headers["content-length"] = str(len(body_bytes))
+        def release() -> None:
+            nonlocal lock_released
+            if lock is not None and not lock_released:
+                lock_released = True
+                lock.release()
 
-        upstream_req = route.client.build_request(request.method, "/" + path, content=body_bytes,
-                                                  headers=headers, params=request.query_params)
+        if lock is not None:
+            await lock.acquire()
         try:
-            upstream = await route.client.send(upstream_req, stream=True)
-        except httpx.HTTPError as e:
-            gw.log({**base, "event": "upstream_error", "error": repr(e), "request": body})
-            return refusal("upstream")
+            if is_chat:
+                assert body is not None
+                while (hold := gw.hold_for(run, agent)) is not None:
+                    waited, released = await gw.wait_while_paused(hold)
+                    gw.log({**base, "event": "held" if released else "hold_expired", "held_ms": round(waited * 1000),
+                            "reason": hold.reason})
+                    if not released:
+                        return refusal("paused")
+                if run in gw.stopped:
+                    gw.log({**base, "event": "run_stopped", "request_summary": request_summary(body)})
+                    return refusal("stopped")
+                exhausted = gw.budget_exhausted(agent)
+                if exhausted:
+                    gw.log({**base, "event": "budget_exhausted", "dimension": exhausted,
+                            "usage": gw.usage_for(agent), "budget": gw.budgets.get(agent),
+                            "request": body, "request_summary": request_summary(body)})
+                    return refusal("budget", param=exhausted)
+                remaining = gw.budgets.get(agent, {}).get("completion_tokens")
+                if remaining is not None:
+                    remaining -= gw.usage_for(agent)["completion_tokens"]
+                    count = body.get("n", 1)
+                    if not isinstance(count, int) or count < 1:
+                        return refusal("invalid")
+                    allowance = remaining // count
+                    if allowance < 1:
+                        return refusal("budget", param="completion_tokens")
+                    limit_keys = [k for k in ("max_tokens", "max_completion_tokens") if k in body] or ["max_tokens"]
+                    for limit_key in limit_keys:
+                        requested = body.get(limit_key)
+                        if requested is not None and (not isinstance(requested, int) or requested < 1):
+                            return refusal("invalid")
+                        body[limit_key] = min(requested, allowance) if requested is not None else allowance
+                if body.get("stream"):
+                    options = body.get("stream_options") or {}
+                    if not isinstance(options, dict):
+                        return refusal("invalid")
+                    body["stream_options"] = {**options, "include_usage": True}
+                if gw.settings.return_token_ids and route.kind == "vllm":     # only vLLM understands the field
+                    body["return_token_ids"] = True
+                body_bytes = json.dumps(body).encode("utf-8")
+                # No await between the quota check and admission: an upstream attempt consumes one request.
+                gw.usage_for(agent)["requests"] += 1
 
-        resp_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP}
+            headers = {k: v for k, v in request.headers.items()
+                       if k.lower() not in HOP_BY_HOP and k.lower() not in ("authorization", "x-mesocosm-agent",
+                                                                              "x-mesocosm-run")}
+            if route.key:                           # the gateway authenticates to the inference server itself
+                headers["authorization"] = f"Bearer {route.key}"
+            headers["x-mesocosm-request-id"] = request_id
+            if is_chat:
+                headers["content-length"] = str(len(body_bytes))
 
-        if is_chat and body.get("stream"):
-            async def stream():
-                chunks: list[bytes] = []
-                try:
-                    async for chunk in upstream.aiter_raw():
-                        chunks.append(chunk)
-                        yield chunk
-                finally:
-                    await upstream.aclose()
-                    raw = b"".join(chunks).decode("utf-8", "replace")
-                    # An error status carries a JSON body, not an event stream: keep it verbatim.
-                    parsed = parse_sse(raw) if upstream.status_code < 400 else {"raw": raw[:4000]}
-                    gw.add_usage(agent, parsed.get("usage"))
-                    gw.log({**base, "event": "chat_completion", "stream": True, "status": upstream.status_code,
-                            "latency_ms": round((time.time() - t0) * 1000), "request": body,
-                            "request_summary": request_summary(body), "response": parsed,
-                            "usage_total": gw.usage_for(agent)})
-            return StreamingResponse(stream(), status_code=upstream.status_code, headers=resp_headers,
-                                     media_type=upstream.headers.get("content-type"))
-
-        content = await upstream.aread()
-        await upstream.aclose()
-        resp_headers.pop("content-encoding", None)  # httpx already decoded the body
-        if is_chat:
+            upstream_req = route.client.build_request(request.method, "/" + path, content=body_bytes,
+                                                      headers=headers, params=request.query_params)
             try:
-                data = json.loads(content)
-            except json.JSONDecodeError:
-                data = None
-            if isinstance(data, dict) and "choices" in data:
-                parsed = summarize_response(data)
+                upstream = await route.client.send(upstream_req, stream=True)
+            except httpx.HTTPError as e:
+                gw.log({**base, "event": "upstream_error", "error": repr(e), "request": body})
+                return refusal("upstream")
+
+            resp_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP}
+
+            if is_chat and body is not None and body.get("stream"):
+                chunks: list[bytes] = []
+                finalized = False
+
+                async def finish_stream():
+                    nonlocal finalized
+                    if finalized:
+                        return
+                    finalized = True
+                    # Account and log before an awaited close: disconnect cancellation cannot skip them.
+                    try:
+                        raw = b"".join(chunks).decode("utf-8", "replace")
+                        parsed = parse_sse(raw) if upstream.status_code < 400 else {"raw": raw[:4000]}
+                        gw.add_usage(agent, parsed.get("usage"))
+                        gw.log({**base, "event": "chat_completion", "stream": True, "status": upstream.status_code,
+                                "latency_ms": round((time.time() - t0) * 1000), "request": body,
+                                "request_summary": request_summary(body), "response": parsed,
+                                "usage_total": gw.usage_for(agent)})
+                    finally:
+                        release()
+                        await upstream.aclose()
+
+                async def stream():
+                    try:
+                        async for chunk in upstream.aiter_raw():
+                            chunks.append(chunk)
+                            yield chunk
+                    finally:
+                        await finish_stream()
+                streaming = True
+                return StreamingResponse(stream(), status_code=upstream.status_code, headers=resp_headers,
+                                         media_type=upstream.headers.get("content-type"),
+                                         background=BackgroundTask(finish_stream))
+
+            content = await upstream.aread()
+            await upstream.aclose()
+            resp_headers.pop("content-encoding", None)  # httpx already decoded the body
+            if is_chat:
+                assert body is not None
+                try:
+                    data = json.loads(content)
+                except json.JSONDecodeError:
+                    data = None
+                if isinstance(data, dict) and "choices" in data:
+                    parsed = summarize_response(data)
+                else:
+                    parsed = {"raw": content[:2000].decode("utf-8", "replace")}
+                gw.add_usage(agent, data.get("usage") if isinstance(data, dict) else None)
+                gw.log({**base, "event": "chat_completion", "stream": False, "status": upstream.status_code,
+                        "latency_ms": round((time.time() - t0) * 1000), "request": body,
+                        "request_summary": request_summary(body), "response": parsed,
+                        "usage_total": gw.usage_for(agent)})
             else:
-                parsed = {"raw": content[:2000].decode("utf-8", "replace")}
-            gw.add_usage(agent, data.get("usage") if isinstance(data, dict) else None)
-            gw.log({**base, "event": "chat_completion", "stream": False, "status": upstream.status_code,
-                    "latency_ms": round((time.time() - t0) * 1000), "request": body,
-                    "request_summary": request_summary(body), "response": parsed,
-                    "usage_total": gw.usage_for(agent)})
-        else:
-            gw.log({**base, "event": "passthrough", "status": upstream.status_code,
-                    "latency_ms": round((time.time() - t0) * 1000)})
-        return Response(content=content, status_code=upstream.status_code, headers=resp_headers,
-                        media_type=upstream.headers.get("content-type"))
+                gw.log({**base, "event": "passthrough", "status": upstream.status_code,
+                        "latency_ms": round((time.time() - t0) * 1000)})
+            return Response(content=content, status_code=upstream.status_code, headers=resp_headers,
+                            media_type=upstream.headers.get("content-type"))
+        finally:
+            if not streaming:
+                release()
 
     return app
 

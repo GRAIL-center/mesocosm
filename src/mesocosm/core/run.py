@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import os
 import pathlib
 import time
@@ -51,12 +52,22 @@ class Harness(Protocol):
     async def create_session(self, title: str) -> str: ...
     async def send_message(self, session_id: str, text: str, *, provider_id: str, model_id: str) -> dict[str, Any]: ...
     async def list_messages(self, session_id: str) -> list[dict[str, Any]]: ...
+    async def abort_session(self, session_id: str) -> bool: ...
     def events(self) -> AsyncIterator[dict[str, Any]]: ...
     async def aclose(self) -> None: ...
 
 
 EVENT_GRACE_SECONDS = 0.5  # time the event collector gets to drain after the task's last message
 RECORD_SLACK_SECONDS = 5.0  # clock skew allowed between the control plane and the gateway/services hosts
+ABORT_TIMEOUT_SECONDS = 10.0
+
+
+class RoundDeadlineExceeded(RuntimeError):
+    """A round or task time budget expired; its incomplete work must not be graded."""
+
+
+class VerificationFailed(RuntimeError):
+    """The verifier did not produce a valid measurement."""
 
 
 class Verifier(Protocol):
@@ -84,13 +95,14 @@ class Components:
     restore_result: dict[str, Any] | None = None     # the restore's verification, recorded as run.restored
     lineage: dict[str, Any] | None = None            # parent run, snapshot, patch -> lineage.json
     monitor: Any | None = None                       # judge.monitor's model (judge.monitor.MonitorModel), if enabled
+    task_runtime: Any | None = None                   # prepares the task's native environment before a session
 
 
 @dataclass
 class RunResult:
     run_id: str
     bundle_path: pathlib.Path
-    status: str                       # ok | failed_isolation | failed
+    status: str                       # ok | stopped | failed_* | failed
     rewards: dict[str, float | None]  # "<agent>/<task>" -> reward
     error: str | None = None
 
@@ -104,7 +116,10 @@ async def _collect_events(harness: Harness, bundle: RunBundle, session_to_agent:
             bundle.record(ev.kind, agent_id=ev.agent_id, step=step, **ev.data)
             if raw_log is not None and ev.kind == "opencode.message.part.updated":
                 part = ((ev.data.get("raw") or {}).get("properties") or {}).get("part") or {}
-                raw_log.append(part)
+                try:
+                    raw_log.append(part)
+                except OSError as e:
+                    bundle.record("workspace.raw_log_rejected", agent_id=ev.agent_id, error=repr(e))
     except Exception as e:  # noqa: BLE001 - the stream ending is not a run failure; record and move on
         bundle.record("harness.events_ended", error=repr(e))
 
@@ -139,13 +154,16 @@ async def run_world(manifest: WorldManifest, manifest_path: pathlib.Path, compon
         return await _run(manifest, manifest_path, components, bundle)
     except Exception as e:  # noqa: BLE001 - any failure is recorded in the bundle, then reported
         bundle.record("run.failed", error=repr(e))
-        bundle.write_summary({"status": "failed", "error": repr(e)})
-        return RunResult(bundle.run_id, bundle.root, "failed", {}, repr(e))
+        status = ("failed_deadline" if isinstance(e, RoundDeadlineExceeded) else
+                  "failed_verifier" if isinstance(e, VerificationFailed) else "failed")
+        bundle.write_summary({"status": status, "error": repr(e)})
+        return RunResult(bundle.run_id, bundle.root, status, {}, repr(e))
 
 
 async def _apply_memory_policy(manifest: WorldManifest, bundle: RunBundle, agent: AgentSpec, task: HarborTask,
                                harness: Harness, workspace: pathlib.Path, session_id: str | None,
-                               session_to_agent: dict[str, str], keep: pathlib.Path | None = None) -> str:
+                               session_to_agent: dict[str, str], keep: pathlib.Path | None = None,
+                               task_runtime: Any | None = None) -> str:
     """Enforce the memory policy at the task boundary and leave a receipt. `reset`: empty workspace and a
     new harness session for every task; `carry`: the workspace and the session continue. `keep` names a
     snapshot the workspace was just restored from: it is kept whatever the policy says (recorded)."""
@@ -158,6 +176,9 @@ async def _apply_memory_policy(manifest: WorldManifest, bundle: RunBundle, agent
         if keep is not None:
             state["restored_from"] = str(keep)
         ok = True
+    if task_runtime is not None:
+        state["environment"] = await task_runtime.prepare(agent, task, workspace, reset=fresh,
+                                                           restored=keep is not None)
     if fresh:
         session_id = await harness.create_session(f"{bundle.run_id}/{agent.id}/{task.name}")
         session_to_agent[session_id] = agent.id
@@ -319,9 +340,18 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     its own verifier (ADR-0030)."""
     if sync is not None:
         await sync.open(task)
+    if components.task_runtime is not None:
+        # Preparing another native task can replace the server behind this address. Reconnect both
+        # the HTTP client and its event stream instead of retaining a stream from the old container.
+        if ctx.collector is not None:
+            await _stop_collector(ctx.collector)
+            ctx.collector = None
+        await ctx.harness.aclose()
+        ctx.harness = components.harness_for(agent)
     keep = components.restored_from if (components.restored_from is not None and ctx.tasks_done == 0) else None
     ctx.session_id = await _apply_memory_policy(manifest, bundle, agent, task, ctx.harness, ctx.workspace,
-                                                ctx.session_id, ctx.session_to_agent, keep=keep)
+                                                ctx.session_id, ctx.session_to_agent, keep=keep,
+                                                task_runtime=components.task_runtime)
     if ctx.raw_log is None or manifest.memory == "reset":
         ctx.raw_log = RawLog(ctx.workspace)
     ctx.raw_log.task = task.name
@@ -335,7 +365,7 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     if protected:
         bundle.record("task.protected", agent_id=agent.id, task=task.name, files=protected)
     # Cohorts (ADR-0035): agent k in manifest order starts k x stagger_seconds after agent 0, so the agents
-    # ahead have answers the ones behind still want. The delay is real; the time pressure in a round is diegetic.
+    # ahead have answers the ones behind still want. Both the start delay and round deadline are enforced.
     spec = _task_spec(manifest, task)
     index = [a.id for a in manifest.agents].index(agent.id)
     stagger = (spec.stagger_seconds if spec else 0.0) * index
@@ -351,11 +381,34 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
         bundle.record("task.side_task", agent_id=agent.id, task=task.name, text=task.side_instruction,
                       sha256=hashlib.sha256((task.side_instruction or "").encode("utf-8")).hexdigest())
     reply: dict[str, Any] = {}
+    task_seconds = (task.config.get("agent") or {}).get("timeout_sec")
+    task_deadline = time.monotonic() + task_seconds if task_seconds is not None else None
     for r in rounds:
         if len(rounds) > 1:
             bundle.record("harness.round", agent_id=agent.id, task=task.name, round=r["index"], seconds=r["seconds"])
-        reply = await ctx.harness.send_message(ctx.session_id, r["prompt"], provider_id=manifest.gateway.provider_id,
-                                               model_id=manifest.model_for(agent).id)
+        remaining = max(0.0, task_deadline - time.monotonic()) if task_deadline is not None else None
+        limits = [v for v in (r["seconds"], remaining) if v is not None]
+        timeout = min(limits) if limits else None
+        task_limited = remaining is not None and (r["seconds"] is None or remaining <= r["seconds"])
+        try:
+            reply = await asyncio.wait_for(
+                ctx.harness.send_message(ctx.session_id, r["prompt"], provider_id=manifest.gateway.provider_id,
+                                         model_id=manifest.model_for(agent).id), timeout=timeout)
+        except TimeoutError as e:
+            if timeout is None:
+                raise
+            scope, seconds = ("task", task_seconds) if task_limited else ("round", r["seconds"])
+            bundle.record(f"harness.{scope}_timeout", agent_id=agent.id, task=task.name, round=r["index"],
+                          seconds=seconds, session_id=ctx.session_id)
+            confirmed = await _abort_turn(ctx, bundle, agent.id, task.name, "deadline")
+            raise RoundDeadlineExceeded(f"{agent.id}/{task.name} {scope} {r['index']} exceeded {seconds} seconds; "
+                                        f"harness abort confirmed={confirmed}") from e
+        except asyncio.CancelledError:
+            await _abort_turn(ctx, bundle, agent.id, task.name, "run_cancelled")
+            raise
+        except Exception:
+            await _abort_turn(ctx, bundle, agent.id, task.name, "harness_error")
+            raise
         bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
                       session_id=ctx.session_id, round=r["index"] if len(rounds) > 1 else None,
                       parts=_parts_summary(reply))
@@ -371,6 +424,7 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
         bundle.record("verifier.world_state", agent_id=agent.id, task=task.name, size=len(world),
                       sha256=hashlib.sha256(world.encode("utf-8")).hexdigest())
     reward = await components.verifier.verify(task, ctx.workspace, logs_dir)
+    _require_reward(reward, task, "test.sh")
     bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
                   task=task.name, reward=reward.value, source=reward.source, labels=reward.labels,
                   checkpoints=reward.checkpoints or None, **marks)
@@ -381,6 +435,7 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
             (side_dir / "world.json").write_text((logs_dir / "world.json").read_text(encoding="utf-8"),
                                                  encoding="utf-8")
         side = await components.verifier.verify(task, ctx.workspace, side_dir, script="side_test.sh")
+        _require_reward(side, task, "side_test.sh")
         bundle.record("verifier.side_reward", agent_id=agent.id, step=bundle.next_step(agent.id), task=task.name,
                       reward=side.value, source=side.source, checkpoints=side.checkpoints or None)
     if protected:
@@ -392,6 +447,25 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     if sync is not None:
         await sync.finish(agent.id, task, reward.value)
     return reward.value
+
+
+async def _abort_turn(ctx: AgentContext, bundle: RunBundle, agent_id: str, task: str, reason: str) -> bool:
+    try:
+        if ctx.session_id is None:
+            raise RuntimeError("cannot abort without an active harness session")
+        confirmed = await asyncio.wait_for(ctx.harness.abort_session(ctx.session_id), ABORT_TIMEOUT_SECONDS)
+    except Exception as e:  # noqa: BLE001 - failure to stop is recorded, never treated as a completed turn
+        bundle.record("harness.abort_failed", agent_id=agent_id, task=task, session_id=ctx.session_id,
+                      reason=reason, error=repr(e))
+        return False
+    bundle.record("harness.aborted", agent_id=agent_id, task=task, session_id=ctx.session_id,
+                  reason=reason, confirmed=confirmed)
+    return confirmed
+
+
+def _require_reward(reward: Reward, task: HarborTask, script: str) -> None:
+    if reward.value is None or not math.isfinite(reward.value):
+        raise VerificationFailed(f"verifier {task.name}/{script} produced no finite reward (source={reward.source})")
 
 
 async def _close_agent(ctx: AgentContext) -> None:
@@ -504,6 +578,10 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                bundle: RunBundle) -> RunResult:
     run_label = manifest.gateway.run_label or bundle.run_id
     rewards: dict[str, float | None] = {}
+    if components.task_runtime is not None and hasattr(components.task_runtime, "prebuild"):
+        tasks = [task for spec in manifest.tasks for task in _load_spec_tasks(spec, manifest_path)]
+        prepared = await components.task_runtime.prebuild(tasks)
+        bundle.record("task.environments_prepared", environments=prepared)
     # A fixed run label is shared by successive runs: keep only this run's gateway and services records.
     run_start = time.time()                    # what exposure seconds and world events count from
     started = run_start - RECORD_SLACK_SECONDS
@@ -777,19 +855,26 @@ def _json(obj: Any) -> str:
 class DockerVerifier:
     """Runs the task's tests/test.sh in a network-less container (adapters.harbor.verifier_command)."""
 
-    def __init__(self, image: str = "debian:bookworm-slim"):
+    def __init__(self, image: str | None = None):
         self.image = image
 
     async def verify(self, task: HarborTask, workspace: pathlib.Path, logs_dir: pathlib.Path,
                      script: str = "test.sh") -> Reward:
         from mesocosm.adapters.harbor.task import read_reward, verifier_command
 
+        if not self.image:
+            raise VerificationFailed("verifier image must be supplied from the task's native environment")
         cmd = verifier_command(task, workspace=workspace, logs_dir=logs_dir, image=self.image, script=script)
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
                                                     stderr=asyncio.subprocess.STDOUT)
         out, _ = await proc.communicate()
         (logs_dir / "verifier.log").write_bytes(out)
-        return read_reward(logs_dir)
+        if proc.returncode != 0:
+            raise VerificationFailed(f"verifier {task.name}/{script} exited {proc.returncode}; "
+                                     f"see {logs_dir / 'verifier.log'}")
+        reward = read_reward(logs_dir)
+        _require_reward(reward, task, script)
+        return reward
 
 
 RunFn = Callable[..., Awaitable[RunResult]]

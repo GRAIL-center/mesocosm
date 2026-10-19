@@ -31,8 +31,8 @@ class DockerWorldState:
 
     async def import_services(self, src: pathlib.Path) -> None:
         for item in SERVICES_ITEMS:
+            await self._compose("exec", "-T", "services", "rm", "-rf", f"/data/{item}")
             if (src / item).exists():
-                await self._compose("exec", "-T", "services", "rm", "-rf", f"/data/{item}", check=False)
                 await self._compose("cp", str(src / item), f"services:/data/{item}")
         await self._compose("restart", "services")     # the app replays its journals at start
 

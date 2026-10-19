@@ -91,6 +91,11 @@ async def test_wiki_hides_pages_until_their_time(tmp_path):
 
 async def test_pastebin_exists_only_when_the_channel_is_enabled(tmp_path):
     app_off = create_app(settings(tmp_path / "off"))
+    for host in ("board", "wiki", "services", "172.30.0.3"):
+        async with client(app_off, "172.30.0.11", host) as c:
+            assert (await c.post("/api/paste", json={"text": "psst"})).status_code == 404
+            assert (await c.get("/api/pastes")).status_code == 404
+            assert (await c.get("/api/paste/unknown")).status_code == 404
     async with client(app_off, "172.30.0.11", "pastebin") as c:
         assert (await c.get("/")).status_code == 404
         assert (await c.post("/api/paste", json={"text": "psst"})).status_code == 404

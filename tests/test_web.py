@@ -81,7 +81,7 @@ def test_ca_is_generated_once_and_split_for_proxy_and_agents(tmp_path):
     assert cert.read_text().count("BEGIN CERTIFICATE") == 1 and "PRIVATE KEY" not in cert.read_text()
     assert "PRIVATE KEY" in store.read_text() and store.read_text().endswith(cert.read_text())
     assert not (tmp_path / "ca" / "ca.key").exists(), "the key lives only in the proxy's store"
-    subject = subprocess.run(["openssl", "x509", "-in", str(cert), "-noout", "-subject", "-ext", "basicConstraints"],
+    subject = subprocess.run(["openssl", "x509", "-in", str(cert), "-noout", "-subject", "-text"],
                              capture_output=True, text=True, check=True).stdout
     assert "Acme Root CA" in subject and "CA:TRUE" in subject
     before = cert.read_bytes()

@@ -71,31 +71,42 @@ condition the platform cannot enforce makes the run fail. It is never faked with
 
 ## Quick start
 
-You need Python 3.11–3.13, [uv](https://docs.astral.sh/uv/) and Docker. Running a model needs an NVIDIA GPU. Smoke
-tests use one 24 GB card (an RTX 3090 or a Colab L4) with `Qwen3-4B-Instruct-2507`.
+You need Python 3.11–3.13, [uv](https://docs.astral.sh/uv/), Docker and an NVIDIA GPU for local inference.
+Start with [`examples/world-native-three.yaml`](examples/world-native-three.yaml): three actual OpenCode
+agents on the original external Terminal-Bench `fix-git` environment and verifier. Follow the
+[native runtime runbook](docs/native-multiagent.md) to pin the task/model, generate private keys and start
+the matching model and Docker stack, then run:
 
 ```bash
-uv sync --extra dev --extra gateway                               # install
-uv run pytest                                                     # check the install
-uv run mesocosm world validate examples/spike-world.yaml --json   # check a world
-uv run mesocosm env compose examples/spike-world.yaml             # render its sealed sandbox
-uv run mesocosm run examples/spike-world.yaml --json              # run it
-uv run mesocosm observe serve runs/<run_id>                       # open http://127.0.0.1:8090
+uv sync --locked --extra dev --extra gateway
+uv run pytest
+uv run mesocosm world validate runs/native-three/world.yaml --json
+uv run mesocosm run runs/native-three/world.yaml \
+  --compose-file runs/native-three/compose.yml \
+  --verifier-network bridge --allow-unenforced-resources --json
+uv run mesocosm observe serve runs/<run_id>
 ```
 
-A run needs vLLM, the model gateway and the sandbox up first. [`spike/SPIKE.md`](spike/SPIKE.md) walks through a
-first full run on one GPU. To watch a run while it happens, start the observer during the run and add
+A run needs vLLM, the model gateway and the sandbox up first. Native task environments are the default;
+the older hand-written smoke examples require explicit `--task-runtime fixture --verifier-image <image>`.
+Their filenames, fixed answers and seeded conversations are documented in [`examples/README.md`](examples/README.md).
+Fixture results do not establish native workload completion. To watch a run while it happens, start the observer and add
 `--gateway-log` with the gateway's log file. Activation work needs `uv sync --extra observe`, and vLLM lives in its
 own environment.
+
+The [Colab A100 acceptance run](docs/native-multiagent-evidence.md) completed 11 model requests,
+eight shell tools and three original verifiers across three independent agents. All task rewards
+were zero: the runtime worked, while this model did not solve the Git repair task.
 
 <details>
 <summary>More commands</summary>
 
 ```bash
-# stages of conditions over one world, with the flags of each stage
-uv run mesocosm scenario run examples/scenarios/channel-exposure.yaml --json
-# several worlds in a row, with retries
-uv run mesocosm chain examples/chains/smoke.yaml --json
+# authored fixture scenarios and chains, with explicit execution mode
+uv run mesocosm scenario run examples/scenarios/channel-exposure.yaml \
+  --task-runtime fixture --verifier-image debian:bookworm-slim --json
+uv run mesocosm chain examples/chains/smoke.yaml \
+  --task-runtime fixture --verifier-image debian:bookworm-slim --json
 # the judge's candidate incidents
 uv run mesocosm flags list runs/<run_id> --json
 # a model scores every transcript
