@@ -1,29 +1,43 @@
-# Examples and execution modes
+# Real environments and experiment fixtures
 
-Use `world-native-three.yaml` with the [native runtime runbook](../docs/native-multiagent.md) for
-three actual OpenCode agents on an external task's native environment and original verifier.
-The shared directory is a real Docker volume. Each agent has its own session, key and workspace.
-Adding agents uses the same manifest schema; no two-agent special case is required.
+Start with [world-native-three.yaml](world-native-three.yaml) and the
+[native runtime guide](../docs/native-multiagent.md). Three independent OpenCode servers use an
+external task's declared environment and its original verifier. The shared directory is a real Docker
+volume. The manifest adds no authored history, decoy scorer, side-task instruction or simulated service.
 
-`mesocosm run` defaults to the native task runtime. It refuses tasks with no native environment
-instead of silently substituting the general-purpose agent image. The explicit
-`--task-runtime fixture --verifier-image <image>` mode retains the hand-written communication and observer smoke tests.
-Passing a fixture test does not establish real benchmark performance or full-stack integration.
+The other primary configurations also use external tasks:
 
-The eight hand-written task families under `tasks/` and ten peer-review episodes are fixtures.
-Their scorer checks range from exact strings and filenames to fixed bug labels. The seeded board
-and chat messages, persona backstories, wiki incidents, keys and release notes are authored inputs.
-They are not evidence of past work by running agents. The release-notes side task directly instructs
-credential transfer; the timed-lookup instructions disclose the cache API; board-exchange explicitly
-instructs conversation. Those behaviors must not be described as spontaneously discovered.
+| Configuration | Purpose |
+|---|---|
+| [world-native-three.yaml](world-native-three.yaml) | Three agents, separate workspaces and a shared directory. |
+| [world-benchmark.yaml](world-benchmark.yaml) | Three isolated agents performing the same external task. |
+| [world-benchmark-suite.yaml](world-benchmark-suite.yaml) | Three agents consuming an external task collection from a common queue. |
 
-The built-in board, chat, wiki and pastebin are functioning small applications. Git uses real Git,
-PyPI serves real downloaded wheels, and the web gateway's live mode reaches real sites. The built-in
-cache is a text object store, not an integrated compiler/package cache. Clock and ledger simulate time
-and balances; the clock's decommission timestamp does not destroy a workstation. Vault is an explicit
-honeypot that grants no external credentials. These experimental facilities are disabled in the native
-three-agent example. They remain available as opt-in fixtures, not replacements for application services.
+Materialize tasks and replace the example control key before running. Importing a task reference does
+not establish that its environment is supported: the native runtime checks its execution requirements
+and refuses unsupported ones. Configurations do not promise successful collaboration or task completion.
 
-`world-benchmark` and `world-benchmark-suite` reference externally materialized tasks. The other example
-worlds, scenarios, chains and forks mainly exercise the fixture families. Unit-test fake harnesses and
-fake inference servers live under `tests/`; hardware acceptance must run the actual stack separately.
+Change actual access rules, resource budgets, memory, rewards and observation conditions to study
+behavior. Keep the task and independent success criteria fixed when comparing a condition. The
+[research-method note](../docs/incident-reproducibility.md) explains why an incident script cannot
+establish that a behavior emerged under those conditions.
+
+## Legacy authored fixtures
+
+All previous authored tasks, scenario ladders, workplace histories and demo worlds now live together
+under [fixtures/](fixtures/README.md). Their relative paths are preserved. They remain useful for
+checking adapters, flags, replay and compatibility. They are excluded from the primary research setup.
+
+`mesocosm run` defaults to the native task runtime. Legacy fixtures require explicit
+`--task-runtime fixture --verifier-image <image>` execution. Passing a fixture or a test with a fake
+inference server does not establish integration with real agents and task environments.
+
+Built-in board, chat, wiki, pastebin and Git services remain available as optional applications. A fresh
+wiki is empty unless initial documents are explicitly configured. The legacy cache is a text object
+store; clock and ledger simulate time and balances; vault is a canned honeypot. Those facilities are
+not substitutes for the real application or resource being studied.
+
+## Compare conditions
+
+After preparing a private native world, use [experiments/reward-allocation.yaml](experiments/reward-allocation.yaml).
+The [experiment guide](../docs/experiments.md) explains enforced controls, repeated trials and measurement limits.

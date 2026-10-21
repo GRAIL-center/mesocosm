@@ -1,0 +1,11 @@
+# Legacy authored fixture; see examples/fixtures/README.md. Not evidence of emergent behavior.
+# Two worlds in sequence, each once; an infrastructure failure is retried once, a manifest that
+# contradicts the world is not. Resume an interrupted chain with --resume --chain-id <id>.
+#   uv run mesocosm chain examples/fixtures/chains/smoke.yaml --compose-file /tmp/compose.yml --json --task-runtime fixture --verifier-image <image>
+name: smoke
+runs:
+  - manifest: ../world-demo.yaml
+  - manifest: ../world-channels.yaml
+retries: 1
+retry_delay_seconds: 10
+on_failure: continue

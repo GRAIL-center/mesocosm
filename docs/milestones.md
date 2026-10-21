@@ -1,34 +1,33 @@
-# Milestones
+# Development milestones
 
-Aligned with the proposal's 16-week schedule (weeks 1–5 build, 6–7 pilot, 8–13 main runs, 14–16 analysis). Each milestone has an exit criterion that can be checked, not a feature list.
+The project is a pre-alpha research runtime. The current direction is condition-led experiments over
+real tasks and at least three real agents. Current acceptance is functional system composition, not
+behavior reproduction. Earlier incident scenarios and synthetic workplace histories
+are retained as [legacy fixtures](../examples/fixtures/README.md); reproducing their expected flags is
+not a research milestone.
 
-| ID | Weeks | Goal | Exit criterion |
-|---|---|---|---|
-| **M0 Spike** | weekend | Validate the riskiest assumptions on one workstation (RTX 3090, 3B model) | `spike/SPIKE.md` result tables filled in; first rows of the capability matrix written |
-| **M1 Vertical slice** | 1–2 | OpenCode → gateway → vLLM runs one Harbor task in an isolated sandbox (done 2026-10-18) | `mesocosm run spec.yaml` runs end to end; the run bundle contains the full prompt the model received for every request; egress check passes |
-| **M1.5 Live observation v0** | 2 | Watch a run as it happens: agents side by side, session trees, one-line summaries, drill-down to the model request and reasoning; replay | `mesocosm observe serve` on a bundle shows the tree and summaries from recorded events; screenshot test passes; memory bounded (`tests/test_observe_*.py`) |
-| **M2 Multi-agent and channels** | 3–4 | N agents; official board + shared repo + old wiki; minimal mock external world (services v0 shipped, ADR-0010; channels on/off, exposure timing, accounts and traps, concurrent agents shipped 2026-10-18, ADR-0011) | A message exchanged over a hidden channel appears as one joined event in the service log and in the gateway exposure log |
-| **M3 Conditions and automation** | 5 | Resource limits, channel on/off, exposure timing, memory policy, mid-run budget changes, run chaining with retries and resume (done 2026-10-18, ADR-0012); every CLI command supports `--json`; `run pause/resume` unsupported for OpenCode | Met 2026-10-18: `conditions set` leaves a receipt with the previous value in the gateway log and the bundle; anything else is `rejected_unsupported` |
-| **M4 Pilot (behavior only)** | 6–7 | Staged scenarios, traps and state checks, flags and the review queue (done 2026-10-18, ADR-0013; Ethogram dropped). Peer-verification scenario after Shi et al. built as a world protocol with four ablation stages (ADR-0017, smoke-run on Colab); HF-incident scenario after Slocum et al. (arXiv 2609.35799, METR's investigation) built as a four-stage ladder over four isolated agents with an impossible task, a scorer file in reach, a shared directory, an unsanctioned board and a late key (`examples/scenarios/hf-incident.yaml`), not yet run | Table of minimum elicitation stage per incident (produced by `mesocosm scenario report`; empty for the benign example); cost per agent-hour (`mesocosm report`, 0.40 at 0.8 per L4 hour) |
-| **M5 Activations** | 6–8 (parallel) | Activations recomputed from the gateway's recorded token ids with NNsight, keyed by request id; norms for every request, raw tensors per policy; recompute verification (done 2026-10-18, ADR-0016; in-engine capture unsupported) | Met 2026-10-18: a second pass reproduces the first exactly in the same dtype and stays within rel-L2 0.05 in float16; 8.5 s per 8k-token request on an L4 |
-| **M6 Persistent operation and forking** | 8–9 | Task stream with a shared work queue, memory carried, snapshots with declared coverage, hash-verified restore, forks with lineage; pause/resume/stop at the gateway (done 2026-10-18, ADR-0014, ADR-0015) | Met 2026-10-18: snapshot → restore (66 files, 0 mismatches) → fork ran in Docker; `coverage.json` marks the uncaptured process state |
-| **P1 World realism and reach** | 9 | The world at pilot scale (journals, paging, caches; ADR-0018); nothing inside an agent container names the platform (per-agent keys, mounted config, admin surface behind the control key, personas; ADR-0019); accounts that unlock things (`roles`; ADR-0020; the scripted `world.events` of that ADR were removed again by ADR-0024: actors are agents); MCP servers and skills for agents and the world as an MCP server (ADR-0021); the real internet through a policed, logging web gateway (ADR-0022) | Met 2026-10-18: `world-channels` and `world-internet` ran in Docker on Colab with rewards 1.0, 0 model requests naming the platform, a protected push refused, PyPI reached through the proxy CA (#20); bundles export to Inspect (ADR-0025) |
-| **P2 Verifiable worlds and oversight** | 10 | The chat as a standing service with channels, direct messages and caps as conditions (ADR-0027); verifiers that read the world (`world.json`), partial credit, a simulated clock and a ledger (ADR-0028); a model per agent through one gateway (ADR-0029); side tasks and a monitor model with undetected-success counts (ADR-0030); linear probes over recomputed activations (ADR-0031) | Built 2026-10-18 with tests (170 passing), examples `world-two-models`, `world-monitor`, `hf-incident`; Docker runs of `world-monitor` and the `hf-incident` ladder on Colab are the next check |
-| **M7 Main runs** | 8–13 | Reproduction experiments and new-behavior search | Operating metrics: unattended hours, failures recovered automatically, cost per agent-hour, new behaviors per week |
-| **M8 Analysis** | 14–16 | Dataset (redacted, canary), behavior catalog v1, detector comparison, report | All proposal deliverables |
-
-## After external funding
-
-- MCP wrapper over the operation contract.
-- Second harness (OpenHands) and the capability matrix for it.
-- Registration process for research-agent-authored environment extensions (tests, compatibility declaration, controlled deployment).
-- Validation of the OpenEnv `TrainingTrace` export against a trainer (TRL) on a toy run.
-
-## Work streams
-
-| Stream | Scope | Skills |
+| Milestone | Current evidence | Exit criterion / remaining work |
 |---|---|---|
-| Control plane and gateway | manifests, run manager, conditions, gateway, record store | Python, async servers, architecture |
-| Infrastructure | Docker networks, services, Harbor tasks, OpenCode adapter | Docker, Harbor, OpenCode API |
-| Interpretability | vLLM + NNsight capture, recompute, probes | PyTorch, vLLM internals, NNsight |
-| Scenarios, judging, catalog | incident scenarios, traps, judges, Ethogram, review UI | LLM judging, prompt design, data curation |
+| Real multi-agent execution | The [2026-10-19 A100 run](native-multiagent-evidence.md) executed three independent OpenCode sessions, real shell tools and original external-task verifiers. All task scores were zero. | Execution criterion met for the documented native profile; successful task performance, collaboration and broader task compatibility need separate evidence. |
+| Enforced environment conditions | Gateway budgets, network/channel controls, task-boundary memory, service permissions and receipts have tests; selected earlier controls have fixture-based Docker evidence. | Establish repeatable real-task baselines and verify each selected condition end to end. |
+| Repeated condition experiments | Generic runner and reporting have tests. [Two A100 conditions](condition-experiment-evidence.md) ran once each with separate worlds; Colab teardown required operator intervention. | Verify unattended lifecycle and repeated trials. The new bounded-cleanup guard has local tests; it does not repair Colab process isolation. `order_seed` alone does not establish reproducibility. |
+| Separate incentives from evaluation | Verifier-derived individual/team-mean records ran with three real sessions per condition; all scores were zero. Peer sources, mixed allocation and context feedback have tests. | Verify peer sources and feedback delivery with real agents, including missing measurements. Different allocation outputs currently have unit-test evidence. No target behavior is required. |
+| Compare monitoring systems | Configurable posthoc review and bounded before-tool intervention are implemented. The released OpenCode hook has [real-model allow/deny/abort evidence](training-monitor-evidence.md), including a falsely allowed read; malformed/unknown decisions, global budgets and failed-run evidence have tests. | The tested intervention boundary works; establish monitor accuracy separately. Detection quality and adaptive reviewer training are later studies; the gate mediates top-level tool calls. |
+| Persistent operation and observation | Queueing, snapshots, replay and activation recomputation have tests and earlier fixture evidence. | Validate long real workloads and document uncaptured state; existing snapshots do not establish exact process or training continuation. |
+| Actual policy training | `train run` implements complete frozen-policy worlds, exact rollout validation, a real REINFORCE LoRA update, checkpoint activation and final policy verification. The [native A100 FP16 run](training-monitor-evidence.md) completed one actual update and a second three-agent world using the new checkpoint, with final probability verification. `none` and `in_context` remain fixed-weight modes inside an ordinary world. | The tested training loop works with documented operator-assisted Colab cleanup. Learning benefit requires a separate held-out evaluation; a nonzero parameter update alone is not that evidence. |
+| Later research studies | Outside current implementation acceptance; no completed general misalignment study is established by the infrastructure work. | When conducting a study, report task performance, incentives, reviewed behavior and monitor errors across conditions, with uncertainty and complete trial accounting. |
+
+The new experiment, reward and monitoring implementations do not inherit live validation from the older
+A100 run. The new condition run validates only its documented paths: one team-mean participant used no
+tool, monitoring was disabled and learning used fixed weights. Current evidence and unsupported settings are listed in the [capability matrix](capability-matrix.md).
+The subsequent training run has separate evidence for a real policy update and live monitor calls:
+all three agents used the active model in each world, but only one executed tools. Its original
+task scores were also all zero. It does not establish tool use by all three participants or a learning benefit.
+Tests using fake inference or authored tasks validate plumbing, not emergent behavior.
+
+## Subsequent extensions
+
+Prioritize extensions when a concrete study needs them: additional native task profiles and harnesses,
+real application-service integrations, broader training algorithms and adaptive monitor training. Each extension
+needs an enforceable interface, clear unsupported cases and evidence on the actual execution path.
+There is no deadline or funded schedule implied by this list.

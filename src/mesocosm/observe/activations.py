@@ -18,9 +18,11 @@ import json
 import math
 import pathlib
 import time
-from typing import Any
+from importlib import import_module
+from typing import Any, TypedDict, cast
 
 from mesocosm.core.records import RunBundle
+from mesocosm.observe._activation_types import ModelFactory, TorchAPI, TraceTensor
 
 METHOD = "recompute"
 
@@ -100,7 +102,18 @@ def agreement(pred: list[int], prompt_len: int, completion: list[int]) -> float:
     return round(hits / len(completion), 4)
 
 
-def vector_stats(a: list[float], b: list[float]) -> dict[str, float]:
+class VectorStats(TypedDict):
+    rel_l2: float
+    cosine: float
+    max_abs: float
+    n: int
+
+
+class LayerStats(VectorStats, total=False):
+    raw: VectorStats
+
+
+def vector_stats(a: list[float], b: list[float]) -> VectorStats:
     """Relative L2 difference, cosine similarity and max absolute difference of two equally long vectors."""
     n = min(len(a), len(b))
     a, b = a[:n], b[:n]
@@ -151,18 +164,20 @@ class Recomputer:
     requested layers plus the greedy prediction per position."""
 
     def __init__(self, model_id: str, device: str = "cuda", dtype: str = "bfloat16", backend: str = "hf"):
-        import torch
-
         if backend != "hf":
             raise ValueError("only the transformers backend recomputes from recorded token ids today (ADR-0016)")
-        try:
-            from nnsight import TransformersModel as NNModel
-        except ImportError:
-            from nnsight import LanguageModel as NNModel
+        # The optional packages are real runtime dependencies; the protocols describe only the API
+        # consumed here. They do not replace either package or silently accept a missing backend.
+        torch = cast(TorchAPI, import_module("torch"))
+        nnsight = import_module("nnsight")
+        factory = getattr(nnsight, "TransformersModel", None)
+        if factory is None:
+            factory = nnsight.LanguageModel
+        model_factory = cast(ModelFactory, factory)
         self.torch = torch
         self.model_id, self.device, self.dtype_name, self.backend = model_id, device, dtype, backend
         t0 = time.time()
-        self.model = NNModel(model_id, dispatch=True, torch_dtype=getattr(torch, dtype), device_map=device)
+        self.model = model_factory(model_id, dispatch=True, torch_dtype=getattr(torch, dtype), device_map=device)
         self.load_seconds = round(time.time() - t0, 2)
         self.layers = self.model.model.layers
         self.revision = getattr(getattr(self.model, "config", None), "_commit_hash", None)
@@ -177,7 +192,7 @@ class Recomputer:
         if self.device.startswith("cuda"):
             torch.cuda.reset_peak_memory_stats()
         t0 = time.time()
-        saved: dict[int, Any] = {}
+        saved: dict[int, TraceTensor] = {}
         with torch.no_grad(), self.model.trace({"input_ids": input_ids, "attention_mask": torch.ones_like(input_ids)}):
             for layer in layer_ids:
                 out = self.layers[layer].output
@@ -262,9 +277,9 @@ def verify(bundle_root: str | pathlib.Path, model_id: str, tolerance_rel_l2: flo
         prompt_ids, completion_ids = token_sequence(rec)
         out = rc.trace(prompt_ids + completion_ids, entry["layers"])
         stored = read_summary(bundle_root, entry["request_id"])
-        per_layer = {}
+        per_layer: dict[str, LayerStats] = {}
         for layer, h in out["hidden"].items():
-            stats = vector_stats(stored["norms"][str(layer)], norms(h.float().tolist()))
+            stats: LayerStats = {**vector_stats(stored["norms"][str(layer)], norms(h.float().tolist()))}
             if entry.get("raw_file"):
                 from safetensors.torch import load_file
 
@@ -272,7 +287,7 @@ def verify(bundle_root: str | pathlib.Path, model_id: str, tolerance_rel_l2: flo
                 start = len(prompt_ids) if entry.get("raw_positions") == "completion" else 0
                 stats["raw"] = vector_stats(raw.float().flatten().tolist(), h[start:].float().flatten().tolist())
             per_layer[str(layer)] = stats
-        worst = max(max(v["rel_l2"], (v.get("raw") or {}).get("rel_l2", 0.0)) for v in per_layer.values())
+        worst = max(max(v["rel_l2"], v["raw"]["rel_l2"] if "raw" in v else 0.0) for v in per_layer.values())
         results.append({"request_id": entry["request_id"], "layers": per_layer, "worst_rel_l2": worst,
                         "agreement": agreement(out["pred"], len(prompt_ids), completion_ids),
                         "stored_agreement": entry["agreement"], "within_tolerance": worst <= tolerance_rel_l2})

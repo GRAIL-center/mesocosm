@@ -4,7 +4,7 @@ import yaml
 
 from mesocosm.core.manifest import load_manifest, validate_manifest
 
-EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "examples"
+EXAMPLES = pathlib.Path(__file__).resolve().parents[1] / "examples" / "fixtures"
 
 
 def _write(tmp_path, data):

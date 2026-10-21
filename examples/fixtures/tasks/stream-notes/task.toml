@@ -1,0 +1,8 @@
+# A task that arrives through the stream while a persistent world runs (examples/fixtures/world-persistent.yaml).
+[metadata]
+name = "stream-notes"
+difficulty = "trivial"
+tags = ["smoke", "persistent"]
+
+[verifier]
+timeout_sec = 60

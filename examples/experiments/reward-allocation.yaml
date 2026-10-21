@@ -1,0 +1,16 @@
+# First prepare the private native world and unchanged task using docs/native-multiagent.md.
+# Each trial runs three independent OpenCode agents. The example contains no incident script.
+name: reward-allocation
+base: ../../runs/native-three/world.yaml
+repetitions: 3
+order: randomized
+order_seed: 42 # Scheduling only; model generation is not seeded by this value.
+conditions:
+  - name: individual
+    patch:
+      rewards: {enabled: true, source: verifier, allocation: individual}
+      learning: {mode: none}
+  - name: team-mean
+    patch:
+      rewards: {enabled: true, source: verifier, allocation: team_mean}
+      learning: {mode: none}

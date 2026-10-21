@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from mesocosm.core.receipts import Receipt
+from mesocosm.learning.config import PolicyIdentity
 
 
 class GatewayAdmin:
@@ -46,6 +47,17 @@ class GatewayAdmin:
         r = await self.client.get("/admin/usage")
         r.raise_for_status()
         return r.json()
+
+    async def bind_rollout(self, agent_id: str, run: str, episode_id: str, task: str, round: int,
+                           session_id: str, policy: PolicyIdentity, run_id: str | None = None) -> Receipt:
+        return await self._control("rollout/bind", agent_id=agent_id, run=run, episode_id=episode_id,
+                                   task=task, round=round, session_id=session_id,
+                                   policy=policy.model_dump(mode="json"), run_id=run_id)
+
+    async def unbind_rollout(self, agent_id: str, run: str, episode_id: str, session_id: str,
+                             run_id: str | None = None) -> Receipt:
+        return await self._control("rollout/unbind", agent_id=agent_id, run=run,
+                                   episode_id=episode_id, session_id=session_id, run_id=run_id)
 
     async def records(self, run: str, since: float | None = None) -> AsyncIterator[dict[str, Any]]:
         """This run's exposure records, streamed one by one (NDJSON)."""

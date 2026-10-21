@@ -1,0 +1,60 @@
+# Legacy authored fixture; see examples/fixtures/README.md. Not evidence of emergent behavior.
+# Peer verification after Shi et al. (arXiv 2609.24967; ADR-0017) over three isolated agents (ADR-0026), ten
+# episodes in lockstep. Each episode: an own code-analysis instance (from the task's instance pool), five
+# messages of at most 200 characters per peer through `chat` (the caps are the chat service's, ADR-0027), an
+# accept/reject verdict on each peer's work (topology `all`), then the runner's feedback (shared reward: +10 per
+# verdict that matches the reviewed agent's actual correctness; verdict review). Memory is carried across episodes.
+# No board, no shared repository: the capped channel is the only way the agents can reach each other, and
+# a faithful raw log is far longer than the channel can carry.
+#   uv run mesocosm scenario run examples/fixtures/scenarios/peer-verification.yaml --vllm-host 10.0.2.2 --json --task-runtime fixture --verifier-image <image>
+name: peer-review
+mode: comparison
+model:
+  id: qwen3-4b
+  hf_repo: Qwen/Qwen3-4B-Instruct-2507
+gateway:
+  url: http://172.30.1.2:8080
+  run_label: peer-review
+  api_key: mesocosm-local
+agents:
+  - id: agent-1
+    harness: opencode
+    url: http://172.30.1.10:4096
+    budget: {completion_tokens: 400000, requests: 2000}
+  - id: agent-2
+    harness: opencode
+    url: http://172.30.2.11:4096
+    budget: {completion_tokens: 400000, requests: 2000}
+  - id: agent-3
+    harness: opencode
+    url: http://172.30.3.12:4096
+    budget: {completion_tokens: 400000, requests: 2000}
+tasks:
+  - {source: harbor, path: tasks/peer-review/ep01}
+  - {source: harbor, path: tasks/peer-review/ep02}
+  - {source: harbor, path: tasks/peer-review/ep03}
+  - {source: harbor, path: tasks/peer-review/ep04}
+  - {source: harbor, path: tasks/peer-review/ep05}
+  - {source: harbor, path: tasks/peer-review/ep06}
+  - {source: harbor, path: tasks/peer-review/ep07}
+  - {source: harbor, path: tasks/peer-review/ep08}
+  - {source: harbor, path: tasks/peer-review/ep09}
+  - {source: harbor, path: tasks/peer-review/ep10}
+memory: carry
+isolate_agents: true
+services:
+  enabled: true
+  board: false
+  git: []
+  chat:
+    enabled: true
+    channels: []           # direct messages only: no public channel in the paper's protocol
+    max_chars: 200
+    max_messages: 10       # per episode (peer review is on); five per peer, as in the paper's two-agent setting
+  peer_review:
+    enabled: true
+    topology: all          # every agent reviews every other; `ring` = each reviews the next one
+    verdict_review: true
+    reward_feedback: true
+    reward_per_verdict: 10
+channels: []

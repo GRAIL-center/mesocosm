@@ -3,7 +3,8 @@
 **A research platform for studying how AI agents behave in a shared environment.**
 
 Mesocosm brings multiple coding agents into an environment with tasks, tools and shared resources.
-You choose what each agent can access, let the agents act, and inspect what happened.
+You choose their access, incentives and information, let the agents act, and compare what happened.
+Experiments vary these conditions; they do not script an incident or prescribe the agents’ behavior.
 
 The goal is to understand behavior that emerges when agents work alongside one another: how they
 cooperate, exchange information, respond to constraints, or find ways around the rules. Mesocosm
@@ -65,8 +66,8 @@ flowchart LR
    applies the configured controls.
 3. **Inspect what happened.** Follow the live observer or replay a completed run. Examine model
    requests, tool calls, service interactions and task results on a common timeline.
-4. **Compare conditions.** Repeat with different access rules or budgets. For longer experiments,
-   carry state between tasks and use snapshots to investigate particular moments.
+4. **Compare conditions.** Run named conditions with repetitions using `mesocosm experiment run`.
+   Compare task performance, allocated rewards and monitor judgments separately, retaining failed runs.
 
 The output is a **run bundle**: the configuration, collected events, native logs and verifier results.
 Automatic flags help identify activity for further review.
@@ -91,7 +92,9 @@ interaction. The agents themselves execute tools in Docker task environments.
 Start with the [three-agent setup guide](docs/native-multiagent.md). It walks through preparing an
 external task, starting a model server, launching the Docker environment and inspecting a run.
 The accompanying [example configuration](examples/world-native-three.yaml) shows how the pieces fit
-together.
+together. Then use the [experiment guide](docs/experiments.md) to compare conditions and repetitions.
+The [training guide](docs/training.md) adds policy updates from measured rewards; live monitoring can
+approve or block proposed tool calls before execution.
 
 You will need a Linux Docker host, Python and `uv`. Local model serving also requires a suitable
 NVIDIA GPU. The setup guide includes a Colab path and explains its differences from a regular
@@ -109,7 +112,8 @@ external task configurations from authored demonstrations and test fixtures.
 | Configure and run an experiment | [Setup guide](docs/native-multiagent.md) · [Example configuration](examples/world-native-three.yaml) |
 | Control Mesocosm from code or the command line | [Operation contract](docs/operation-contract.md) |
 | Check what is implemented and verified | [Capability matrix](docs/capability-matrix.md) |
-| Understand the research scenarios | [Incident reproducibility](docs/incident-reproducibility.md) |
+| Choose variables and compare experimental conditions | [Experiment guide](docs/experiments.md) |
+| Train a shared agent policy from real task outcomes | [Training guide](docs/training.md) |
 | Follow the design and development plans | [Design decisions](docs/adr/README.md) · [Milestones](docs/milestones.md) |
 
 ## Development
@@ -119,6 +123,8 @@ git clone https://github.com/GRAIL-center/mesocosm.git
 cd mesocosm
 uv sync --locked --extra dev --extra gateway
 uv run pytest
+uv run mypy src
+uv run ruff check .
 uv run mesocosm --help
 ```
 
@@ -126,4 +132,14 @@ These commands install the control plane and run its tests. Follow the setup gui
 an agent environment and model server. Source code lives in [`src/mesocosm/`](src/mesocosm/), tests
 in [`tests/`](tests/), and experiment configurations in [`examples/`](examples/).
 
-Read [AGENTS.md](AGENTS.md) before contributing. Mesocosm is released under the [MIT License](LICENSE).
+Read [AGENTS.md](AGENTS.md) before contributing.
+
+## License
+
+Copyright (c) 2026 Seunghyun Yoo. Mesocosm is source-available under the
+[PolyForm Noncommercial License 1.0.0](LICENSE). Noncommercial use is free under its terms,
+including permitted personal and research uses. Commercial use requires a separate agreement.
+
+For commercial licensing, research partnerships or project-specific infrastructure, contact
+Seunghyun Yoo through the [repository's issues](https://github.com/GRAIL-center/mesocosm/issues).
+Third-party components retain their respective licenses.

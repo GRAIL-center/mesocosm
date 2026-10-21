@@ -2,8 +2,12 @@
 and comparison math, the index. The GPU side is verified on Colab (capability matrix)."""
 
 import json
+from types import SimpleNamespace
+
+import pytest
 
 from mesocosm.core.records import RunBundle
+from mesocosm.observe import activations
 from mesocosm.observe.activations import (
     agreement,
     default_layers,
@@ -79,6 +83,35 @@ def test_math_helpers():
     assert same["rel_l2"] == 0.0 and same["cosine"] == 1.0 and same["max_abs"] == 0.0 and same["n"] == 3
     off = vector_stats([1.0, 0.0], [0.0, 1.0])
     assert off["cosine"] == 0.0 and round(off["rel_l2"], 4) == round(2 ** 0.5, 4)
+
+
+def test_recompute_requires_the_real_optional_backend(monkeypatch):
+    def unavailable(name):
+        raise ModuleNotFoundError(f"No module named '{name}'", name=name)
+
+    monkeypatch.setattr(activations, "import_module", unavailable)
+    with pytest.raises(ModuleNotFoundError) as error:
+        activations.Recomputer("test-model")
+    assert error.value.name == "torch"
+
+
+@pytest.mark.parametrize("factory_name", ["TransformersModel", "LanguageModel"])
+def test_optional_nnsight_api_compatibility(monkeypatch, factory_name):
+    # A loader-only test: no model execution or GPU is simulated as acceptance evidence.
+    calls = []
+
+    def factory(model_id, **kwargs):
+        calls.append((model_id, kwargs))
+        return SimpleNamespace(model=SimpleNamespace(layers=[object(), object()]),
+                               config=SimpleNamespace(_commit_hash="revision"))
+
+    dtype = object()
+    modules = {"torch": SimpleNamespace(bfloat16=dtype), "nnsight": SimpleNamespace(**{factory_name: factory})}
+    monkeypatch.setattr(activations, "import_module", modules.__getitem__)
+    recomputer = activations.Recomputer("test-model", device="cpu")
+    assert calls == [("test-model", {"dispatch": True, "torch_dtype": dtype, "device_map": "cpu"})]
+    assert recomputer.n_layers == 2
+    assert recomputer.revision == "revision"
 
 
 def test_index_and_summaries_live_inside_the_bundle(tmp_path):

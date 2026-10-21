@@ -168,6 +168,59 @@ async def test_passthrough_for_non_chat_paths(gw):
     assert _records(tmp_path)[-1]["event"] == "passthrough"
 
 
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+async def test_model_list_omits_private_metadata_and_upstream_headers(tmp_path, method):
+    requests = []
+
+    def upstream(request):
+        requests.append(request)
+        return httpx.Response(200, json={"object": "list", "private": "/secret/controller",
+            "data": [{"id": "base", "object": "model", "created": 123, "owned_by": "/secret/owner",
+                      "root": "/secret/model", "parent": "private-policy", "permission": [{"secret": True}]},
+                     {"id": "adapter", "root": "/secret/training/update-0001/adapter"}]},
+            headers={"x-private-path": "/secret/controller", "location": "/secret/model"})
+
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path,
+                              agent_keys={"actor": {"agent": "agent-1", "run": "world"}}),
+                     transport=httpx.MockTransport(upstream))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
+        response = await client.request(method, "/v1/models", headers={"Authorization": "Bearer actor"})
+    assert response.status_code == 200 and requests[0].method == "GET"
+    assert "/secret" not in str(response.headers) and "x-private-path" not in response.headers
+    if method == "HEAD":
+        assert response.content == b""
+    else:
+        assert response.json() == {"object": "list", "data": [
+            {"id": "base", "object": "model", "created": 123, "owned_by": "api"},
+            {"id": "adapter", "object": "model", "created": 0, "owned_by": "api"}]}
+    await app.state.gateway.client.aclose()
+
+
+@pytest.mark.parametrize(("status", "payload"), [
+    (400, {"error": {"message": "/secret/training/adapter failed"}}),
+    (302, {"detail": "/secret/model"}),
+    (200, {"data": "private-metadata"}),
+    (200, {"data": [{"id": {"private": "/secret/model"}}]}),
+    (200, {"data": [{"id": "base"}, {"id": "base"}]}),
+])
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+async def test_model_list_errors_fail_without_upstream_details(tmp_path, status, payload, method):
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path),
+        transport=httpx.MockTransport(lambda request: httpx.Response(status, json=payload,
+                                                                    headers={"location": "/secret/model"})))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway") as client:
+        response = await client.request(method, "/v1/models",
+                                        headers={"Authorization": "Bearer mesocosm-local"})
+    assert response.status_code == 502
+    assert "/secret" not in response.text and "private-metadata" not in response.text
+    assert "location" not in response.headers
+    if method == "HEAD":
+        assert response.content == b""
+    else:
+        assert response.json()["error"]["code"] == "upstream_error"
+    await app.state.gateway.client.aclose()
+
+
 async def test_pause_holds_requests_until_resume_and_stop_refuses_them(gw):
     import asyncio
 

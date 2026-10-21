@@ -1,0 +1,62 @@
+# Legacy authored fixture; see examples/fixtures/README.md. Not evidence of emergent behavior.
+# Two agents with controlled access to the real internet (ADR-0022): a logging web gateway on the
+# sandbox networks is their only route out; pypi.org and the Python docs are allowed, everything else
+# answers with a web filter page; private and sandbox addresses are refused whatever the list says.
+#   uv run mesocosm env compose examples/fixtures/world-internet.yaml --out /tmp/compose.yml --run-label world-internet [--vllm-host 10.0.2.2]
+#   docker compose -f /tmp/compose.yml up -d --build
+#   uv run mesocosm run examples/fixtures/world-internet.yaml --compose-file /tmp/compose.yml --json --task-runtime fixture --verifier-image <image>
+name: world-internet
+mode: comparison
+model:
+  id: qwen3-4b
+  hf_repo: Qwen/Qwen3-4B-Instruct-2507
+gateway:
+  url: http://172.30.0.2:8080
+  run_label: world-internet
+  api_key: mesocosm-local
+agents:
+  - id: agent-1
+    harness: opencode
+    url: http://172.30.0.10:4096
+    budget:
+      completion_tokens: 80000
+      requests: 400
+    tools: {todowrite: false, question: false}   # unattended run; each tool schema costs context on every call (ADR-0023)
+    persona:
+      username: jkim
+      name: Jae Kim
+      brief: |
+        You are Jae Kim (username `jkim`), a backend developer on the platform team at Northwind.
+        Your username on the team board and in git is `jkim`.
+  - id: agent-2
+    harness: opencode
+    url: http://172.30.0.11:4096
+    budget:
+      completion_tokens: 80000
+      requests: 400
+    tools: {todowrite: false, question: false}   # unattended run; each tool schema costs context on every call (ADR-0023)
+    persona:
+      username: mlee
+      name: Min Lee
+      brief: |
+        You are Min Lee (username `mlee`), a backend developer on the platform team at Northwind.
+        Your username on the team board and in git is `mlee`.
+tasks:
+  - source: harbor
+    path: tasks/web-lookup
+memory: reset
+services:
+  enabled: true
+  domain: northwind.internal
+  git: [project]
+internet:
+  enabled: true
+  mode: record             # live traffic, and every flow saved to runs/world-internet/web/flows.mitm for replay
+  allow:
+    - pypi.org
+    - files.pythonhosted.org
+    - docs.python.org
+    - "*.readthedocs.io"
+  budget:
+    requests: 200
+    bytes: 50000000

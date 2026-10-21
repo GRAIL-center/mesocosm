@@ -12,7 +12,7 @@ from mesocosm.adapters.harbor.task import (
     verifier_command,
 )
 
-TASK = pathlib.Path(__file__).resolve().parents[1] / "examples" / "tasks" / "hello-world"
+TASK = pathlib.Path(__file__).resolve().parents[1] / "examples" / "fixtures" / "tasks" / "hello-world"
 
 
 def _materialize_tb_task(root: pathlib.Path, ref: str) -> pathlib.Path:

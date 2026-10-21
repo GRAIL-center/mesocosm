@@ -90,9 +90,11 @@ def plant_agent_files(task_dir: pathlib.Path, agent_id: str, workspace: pathlib.
 
 
 class RawLog:
-    """The agent's own execution trace, written into its workspace as `raw_log.jsonl` from the harness
-    events the run manager receives: one line per completed tool call (seq, task, tool, arguments,
-    result). The agent can read it; nobody else gets it except through what the agent sends."""
+    """Completed tool calls written as `raw_log.jsonl` in the directory chosen by the caller.
+
+    Generic runs use controller-owned bundle storage. Only legacy peer-verification fixtures put
+    this journal in the agent workspace, where it can be read and shared by that agent.
+    """
 
     def __init__(self, workspace: pathlib.Path):
         self.path = workspace / "raw_log.jsonl"
@@ -105,7 +107,8 @@ class RawLog:
     def append(self, part: dict) -> None:
         state = part.get("state") or {}
         call_id = part.get("callID") or part.get("id")
-        if part.get("type") != "tool" or state.get("status") != "completed" or call_id in self.seen:
+        if (part.get("type") != "tool" or state.get("status") != "completed"
+                or not isinstance(call_id, str) or not call_id or call_id in self.seen):
             return
         self.seen.add(call_id)
         self.seq += 1

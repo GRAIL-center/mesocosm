@@ -5,8 +5,8 @@ import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-WORLD_FACING = ["examples/tasks/*/instruction.md", "examples/tasks/*/*/instruction.md", "examples/skills/**/*.md",
-                "examples/world/**/*", "spike/world/**/*"]
+WORLD_FACING = ["examples/fixtures/tasks/*/instruction.md", "examples/fixtures/tasks/*/*/instruction.md", "examples/fixtures/skills/**/*.md",
+                "examples/fixtures/world/**/*", "spike/world/**/*"]
 
 
 def test_world_facing_examples_do_not_name_the_platform():
@@ -19,6 +19,6 @@ def test_world_facing_examples_do_not_name_the_platform():
 
 
 def test_example_tasks_name_the_user_by_persona_not_by_agent_id():
-    for path in ROOT.glob("examples/tasks/**/instruction.md"):
+    for path in ROOT.glob("examples/fixtures/tasks/**/instruction.md"):
         text = path.read_text(encoding="utf-8")
         assert "<your agent id>" not in text and "$MESOCOSM" not in text, str(path)

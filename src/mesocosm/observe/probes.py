@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import pathlib
 import time
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -78,7 +79,7 @@ def fit_logistic(X: np.ndarray, y: np.ndarray, l2: float = 1e-2, steps: int = 50
             "train_loss": round(loss, 6)}
 
 
-def train(bundle_roots: list[str | pathlib.Path], layer: int, out: str | pathlib.Path,
+def train(bundle_roots: Sequence[str | pathlib.Path], layer: int, out: str | pathlib.Path,
           labels_file: str | pathlib.Path | None = None, pool: str = "mean", l2: float = 1e-2,
           steps: int = 500) -> dict[str, Any]:
     """Train a probe on every captured request of the bundles that has a raw tensor at `layer`."""

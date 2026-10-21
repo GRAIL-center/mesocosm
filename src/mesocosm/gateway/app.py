@@ -17,6 +17,7 @@ Run: `python -m mesocosm.gateway` (settings from MESOCOSM_* env vars) or `spike/
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
 import pathlib
@@ -33,6 +34,9 @@ from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
+from mesocosm.gateway.actions import register_action_routes
+from mesocosm.gateway.rollout import register_rollout_routes, sampling_request
+from mesocosm.learning.config import PolicyIdentity
 
 HOP_BY_HOP = {"content-length", "transfer-encoding", "connection", "keep-alive", "host"}
 RECORDS_CHUNK = 1 << 20   # bytes of NDJSON per streamed chunk of /admin/records
@@ -45,6 +49,7 @@ class Settings:
     log_dir: pathlib.Path = pathlib.Path("./runs/spike")
     budgets: dict[str, dict[str, int]] = field(default_factory=dict)
     return_token_ids: bool = False
+    require_rollout_binding: bool = False
     max_hold_seconds: float = 600.0   # a paused run's requests wait this long at most, then get 503
     control_key: str = "mesocosm-local"                    # bearer key of the /admin endpoints (the control plane)
     agent_keys: dict[str, dict[str, str]] = field(default_factory=dict)   # bearer key -> {agent, run} (ADR-0019)
@@ -59,6 +64,7 @@ class Settings:
             log_dir=pathlib.Path(os.environ.get("MESOCOSM_LOG_DIR", str(cls.log_dir))),
             budgets=json.loads(os.environ.get("MESOCOSM_BUDGET_JSON", "{}") or "{}"),
             return_token_ids=os.environ.get("MESOCOSM_RETURN_TOKEN_IDS", "0") == "1",
+            require_rollout_binding=os.environ.get("MESOCOSM_REQUIRE_ROLLOUT_BINDING", "0") == "1",
             max_hold_seconds=float(os.environ.get("MESOCOSM_MAX_HOLD_SECONDS", "600")),
             control_key=os.environ.get("MESOCOSM_CONTROL_KEY", cls.control_key),
             agent_keys=json.loads(os.environ.get("MESOCOSM_AGENT_KEYS", "{}") or "{}"),
@@ -95,6 +101,31 @@ def bearer(request: Request) -> str | None:
     return header[7:].strip() if header.lower().startswith("bearer ") else None
 
 
+def public_model_list(content: bytes, bound_model: str | None) -> dict[str, Any]:
+    """Publish model identifiers, never upstream checkpoint paths or policy bookkeeping."""
+    data = json.loads(content)
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+        raise ValueError("invalid upstream model listing")
+    models, seen = [], set()
+    for entry in data["data"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or not entry["id"]:
+            raise ValueError("invalid upstream model entry")
+        model = entry["id"]
+        if model in seen:
+            raise ValueError("duplicate upstream model identifier")
+        seen.add(model)
+        if bound_model is not None and model != bound_model:
+            continue
+        created = entry.get("created", 0)
+        if type(created) is not int or created < 0:
+            raise ValueError("invalid upstream model creation time")
+        # Omitted creation time uses zero; ownership names this API, not the host artifact.
+        models.append({"id": model, "object": "model", "created": created, "owned_by": "api"})
+    if bound_model is not None and not models:
+        raise ValueError("bound model is absent from upstream listing")
+    return {"object": "list", "data": models}
+
+
 @dataclass
 class Hold:
     """A paused run (or one agent of it): chat requests wait here until resume or stop."""
@@ -118,6 +149,7 @@ def parse_sse(raw: str) -> dict[str, Any]:
     out: dict[str, Any] = {
         "id": None, "model": None, "content": "", "reasoning": "", "tool_calls": [],
         "finish_reason": None, "usage": None, "prompt_token_ids": None, "token_ids": [],
+        "token_logprobs": [], "choice_indices": [], "stream_complete": False, "stream_errors": [],
         "chunks": 0, "unparsed_lines": 0,
     }
     tool_calls: dict[int, dict[str, Any]] = {}
@@ -125,7 +157,10 @@ def parse_sse(raw: str) -> dict[str, Any]:
         if not line.startswith("data:"):
             continue
         data = line[5:].strip()
-        if not data or data == "[DONE]":
+        if data == "[DONE]":
+            out["stream_complete"] = True
+            continue
+        if not data:
             continue
         try:
             chunk = json.loads(data)
@@ -133,6 +168,8 @@ def parse_sse(raw: str) -> dict[str, Any]:
             out["unparsed_lines"] += 1
             continue
         out["chunks"] += 1
+        if chunk.get("error") is not None:
+            out["stream_errors"].append(chunk["error"])
         out["id"] = out["id"] or chunk.get("id")
         out["model"] = out["model"] or chunk.get("model")
         if chunk.get("usage"):
@@ -140,8 +177,13 @@ def parse_sse(raw: str) -> dict[str, Any]:
         if chunk.get("prompt_token_ids") is not None:
             out["prompt_token_ids"] = chunk["prompt_token_ids"]
         for choice in chunk.get("choices") or []:
+            index = choice.get("index", 0)
+            if index not in out["choice_indices"]:
+                out["choice_indices"].append(index)
             if choice.get("token_ids"):
                 out["token_ids"].extend(choice["token_ids"])
+            for token in (choice.get("logprobs") or {}).get("content") or []:
+                out["token_logprobs"].append(token.get("logprob") if isinstance(token, dict) else None)
             if choice.get("finish_reason"):
                 out["finish_reason"] = choice["finish_reason"]
             delta = choice.get("delta") or {}
@@ -176,6 +218,10 @@ def summarize_response(data: dict[str, Any]) -> dict[str, Any]:
         "tool_calls": msg.get("tool_calls") or [], "finish_reason": choice.get("finish_reason"),
         "usage": data.get("usage"), "prompt_token_ids": data.get("prompt_token_ids"),
         "token_ids": choice.get("token_ids"),
+        "error": data.get("error"),
+        "token_logprobs": [token.get("logprob") if isinstance(token, dict) else None
+                           for token in (choice.get("logprobs") or {}).get("content") or []],
+        "choice_indices": [c.get("index", 0) for c in data.get("choices") or []],
     }
 
 
@@ -211,6 +257,7 @@ class Gateway:
         self.budgets: dict[str, dict[str, int]] = {k: dict(v) for k, v in settings.budgets.items()}
         self.usage: dict[str, dict[str, int]] = {}
         self.request_locks: dict[str, asyncio.Lock] = {}
+        self.rollout_bindings: dict[tuple[str, str], dict[str, Any]] = {}
         self.missing_usage: set[str] = set()
         self.holds: dict[tuple[str, str | None], Hold] = {}
         self.stopped: dict[str, float] = {}
@@ -413,7 +460,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                          "key": bool(s.get("key_env") and os.environ.get(s["key_env"]))}   # present, never shown
                      for m, s in gw.settings.upstreams.items()}
         return {"ok": True, "upstream": gw.settings.upstream, "return_token_ids": gw.settings.return_token_ids,
-                "upstreams": upstreams,
+                "upstreams": upstreams, "require_rollout_binding": gw.settings.require_rollout_binding,
                 "budget": gw.budgets, "agents": sorted(v["agent"] for v in gw.settings.agent_keys.values()),
                 **gw.control_state()}
 
@@ -459,6 +506,9 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
 
         return StreamingResponse(stream(), media_type="application/x-ndjson")
 
+    register_rollout_routes(app, gw)
+    register_action_routes(app, identity_callback=identity, log_callback=gw.log, control_key=gw.settings.control_key)
+
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
     async def proxy(path: str, request: Request):
         t0 = time.time()
@@ -481,19 +531,24 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 body = json.loads(body_bytes)
             except json.JSONDecodeError:
                 body = None
+
+        def invalid_request(reason: str) -> JSONResponse:
+            gw.log({**base, "event": "invalid_request", "reason": reason, "request": body})
+            return refusal("invalid")
+
         model = None
         if is_chat:
             if not isinstance(body, dict):
-                return refusal("invalid")
+                return invalid_request("request must be a JSON object")
             if (not isinstance(body.get("model", ""), str)
                     or not isinstance(body.get("messages", []), list)
                     or any(not isinstance(m, dict) for m in body.get("messages", []))):
-                return refusal("invalid")
+                return invalid_request("invalid model/messages shape")
             model = body.get("model")
         route = gw.route(model)
         base.update({"upstream": route.upstream, "model_kind": route.kind})
         # A lease lasts through the final stream chunk. Other agents keep their own independent leases.
-        lock = gw.request_locks.setdefault(agent, asyncio.Lock()) if is_chat else None
+        lock = gw.request_locks.setdefault(agent, asyncio.Lock())
         lock_released = False
         streaming = False
 
@@ -506,8 +561,23 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         if lock is not None:
             await lock.acquire()
         try:
+            context = gw.rollout_bindings.get((run, agent)) if identified_by == "key" else None
+            if identified_by == "key" and gw.settings.require_rollout_binding and context is None:
+                gw.log({**base, "event": "rollout_denied", "reason": "missing_binding", "request": body})
+                return refusal("invalid")
+            bound_model = context["policy"]["model"] if context is not None else None
+            if is_models and bound_model is not None:
+                route = gw.route(bound_model)
+                base.update({"upstream": route.upstream, "model_kind": route.kind})
             if is_chat:
                 assert body is not None
+                if context is not None:
+                    base["rollout"] = copy.deepcopy(context)
+                    try:
+                        body = sampling_request(body, PolicyIdentity.model_validate(context["policy"]), route.kind)
+                    except ValueError as exc:
+                        gw.log({**base, "event": "rollout_denied", "reason": str(exc), "request": body})
+                        return refusal("invalid")
                 while (hold := gw.hold_for(run, agent)) is not None:
                     waited, released = await gw.wait_while_paused(hold)
                     gw.log({**base, "event": "held" if released else "hold_expired", "held_ms": round(waited * 1000),
@@ -528,7 +598,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                     remaining -= gw.usage_for(agent)["completion_tokens"]
                     count = body.get("n", 1)
                     if not isinstance(count, int) or count < 1:
-                        return refusal("invalid")
+                        return invalid_request("invalid completion count")
                     allowance = remaining // count
                     if allowance < 1:
                         return refusal("budget", param="completion_tokens")
@@ -536,12 +606,12 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                     for limit_key in limit_keys:
                         requested = body.get(limit_key)
                         if requested is not None and (not isinstance(requested, int) or requested < 1):
-                            return refusal("invalid")
+                            return invalid_request("invalid completion limit")
                         body[limit_key] = min(requested, allowance) if requested is not None else allowance
                 if body.get("stream"):
                     options = body.get("stream_options") or {}
                     if not isinstance(options, dict):
-                        return refusal("invalid")
+                        return invalid_request("invalid stream options")
                     body["stream_options"] = {**options, "include_usage": True}
                 if gw.settings.return_token_ids and route.kind == "vllm":     # only vLLM understands the field
                     body["return_token_ids"] = True
@@ -558,13 +628,32 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
             if is_chat:
                 headers["content-length"] = str(len(body_bytes))
 
-            upstream_req = route.client.build_request(request.method, "/" + path, content=body_bytes,
+            # Validate the same listing for HEAD; its public response below has no body.
+            upstream_req = route.client.build_request("GET" if is_models else request.method, "/" + path,
+                                                      content=b"" if is_models else body_bytes,
                                                       headers=headers, params=request.query_params)
             try:
                 upstream = await route.client.send(upstream_req, stream=True)
             except httpx.HTTPError as e:
                 gw.log({**base, "event": "upstream_error", "error": repr(e), "request": body})
                 return refusal("upstream")
+
+            if is_models:
+                try:
+                    try:
+                        content = await upstream.aread()
+                    finally:
+                        await upstream.aclose()
+                    if upstream.status_code != 200:
+                        raise ValueError(f"upstream model listing status {upstream.status_code}")
+                    public = public_model_list(content, bound_model)
+                except (httpx.HTTPError, ValueError) as exc:
+                    gw.log({**base, "event": "upstream_error", "error": repr(exc), "status": upstream.status_code})
+                    return refusal("upstream")
+                gw.log({**base, "event": "passthrough", "status": 200,
+                        "latency_ms": round((time.time() - t0) * 1000)})
+                return (Response(media_type="application/json") if request.method == "HEAD"
+                        else JSONResponse(public))
 
             resp_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP}
 
@@ -620,9 +709,6 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                         "latency_ms": round((time.time() - t0) * 1000), "request": body,
                         "request_summary": request_summary(body), "response": parsed,
                         "usage_total": gw.usage_for(agent)})
-            else:
-                gw.log({**base, "event": "passthrough", "status": upstream.status_code,
-                        "latency_ms": round((time.time() - t0) * 1000)})
             return Response(content=content, status_code=upstream.status_code, headers=resp_headers,
                             media_type=upstream.headers.get("content-type"))
         finally:
