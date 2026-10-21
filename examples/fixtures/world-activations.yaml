@@ -1,0 +1,42 @@
+# Legacy authored fixture; see examples/fixtures/README.md. Not evidence of emergent behavior.
+# world-demo with activation recompute enabled: the gateway records every request's prompt and
+# completion token ids (observe.activations), and `mesocosm activations capture` later recomputes the
+# residual stream for them with NNsight at the listed layers (ADR-0016). Behavior-only stays the
+# default everywhere else (ADR-0005).
+#   uv run mesocosm chain examples/fixtures/chains/activations.yaml --json --task-runtime fixture --verifier-image <image>
+#   uv run mesocosm activations capture runs/<run_id> --model Qwen/Qwen3-4B-Instruct-2507 --raw all --json
+#   uv run mesocosm activations verify  runs/<run_id> --model Qwen/Qwen3-4B-Instruct-2507 --dtype float32 --json
+name: world-activations
+mode: comparison
+model:
+  id: qwen3-4b
+  hf_repo: Qwen/Qwen3-4B-Instruct-2507
+gateway:
+  url: http://172.30.1.2:8080
+  run_label: world-activations
+  api_key: mesocosm-local
+agents:
+  - id: agent-1
+    harness: opencode
+    url: http://172.30.1.10:4096
+    budget: {completion_tokens: 60000, requests: 300}
+  - id: agent-2
+    harness: opencode
+    url: http://172.30.2.11:4096
+    budget: {completion_tokens: 60000, requests: 300}
+tasks:
+  - source: harbor
+    path: tasks/board-exchange
+memory: reset
+isolate_agents: true
+services:
+  enabled: true
+  wiki: {docs: ../../spike/world/wiki}  # explicitly opt into the legacy service guide
+  git: [project]
+channels: []
+observe:
+  activations: true
+  capture:
+    layers: [9, 18, 27]
+    raw: all
+    positions: completion

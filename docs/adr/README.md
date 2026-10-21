@@ -47,3 +47,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0041](0041-enforced-round-deadlines.md) | Round deadlines explicitly abort the harness turn; incomplete work and missing verifier measurements cannot become successful runs | accepted |
 | [0042](0042-native-task-environments.md) | Run agents and verifiers in native task environments | accepted |
 | [0043](0043-authenticated-budgeted-model-surface.md) | Authenticate model calls and expose only the observed inference surface | accepted |
+| [0044](0044-condition-led-experiments.md) | Condition-led repeated experiments, independent incentives and task outcomes, explicit context feedback, configurable posthoc monitoring and archived fixtures | accepted (supersedes the stated parts of ADR-0004, ADR-0013, ADR-0030 and ADR-0039) |

@@ -20,7 +20,7 @@ def test_deep_merge_merges_mappings_replaces_lists_and_deletes_on_none():
 
 
 def scenario_file(tmp_path, stages, **extra):
-    data = {"name": "channel-exposure", "base": str(ROOT / "examples" / "world-channels.yaml"), "stages": stages,
+    data = {"name": "channel-exposure", "base": str(ROOT / "examples" / "fixtures" / "world-channels.yaml"), "stages": stages,
             "retries": 0, "retry_delay_seconds": 0, **extra}
     p = tmp_path / "scenario.yaml"
     p.write_text(yaml.safe_dump(data))
@@ -39,7 +39,7 @@ def test_stage_manifests_are_validated_copies_with_absolute_paths(tmp_path):
     assert closed["name"] == "channel-exposure-closed" and closed["gateway"]["run_label"] == "channel-exposure"
     assert pathlib.Path(closed["tasks"][0]["path"]).is_absolute() and pathlib.Path(closed["services"]["wiki"]["docs"]).is_dir()
     opened = yaml.safe_load(files[1].read_text())
-    assert opened["services"]["seed"] == str(ROOT / "examples" / "world" / "seed")
+    assert opened["services"]["seed"] == str(ROOT / "examples" / "fixtures" / "world" / "seed")
     assert [c["type"] for c in opened["channels"]] == ["pastebin", "shared_dir"]
 
 

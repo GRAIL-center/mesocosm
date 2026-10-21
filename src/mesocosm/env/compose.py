@@ -181,19 +181,21 @@ def egress_proxy_env(manifest: WorldManifest) -> dict[str, str]:
 def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_label: str,
                    vllm_port: int = 8000, vllm_host: str = "host.docker.internal", runs_dir: str = "runs",
                    opencode_version: str = "1.19.3", manifest_dir: pathlib.Path | None = None,
-                   files_dir: pathlib.Path | None = None) -> dict:
+                   files_dir: pathlib.Path | None = None, workspace_root: pathlib.Path | None = None) -> dict:
     """`vllm_host` is how the gateway container reaches the inference server on the host; rootless Docker
     maps `host-gateway` to the bridge, so there the slirp4netns host address 10.0.2.2 is needed.
 
     Addresses are fixed per network (172.30.<n>.0/24: gateway .2, services .3, control .4, agent k .10+k)
     so the services can identify callers by address. With `isolate_agents` every agent has its own
     network n = 1..N; otherwise one network n = 0. `files_dir` is where `write_agent_files` put the
-    agents' config files (default runs/<run_label>/agents)."""
+    agents' config files (default runs/<run_label>/agents). `workspace_root` selects the same per-agent
+    workspace directories used by the run manager (default spike/workspace)."""
     repo = repo_root.resolve()
     spike = str(repo / "spike")
     runs = str((repo / runs_dir).resolve())
     manifest_dir = (manifest_dir or repo).resolve()
     files_root = (files_dir or pathlib.Path(runs) / run_label / "agents").resolve()
+    workspaces = (workspace_root or repo / "spike" / "workspace").resolve()
     web_root = files_root.parent / "web"
     domain = manifest.services.domain
     net_index = {a.id: (i + 1 if manifest.isolate_agents else 0) for i, a in enumerate(manifest.agents)}
@@ -203,7 +205,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
     agent_ip = {a.id: f"{subnet_of[network_of[a.id]]}.{10 + i}" for i, a in enumerate(manifest.agents)}
     channels = manifest.channel_types()
     services_on = manifest.services.enabled
-    # the wiki always exists: the image seeds it (spike/world), a manifest may mount its own pages
+    # The wiki service starts empty; initial pages require an explicit manifest mount.
     aliases = _with_domain(["services"] + world_hostnames(manifest), domain)
 
     def attach(host_index: int, nets: list[str], aliases: list[str] | None = None) -> dict:
@@ -325,7 +327,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                       "args": {"OPENCODE_VERSION": opencode_version}},
             "networks": {network_of[agent.id]: {"ipv4_address": agent_ip[agent.id]}},
             # No environment of ours: the agent's config and identity are mounted files (ADR-0019).
-            "volumes": [f"{spike}/workspace/{agent.id}:/work", *mounts]
+            "volumes": [f"{workspaces / agent.id}:/work", *mounts]
             + (["shared:/shared"] if "shared_dir" in channels else []),
             "depends_on": depends,
             # `up --wait` returns only once the OpenCode server answers; the run manager connects right after

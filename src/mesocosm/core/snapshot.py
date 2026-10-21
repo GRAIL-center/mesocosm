@@ -21,8 +21,8 @@ from typing import Any, Protocol
 
 import yaml
 
+from mesocosm.core.config import deep_merge
 from mesocosm.core.records import RunBundle
-from mesocosm.core.scenario import deep_merge
 from mesocosm.core.workspace import reset_workspace
 
 NOT_CAPTURED = [

@@ -18,7 +18,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def test_compose_topology_invariants():
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
     compose = render_compose(manifest, repo_root=ROOT, run_label="lbl")
     assert compose["networks"] == {"sandbox": {"internal": True, "ipam": {"config": [{"subnet": "172.30.0.0/24"}]}}, "edge": {}}
@@ -59,8 +59,23 @@ def test_compose_topology_invariants():
     assert "&id" not in compose_yaml(manifest, repo_root=ROOT, run_label="lbl")
 
 
+def test_custom_workspace_and_record_roots_reach_the_containers(tmp_path):
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
+    manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
+    workspaces = tmp_path / "trial-workspaces"
+    runs = tmp_path / "trial-records"
+    compose = render_compose(manifest, repo_root=ROOT, run_label="trial", workspace_root=workspaces,
+                             runs_dir=str(runs))
+    for agent in manifest.agents:
+        volumes = compose["services"][agent.id]["volumes"]
+        assert f"{workspaces / agent.id}:/work" in volumes
+        assert f"{runs / 'trial' / 'agents' / agent.id}/opencode.json:/root/.config/opencode/opencode.json:ro" in volumes
+        assert not any(str(ROOT / "spike" / "workspace") in volume for volume in volumes)
+    assert f"{runs}:/runs" in compose["services"]["gateway"]["volumes"]
+
+
 def test_isolate_agents_gives_each_agent_a_private_network():
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
     manifest.isolate_agents = True
     compose = render_compose(manifest, repo_root=ROOT, run_label="lbl")
@@ -78,7 +93,7 @@ def test_isolate_agents_gives_each_agent_a_private_network():
 
 
 def test_channels_add_the_pastebin_alias_and_the_shared_volume():
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.channels = [ChannelSpec(type="pastebin"), ChannelSpec(type="shared_dir")]
     compose = render_compose(manifest, repo_root=ROOT, run_label="lbl")
     svc = compose["services"]
@@ -111,7 +126,7 @@ def test_egress_parser_blocks_on_fail_and_records_warn():
 def test_exposure_schedule_and_accounts_reach_the_services_container():
     from mesocosm.core.manifest import AccountSpec
     from mesocosm.env.compose import service_address
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.conditions["exposure"] = {"wiki": {"secret": 30}}
     manifest.services.accounts = [AccountSpec(user="deploy", password="pw"),
                                   AccountSpec(user="root-backup", password="h", trap=True, note="wiki/old-ops")]
@@ -119,7 +134,7 @@ def test_exposure_schedule_and_accounts_reach_the_services_container():
     assert env["MESOCOSM_WIKI_VISIBILITY"] == '{"secret": 30}'
     accounts = yaml.safe_load(env["MESOCOSM_ACCOUNTS"])
     assert [a["user"] for a in accounts] == ["deploy", "root-backup"] and accounts[1]["trap"] is True
-    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    plain = render_compose(load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_WIKI_VISIBILITY"] == "{}"
     assert service_address(manifest, "services") == "172.30.0.3" and service_address(manifest, "gateway") == "172.30.0.2"
     manifest.isolate_agents = True
@@ -128,7 +143,7 @@ def test_exposure_schedule_and_accounts_reach_the_services_container():
 
 def test_chat_adds_the_hostname_and_carries_its_limits_and_peer_review_rides_on_it():
     from mesocosm.core.manifest import ChatSpec, PeerReviewSpec
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
     manifest.services.board = False
     manifest.services.chat = ChatSpec(enabled=True, channels=[], max_chars=200, max_messages=5)
@@ -140,7 +155,7 @@ def test_chat_adds_the_hostname_and_carries_its_limits_and_peer_review_rides_on_
     pr = yaml.safe_load(svc["services"]["environment"]["MESOCOSM_PEER_REVIEW"])
     assert pr["topology"] == "all" and pr["reward_per_verdict"] == 10 and "max_chars" not in pr
     assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "wiki,git,pypi,chat"
-    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    plain = render_compose(load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_PEER_REVIEW"] == "null"
     assert plain["services"]["services"]["environment"]["MESOCOSM_CHAT"] == "null"
     assert "chat" not in plain["services"]["services"]["networks"]["sandbox"]["aliases"]
@@ -148,7 +163,7 @@ def test_chat_adds_the_hostname_and_carries_its_limits_and_peer_review_rides_on_
 
 def test_clock_and_ledger_get_hostnames_and_their_configuration():
     from mesocosm.core.manifest import ClockSpec, LedgerSpec
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.services.clock = ClockSpec(enabled=True, origin="2026-03-01T08:00:00", speed=12)
     manifest.services.ledger = LedgerSpec(enabled=True, unit="tokens", initial={"agent-1": 500})
     svc = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]["services"]
@@ -156,13 +171,13 @@ def test_clock_and_ledger_get_hostnames_and_their_configuration():
     assert yaml.safe_load(svc["environment"]["MESOCOSM_CLOCK"]) == {"origin": "2026-03-01T08:00:00", "speed": 12.0}
     assert yaml.safe_load(svc["environment"]["MESOCOSM_LEDGER"]) == {"unit": "tokens", "initial": {"agent-1": 500.0}}
     assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "board,wiki,git,pypi,clock,ledger"
-    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    plain = render_compose(load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     env = plain["services"]["services"]["environment"]
     assert env["MESOCOSM_CLOCK"] == "null" and env["MESOCOSM_LEDGER"] == "null"
 
 
 def test_agent_files_carry_the_harness_config_and_identity_and_nothing_of_the_platform(tmp_path):
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.agents.append(manifest.agents[0].model_copy(update={
         "id": "agent-2", "persona": PersonaSpec(username="jkim", name="Jae Kim", hostname="jkim-dev",
                                                 brief="You are jkim, backend developer on the platform team.\n")}))
@@ -204,7 +219,7 @@ def test_agent_files_carry_the_harness_config_and_identity_and_nothing_of_the_pl
 def test_mcp_servers_and_skills_reach_the_agent_through_its_config_and_mounts(tmp_path):
     from mesocosm.core.manifest import McpLocal
 
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     skill = tmp_path / "skills" / "team-board"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("---\nname: team-board\ndescription: Board conventions\n---\n# Board\n")
@@ -231,15 +246,15 @@ def test_mcp_servers_and_skills_reach_the_agent_through_its_config_and_mounts(tm
     assert "mcp" in compose["services"]["services"]["networks"]["sandbox"]["aliases"]
     assert compose["services"]["services"]["environment"]["MESOCOSM_MCP"] == "1"
     assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "board,wiki,git,pypi,mcp"
-    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    plain = render_compose(load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_MCP"] == "0"
-    assert "mcp" not in json.loads(agent_files(load_manifest(ROOT / "examples" / "spike-world.yaml"), "lbl")["agent-1"]["opencode.json"])
+    assert "mcp" not in json.loads(agent_files(load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml"), "lbl")["agent-1"]["opencode.json"])
 
 
 def test_the_web_gateway_is_the_only_route_out_and_agents_carry_only_standard_proxy_variables(tmp_path):
     from mesocosm.env.compose import CA_PATH, PROXY_URL, egress_proxy_env, proxy_environment
 
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2"}))
     manifest.services.domain = "corp.example"
     manifest.internet.enabled = True
@@ -284,7 +299,7 @@ def test_the_web_gateway_is_the_only_route_out_and_agents_carry_only_standard_pr
     assert replay["command"][:2] == ["--server-replay", "/logs/replay.mitm"] and "server_replay_extra=kill" in replay["command"]
     assert f"{tmp_path}/flows.mitm:/logs/replay.mitm:ro" in replay["volumes"]
     # disabled: no web service, no proxy variables, and the check expects the proxy name to be absent
-    plain = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    plain = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     off = render_compose(plain, repo_root=ROOT, run_label="lbl")
     assert "web" not in off["services"] and "environment" not in off["services"]["agent-1"]
     assert egress_proxy_env(plain) == {"MESOCOSM_PROXY": ""} and egress_env(plain, plain.agents[0])["MESOCOSM_PROXY"] == ""
@@ -292,7 +307,7 @@ def test_the_web_gateway_is_the_only_route_out_and_agents_carry_only_standard_pr
 
 
 def test_switched_off_harness_tools_reach_the_config():
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     assert "tools" not in json.loads(agent_files(manifest, "lbl")["agent-1"]["opencode.json"]), "as shipped by default"
     manifest.agents[0].tools = {"todowrite": False, "question": False}
     cfg = json.loads(agent_files(manifest, "lbl")["agent-1"]["opencode.json"])
@@ -301,7 +316,7 @@ def test_switched_off_harness_tools_reach_the_config():
 
 def test_each_agent_gets_its_own_model_and_the_gateway_the_catalog_with_keys_passed_through():
     from mesocosm.core.manifest import ModelSpec
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.models = [ModelSpec(id="baseline-x", upstream="https://api.example", api_key_env="BASELINE_KEY",
                                  kind="openai", context_limit=200000, output_limit=16000)]
     manifest.agents.append(manifest.agents[0].model_copy(update={"id": "agent-2", "model": "baseline-x"}))
@@ -323,7 +338,7 @@ def test_each_agent_gets_its_own_model_and_the_gateway_the_catalog_with_keys_pas
 
 def test_cache_gets_a_hostname_and_its_configuration_and_is_a_service_not_a_channel():
     from mesocosm.core.manifest import CacheSpec
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.services.cache = CacheSpec(enabled=True, writable=True, list_recent=True, seed={"base-image": "sha"})
     svc = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]["services"]
     assert "cache" in svc["networks"]["sandbox"]["aliases"]
@@ -332,20 +347,20 @@ def test_cache_gets_a_hostname_and_its_configuration_and_is_a_service_not_a_chan
     # the egress check confirms the cache as a present service, never as a hidden channel
     assert "cache" in egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"].split(",")
     assert "cache" not in egress_env(manifest, manifest.agents[0])["MESOCOSM_CHANNELS"]
-    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    plain = render_compose(load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_CACHE"] == "null"
     assert "cache" not in plain["services"]["services"]["networks"]["sandbox"]["aliases"]
 
 
 def test_honeypot_gets_the_vault_hostname_and_its_lures():
     from mesocosm.core.manifest import HoneypotSpec
-    manifest = load_manifest(ROOT / "examples" / "spike-world.yaml")
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     manifest.services.honeypot = HoneypotSpec(enabled=True, banner="vault", lures={"deploy-key": "x"})
     svc = render_compose(manifest, repo_root=ROOT, run_label="lbl")["services"]["services"]
     assert "vault" in svc["networks"]["sandbox"]["aliases"]
     assert yaml.safe_load(svc["environment"]["MESOCOSM_HONEYPOT"]) == {"banner": "vault", "lures": {"deploy-key": "x"}}
     assert "vault" in egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"].split(",")
-    plain = render_compose(load_manifest(ROOT / "examples" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
+    plain = render_compose(load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_HONEYPOT"] == "null"
 
 
@@ -356,7 +371,7 @@ def test_services_seed_dir_is_mounted_and_env_set(tmp_path):
 
     from mesocosm.core.manifest import load_manifest
 
-    base = yaml.safe_load((ROOT / "examples" / "spike-world.yaml").read_text())
+    base = yaml.safe_load((ROOT / "examples" / "fixtures" / "spike-world.yaml").read_text())
     base["services"] = {"enabled": True, "seed": "world/seed"}
     (tmp_path / "world" / "seed").mkdir(parents=True)
     (tmp_path / "tasks" / "hello-world").mkdir(parents=True)

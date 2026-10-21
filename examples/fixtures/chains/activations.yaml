@@ -1,0 +1,6 @@
+# Legacy authored fixture; see examples/fixtures/README.md. Not evidence of emergent behavior.
+# One short world with token ids recorded, as input for `mesocosm activations capture`.
+name: activations
+runs:
+  - manifest: ../world-activations.yaml
+retries: 1

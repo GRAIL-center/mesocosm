@@ -1,4 +1,6 @@
-"""Staged scenarios (M4): one base manifest, stages that patch it, a run per stage (repeated), the
+"""Deprecated staged-scenario compatibility; use core.experiment for condition comparisons.
+
+Staged scenarios (M4): one base manifest, stages that patch it, a run per stage (repeated), the
 judge's flags per stage, and the first stage at which each flag kind appeared (the minimum
 elicitation stage). Stages change what the world offers or enforces; they never add instructions
 to the task text (ADR-0003).
@@ -16,18 +18,19 @@ from __future__ import annotations
 import json
 import pathlib
 import time
+import warnings
 from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field
 
 from mesocosm.core.chain import RunOne, run_with_retries
+from mesocosm.core.config import absolutize_manifest as _absolutize
+from mesocosm.core.config import deep_merge as deep_merge
 from mesocosm.core.manifest import validate_manifest
 from mesocosm.core.records import RunBundle
 from mesocosm.core.report import bundle_report
 from mesocosm.judge.flags import KINDS, flag_counts
-
-RELATIVE_PATHS = (("tasks", "path"), ("services", "wiki", "docs"))
 
 
 class Stage(BaseModel):
@@ -46,6 +49,8 @@ class Scenario(BaseModel):
 
 
 def load_scenario(path: str | pathlib.Path) -> Scenario:
+    warnings.warn("Staged scenarios are deprecated; use condition experiments for unbiased comparisons.",
+                  DeprecationWarning, stacklevel=2)
     data = yaml.safe_load(pathlib.Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"{path}: a scenario is a YAML mapping")
@@ -54,39 +59,6 @@ def load_scenario(path: str | pathlib.Path) -> Scenario:
     if unknown:
         raise ValueError(f"{path}: stop_on names unknown flag kinds {unknown}; known: {KINDS}")
     return scenario
-
-
-def deep_merge(base: Any, patch: Any) -> Any:
-    """Mappings merge key by key; a patch value of None removes the key; anything else replaces."""
-    if not isinstance(base, dict) or not isinstance(patch, dict):
-        return patch
-    out = dict(base)
-    for key, value in patch.items():
-        if value is None:
-            out.pop(key, None)
-        else:
-            out[key] = deep_merge(out.get(key), value)
-    return out
-
-
-def _absolutize(manifest: dict[str, Any], base_dir: pathlib.Path) -> None:
-    """Paths in a manifest are relative to its file; the stage copy lives elsewhere."""
-    for task in manifest.get("tasks") or []:
-        if isinstance(task, dict) and task.get("path"):
-            task["path"] = str((base_dir / task["path"]).resolve())
-    services = manifest.get("services") or {}
-    if services.get("seed"):
-        services["seed"] = str((base_dir / services["seed"]).resolve())
-    wiki = services.get("wiki") or {}
-    if wiki.get("docs"):
-        wiki["docs"] = str((base_dir / wiki["docs"]).resolve())
-    if (manifest.get("stream") or {}).get("dir"):
-        manifest["stream"]["dir"] = str((base_dir / manifest["stream"]["dir"]).resolve())
-    if (manifest.get("internet") or {}).get("replay_file"):
-        manifest["internet"]["replay_file"] = str((base_dir / manifest["internet"]["replay_file"]).resolve())
-    for agent in manifest.get("agents") or []:
-        if isinstance(agent, dict) and agent.get("skills"):
-            agent["skills"] = [str((base_dir / s).resolve()) for s in agent["skills"]]
 
 
 def stage_manifests(scenario: Scenario, scenario_path: pathlib.Path, out_dir: pathlib.Path) -> list[pathlib.Path]:
