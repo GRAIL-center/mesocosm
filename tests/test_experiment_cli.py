@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 from types import SimpleNamespace
@@ -166,3 +167,87 @@ def test_native_runtime_rejects_documentation_placeholder_before_starting_compon
     with pytest.raises(ValueError, match="non-default gateway control key"):
         main._components(world, tmp_path / "missing-compose.yaml", tmp_path / "runs", tmp_path / "workspaces",
                          None, "localhost", 8000, task_runtime="native")
+
+
+@pytest.mark.parametrize("failure_phase", ["transition", "final_cleanup"])
+def test_cleanup_failure_preserves_completed_trials_and_stops_new_worlds(tmp_path, monkeypatch, failure_phase):
+    experiment = write_experiment(tmp_path)
+    output = tmp_path / "out"
+    stacks, calls, downs = [], [], []
+
+    class FakeStack:
+        def __init__(self, compose_file):
+            self.path, self.cleanup_error = compose_file, None
+            stacks.append(self)
+
+        async def up(self):
+            pass
+
+        async def down(self):
+            downs.append(self.path)
+            if failure_phase == "transition" or len(stacks) == 3:
+                self.cleanup_error = stack.StackCleanupError(str(self.path), "synthetic teardown timeout")
+                raise self.cleanup_error
+
+    async def fake_runtime(manifest, compose_file, runs_root, *args, **kwargs):
+        bundle = RunBundle.create(runs_root)
+        bundle.record("run.start")
+        bundle.write_summary({"status": "ok", "model_calls": 0, "flags": {}, "events": 1, "agent_seconds": {}})
+        calls.append(bundle.run_id)
+        return RunResult(bundle.run_id, bundle.root, "ok", {})
+
+    monkeypatch.setattr(stack, "DockerStack", FakeStack)
+    monkeypatch.setattr(main, "_run_manifest", fake_runtime)
+    code, report = invoke("experiment", "run", experiment, "--out", output,
+                          "--runs-root", tmp_path / "runs", "--workspace-root", tmp_path / "workspaces")
+    completed = 1 if failure_phase == "transition" else 3
+    assert code == 1 and report["status"] == "failed_cleanup"
+    assert report["ok"] == completed and report["not_run"] == 3 - completed
+    assert len(calls) == len(stacks) == len(downs) == completed
+    assert len(report["lifecycle_errors"]) == 1
+    assert "synthetic teardown timeout" in report["lifecycle_errors"][0]["error"]
+    saved = json.loads((output / "experiment.json").read_text())
+    assert [trial["run_id"] for trial in saved["trials"] if trial["status"] == "ok"] == calls
+    assert all(trial["status"] == "not_run" for trial in saved["trials"][completed:])
+    assert saved["lifecycle_errors"] == report["lifecycle_errors"]
+    assert invoke("experiment", "report", output) == (0, report)
+
+
+def test_cancelled_final_cleanup_is_persisted_without_swallowing_cancellation(tmp_path, monkeypatch):
+    experiment = write_experiment(tmp_path)
+    plan = yaml.safe_load(experiment.read_text())
+    plan["conditions"] = plan["conditions"][:1]
+    experiment.write_text(yaml.safe_dump(plan))
+    output = tmp_path / "out"
+    completed = []
+
+    class FakeStack:
+        def __init__(self, compose_file):
+            self.path, self.cleanup_error = compose_file, None
+
+        async def up(self):
+            pass
+
+        async def down(self):
+            self.cleanup_error = stack.StackCleanupError(str(self.path), "teardown cancelled; world state is unknown")
+            raise asyncio.CancelledError
+
+    async def fake_runtime(manifest, compose_file, runs_root, *args, **kwargs):
+        bundle = RunBundle.create(runs_root)
+        bundle.record("run.start")
+        bundle.write_summary({"status": "ok", "model_calls": 0, "flags": {}, "events": 1, "agent_seconds": {}})
+        completed.append(bundle.run_id)
+        return RunResult(bundle.run_id, bundle.root, "ok", {})
+
+    monkeypatch.setattr(stack, "DockerStack", FakeStack)
+    monkeypatch.setattr(main, "_run_manifest", fake_runtime)
+    with pytest.raises(asyncio.CancelledError):
+        invoke("experiment", "run", experiment, "--out", output,
+               "--runs-root", tmp_path / "runs", "--workspace-root", tmp_path / "workspaces")
+    saved = json.loads((output / "experiment.json").read_text())
+    assert saved["status"] == "failed_cleanup" and saved["ok"] == 1
+    assert saved["trials"][0]["run_id"] == completed[0] and saved["trials"][0]["status"] == "ok"
+    assert saved["lifecycle_errors"][0]["phase"] == "final_cleanup"
+    assert "cancelled" in saved["lifecycle_errors"][0]["error"]
+    code, report = invoke("experiment", "report", output)
+    assert code == 0 and report["lifecycle_errors"] == saved["lifecycle_errors"]

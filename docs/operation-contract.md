@@ -41,6 +41,11 @@ outcomes. Reward allocation appends `learning.reward` events with source evidenc
 `verifier.reward`. Feedback attachment and completed harness delivery have separate events. Monitor
 records include scope, rubric version/hash and coverage. None of these records asserts a weight update.
 
+Experiment teardown has a 120-second client deadline. Uncertain cleanup stops subsequent trials and
+records `failed_cleanup` / `lifecycle_errors` alongside completed measurements. Remaining trials stay
+`not_run`; the CLI exits unsuccessfully. Killing an owned Compose client does not prove Docker removed
+the world, and the controller does not automatically terminate host/container workloads to recover.
+
 ## Authority and JSON
 
 Agents receive inference credentials and their configured sandbox interfaces. Controller credentials

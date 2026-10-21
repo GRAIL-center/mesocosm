@@ -55,7 +55,9 @@ training.
 
 Trials run sequentially because the topology uses fixed subnet addresses. The CLI reconciles a fresh
 stack and separate workspace directories for each trial. Trial failure is recorded and the remaining
-plan continues. The experiment runner has no flag-triggered stopping or automatic replacement trials;
+plan continues. If teardown fails, the prior environment may still exist: the experiment stops with
+`failed_cleanup`, retaining completed results and unrun trials. Teardown is bounded; its client process
+cleanup does not establish that Docker removed the environment. The runner has no flag-triggered stopping or automatic replacement trials;
 these would select observations based on outcomes. Older `scenario` and `chain` interfaces remain for
 compatibility, with their distinct stopping and retry semantics.
 

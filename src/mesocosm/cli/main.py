@@ -368,7 +368,8 @@ def experiment_run(experiment: pathlib.Path,
                  keep_up: bool = typer.Option(False, "--keep-up", help="Leave the sandbox running afterwards"),
                  json_: bool = JSON_OPT) -> None:
     """Run all conditions and repetitions with fresh worlds; retain failures and missing observations."""
-    from mesocosm.core.experiment import experiment_table, load_experiment, run_experiment
+    from mesocosm.core.experiment import experiment_table, load_experiment, record_cleanup_failure, run_experiment
+    from mesocosm.env.stack import StackCleanupError
 
     try:
         spec = load_experiment(experiment)
@@ -383,17 +384,29 @@ def experiment_run(experiment: pathlib.Path,
 
     async def main():
         try:
-            return await run_experiment(spec, experiment.resolve(), out_dir, run_one)
+            result = await run_experiment(spec, experiment.resolve(), out_dir, run_one)
         finally:
             if stacks and not keep_up:
-                await stacks[-1].down()
+                cleanup_error = getattr(stacks[-1], "cleanup_error", None)
+                try:
+                    if cleanup_error is None:
+                        try:
+                            await stacks[-1].down()
+                        except StackCleanupError as exc:
+                            cleanup_error = exc
+                finally:
+                    cleanup_error = cleanup_error or getattr(stacks[-1], "cleanup_error", None)
+                    if cleanup_error is not None:
+                        result = record_cleanup_failure(out_dir, cleanup_error, "final_cleanup")
+        return result
 
     try:
         result = asyncio.run(main())
     except Exception as exc:
         _emit({"status": "failed_experiment", "error": str(exc), "out": str(out_dir)}, json_, ok=False)
         return
-    _emit(experiment_table(out_dir), json_, ok=not (result["failed"] or result["incomplete_records"]
+    _emit(experiment_table(out_dir), json_, ok=not (result.get("lifecycle_errors") or result["failed"]
+                                                   or result["incomplete_records"]
                                                    or result["not_run"] or result["stopped"]))
 
 

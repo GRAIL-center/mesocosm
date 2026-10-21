@@ -27,6 +27,12 @@ attempts also append to `runs.jsonl`. Failures do not trigger automatic replacem
 of a successful attempt. Flags do not stop the experiment early. A repeat is a new world, not another
 episode in the same agents' memories.
 
+Cleanup failure is a lifecycle stop: the previous environment may still exist, so subsequent trials
+remain `not_run`. Teardown has a 120-second client deadline. `failed_cleanup` and `lifecycle_errors`
+preserve the cause alongside completed results, including when final cleanup fails. The platform
+does not automatically kill host/container workloads to recover. See the
+[A100 integration evidence](condition-experiment-evidence.md) for the observed Colab limitation.
+
 Mappings merge recursively; lists replace; `null` removes a key. Paths in patches resolve relative
 to the **base world file**, not the experiment file. Unknown fields and unsupported controls are
 errors. `order_seed` only seeds trial scheduling: it does not seed model sampling, tasks or training.

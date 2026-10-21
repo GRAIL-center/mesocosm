@@ -26,6 +26,7 @@ from mesocosm.core.manifest import WorldManifest, validate_manifest
 from mesocosm.core.records import RunBundle
 from mesocosm.core.report import bundle_report
 from mesocosm.core.run import RunResult
+from mesocosm.env.stack import StackCleanupError
 
 
 class ExperimentalCondition(BaseModel):
@@ -265,6 +266,23 @@ def _save(out_dir: pathlib.Path, result: dict[str, Any]) -> None:
     temporary.replace(out_dir / "experiment.json")
 
 
+def _cleanup_failure(result: dict[str, Any], error: StackCleanupError, phase: str) -> None:
+    failures = result.setdefault("lifecycle_errors", [])
+    record = {"phase": phase, "compose_file": error.compose_file, "error": str(error)}
+    if not any(item["compose_file"] == error.compose_file and item["error"] == str(error) for item in failures):
+        failures.append(record)
+    if result["status"] != "interrupted":
+        result["status"] = "failed_cleanup"
+
+
+def record_cleanup_failure(out_dir: pathlib.Path, error: StackCleanupError, phase: str) -> dict[str, Any]:
+    """Attach teardown failure without replacing completed trial outcomes or their bundle references."""
+    result = json.loads((out_dir / "experiment.json").read_text(encoding="utf-8"))
+    _cleanup_failure(result, error, phase)
+    _save(out_dir, result)
+    return result
+
+
 async def run_experiment(experiment: Experiment, experiment_path: pathlib.Path, out_dir: pathlib.Path,
                          run_one: RunOne) -> dict[str, Any]:
     """Run every prevalidated trial once, retaining task failures, exceptions and incomplete measurements.
@@ -276,13 +294,17 @@ async def run_experiment(experiment: Experiment, experiment_path: pathlib.Path, 
     trials = experiment_manifests(experiment, experiment_path, out_dir)
     result: dict[str, Any] = {"name": experiment.name, "spec": experiment.model_dump(mode="json"),
                              "experiment": str(experiment_path.resolve()), "status": "running",
-                             "order_seed_scope": "trial scheduling only", "started": time.time(), "trials": trials}
+                             "order_seed_scope": "trial scheduling only", "started": time.time(), "trials": trials,
+                             "lifecycle_errors": []}
     _save(out_dir, result)
     for trial in trials:
         trial.update(status="running", started=time.time())
         _save(out_dir, result)
         try:
             trial.update(_facts(await run_one(pathlib.Path(trial["manifest"]))))
+        except StackCleanupError as exc:
+            trial.update(status="not_run", error=str(exc), reason="previous_world_cleanup_failed")
+            _cleanup_failure(result, exc, "before_trial")
         except Exception as exc:
             trial.update(status="failed_exception", error=f"{type(exc).__name__}: {exc}")
         except BaseException as exc:
@@ -294,7 +316,11 @@ async def run_experiment(experiment: Experiment, experiment_path: pathlib.Path, 
         with (out_dir / "runs.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(trial, ensure_ascii=False) + "\n")
         _save(out_dir, result)
-    result.update(status="completed", finished=time.time())
+        if result["status"] == "failed_cleanup":
+            break
+    if result["status"] == "running":
+        result["status"] = "completed"
+    result["finished"] = time.time()
     _save(out_dir, result)
     return result
 
@@ -302,5 +328,6 @@ async def run_experiment(experiment: Experiment, experiment_path: pathlib.Path, 
 def experiment_table(out_dir: pathlib.Path) -> dict[str, Any]:
     """Read a completed or interrupted experiment without discarding missing or failed trials."""
     result = json.loads((out_dir / "experiment.json").read_text(encoding="utf-8"))
-    return {key: result[key] for key in ("name", "status", "order_seed_scope", "ok", "stopped", "failed",
-                                        "not_run", "incomplete_records", "conditions")}
+    return {**{key: result[key] for key in ("name", "status", "order_seed_scope", "ok", "stopped", "failed",
+                                           "not_run", "incomplete_records", "conditions")},
+            "lifecycle_errors": result.get("lifecycle_errors", [])}
