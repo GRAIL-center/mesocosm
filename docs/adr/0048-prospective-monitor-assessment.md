@@ -50,4 +50,3 @@ to check fail-closed behavior.
 These tests establish the question sent to the model and its traceability, not reviewer accuracy.
 The failed real probe is preserved. A further real-model run is separate evidence and must report
 its actual allowance or denial without changing the task, rubric or threshold to obtain a result.
-
