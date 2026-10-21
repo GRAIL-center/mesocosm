@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 from typing import Any
 
 import httpx
 
-from mesocosm.learning.checkpoints import checkpoint_sha256
+from mesocosm.learning.checkpoints import checkpoint_sha256, resolve_base
 from mesocosm.learning.config import PolicyIdentity
 
 
@@ -47,9 +48,29 @@ def _verify_configuration(info: Any, policy: PolicyIdentity) -> dict[str, Any]:
             or model.get("quantization_config") is not None:
         raise PolicyServingError("quantized or unspecified serving weights cannot be recomputed by this trainer")
     overrides, hf_config = model.get("hf_overrides"), model.get("hf_config")
-    if not isinstance(overrides, dict) or set(overrides) - {"head_dtype"} or not isinstance(hf_config, dict) \
+    if not isinstance(overrides, dict) or set(overrides) - {"head_dtype"} \
             or model.get("model_class_overrides") or model.get("hf_config_path"):
         raise PolicyServingError("server model/config overrides cannot be recomputed by this trainer")
+    head_source = "server_hf_config"
+    if hf_config is None:
+        # vLLM 0.32 omits internal HF config fields from /server_info JSON. Do not
+        # interpret their absence as an empty config: recover the pinned, hashed base.
+        if model.get("runner") not in ("auto", "generate") or model.get("convert") not in ("auto", "none") \
+                or model.get("trust_remote_code") is not False or model.get("config_format") not in ("auto", "hf") \
+                or model.get("_hf_config_revision") not in (None, policy.base_revision):
+            raise PolicyServingError("cannot derive omitted HF config for this serving mode")
+        base = local if local.is_dir() else resolve_base(policy, local_files_only=True)
+        if checkpoint_sha256(base) != policy.base_sha256:
+            raise PolicyServingError("base checkpoint changed before recovering the omitted server HF config")
+        hf_config = json.loads((base / "config.json").read_text())
+        architectures = hf_config.get("architectures") if isinstance(hf_config, dict) else None
+        if not isinstance(architectures, list) or not architectures or not all(
+                isinstance(name, str) and name.endswith("ForCausalLM") for name in architectures):
+            raise PolicyServingError("omitted HF config requires a pinned causal-LM generation configuration")
+        hf_config = {**hf_config, **overrides}
+        head_source = "hashed_base_config_and_server_hf_overrides"
+    if not isinstance(hf_config, dict):
+        raise PolicyServingError("server HF configuration has an unsupported representation")
     head_dtype = hf_config.get("head_dtype")
     if head_dtype not in (None, "model") and _dtype(head_dtype) != policy.dtype:
         raise PolicyServingError("server lm_head dtype differs from the policy compute dtype")
@@ -61,7 +82,8 @@ def _verify_configuration(info: Any, policy: PolicyIdentity) -> dict[str, Any]:
     # Full server_info also contains environment data. Do not copy it, arbitrary model
     # metadata or any configuration dictionaries into the persisted serving receipt.
     result = {"model": actual_model, "revision": revision, "dtype": policy.dtype,
-              "head_dtype": policy.dtype, "kv_cache_dtype": kv_dtype, "lora_dtype": lora_dtype,
+              "head_dtype": policy.dtype, "head_dtype_source": head_source,
+              "kv_cache_dtype": kv_dtype, "lora_dtype": lora_dtype,
               "quantization": None, "model_verification": model_verification}
     for section, key in (("model_config", "enforce_eager"), ("model_config", "model_impl"),
                          ("attention_config", "backend"), ("cache_config", "enable_prefix_caching"),

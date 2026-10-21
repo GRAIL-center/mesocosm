@@ -81,6 +81,11 @@ and accepts only a matching/automatic KV cache and LoRA dtype. The output head m
 an FP32-head override or other model/config override that this trainer does not recompute is rejected.
 A local serving checkpoint is checked by its full content hash. Only selected model/precision settings
 are retained in the receipt; server environment variables and system environment data are not copied.
+Some vLLM versions omit the internal Hugging Face config from this endpoint. In that case, preflight
+reads `config.json` from the already cached pinned base snapshot, rechecks its full checkpoint hash,
+and applies only the supported explicit head override. This fallback requires a causal-LM generation
+configuration without remote code or alternate config paths; it never treats a missing config as empty.
+The receipt records whether the head setting came from server metadata or this verified snapshot.
 
 Training-bound gateway requests enforce full-softmax sampling: temperature `1`, top-p `1`, top-k `-1`,
 min-p `0`, repetition penalty `1`, zero frequency/presence penalties, and exactly one completion.

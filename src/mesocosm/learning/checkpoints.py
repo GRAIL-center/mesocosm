@@ -35,12 +35,13 @@ def checkpoint_sha256(path: str | pathlib.Path, *, adapter: bool = False) -> str
     return digest.hexdigest()
 
 
-def resolve_base(spec: TrainingSpec) -> pathlib.Path:
+def resolve_base(spec: TrainingSpec | PolicyIdentity, *, local_files_only: bool = False) -> pathlib.Path:
     local = pathlib.Path(spec.base_model).expanduser()
     if local.is_dir():
         return local.resolve()
     hub = importlib.import_module("huggingface_hub")
     return pathlib.Path(hub.snapshot_download(repo_id=spec.base_model, revision=spec.base_revision,
+                                             local_files_only=local_files_only,
                                              allow_patterns=["*.json", "*.safetensors", "*.model", "*.jinja",
                                                              "merges.txt", "vocab.txt"]))
 

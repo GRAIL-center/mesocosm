@@ -355,6 +355,71 @@ def server_info(current):
     }, "vllm_env": {"SECRET_FIXTURE": "must-not-be-persisted"}, "system_env": {"private": "fixture"}}
 
 
+@pytest.mark.parametrize("failure", [None, "head", "override", "other_override", "tamper", "missing_base",
+                                     "malformed", "remote_code", "runner", "architecture", "exposed_malformed"])
+async def test_server_info_without_internal_hf_config_verifies_hashed_base(tmp_path, monkeypatch, failure):
+    """vLLM 0.32's real JSON response omits the internal hf_config/hf_text_config fields."""
+    base = {"architectures": ["Qwen3ForCausalLM"]}
+    if failure == "head":
+        base["head_dtype"] = "float32"
+    if failure == "architecture":
+        base["architectures"] = ["Qwen3ForSequenceClassification"]
+    (tmp_path / "config.json").write_text("[]" if failure == "malformed" else json.dumps(base))
+    weights = tmp_path / "model.safetensors"
+    weights.write_bytes(b"unit fixture, no real model")
+    current = policy(dtype="float16", base_sha256=checkpoint_sha256(tmp_path))
+    info = server_info(current)
+    model = info["vllm_config"]["model_config"]
+    del model["hf_config"]
+    model.update(runner="auto", convert="auto", trust_remote_code=False, config_format="auto",
+                 model_class_overrides={}, hf_config_path=None, quantization_config=None)
+    if failure == "override":
+        model["hf_overrides"] = {"head_dtype": "float32"}
+    elif failure == "other_override":
+        model["hf_overrides"] = {"rope_theta": 1234}
+    elif failure == "tamper":
+        weights.write_bytes(b"changed after policy identification")
+    elif failure == "remote_code":
+        model["trust_remote_code"] = True
+    elif failure == "runner":
+        model["runner"] = "pooling"
+    elif failure == "exposed_malformed":
+        model["hf_config"] = "unparseable config representation"
+
+    def cached_base(identity, *, local_files_only):
+        assert identity == current and local_files_only is True
+        if failure == "missing_base":
+            raise OSError("pinned snapshot is not cached")
+        return tmp_path
+
+    monkeypatch.setattr("mesocosm.learning.serving.resolve_base", cached_base, raising=False)
+    calls = []
+
+    def handle(request):
+        calls.append(request.url.path)
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": current.model}]})
+        if request.url.path == "/server_info":
+            return httpx.Response(200, json=info)
+        assert failure is None, "invalid fallback configuration must fail before inference"
+        return httpx.Response(200, json={"model": current.model, "choices": [{"text": "fixture"}]})
+
+    server = VLLMPolicyServer("http://vllm", transport=httpx.MockTransport(handle))
+    try:
+        if failure:
+            with pytest.raises(PolicyServingError):
+                await server.verify(current)
+            assert calls == ["/v1/models", "/server_info"]
+        else:
+            receipt = await server.verify(current)
+            assert receipt["configuration"]["head_dtype"] == "float16"
+            assert receipt["configuration"]["head_dtype_source"] == "hashed_base_config_and_server_hf_overrides"
+            assert "must-not-be-persisted" not in json.dumps(receipt)
+            assert calls[-1] == "/v1/completions"
+    finally:
+        await server.aclose()
+
+
 async def test_activation_checks_hash_registers_unique_alias_and_exercises_inference(tmp_path):
     (tmp_path / "adapter_config.json").write_text("{}")
     (tmp_path / "adapter_model.safetensors").write_bytes(b"unit-test adapter")
