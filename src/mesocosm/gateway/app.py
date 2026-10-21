@@ -101,6 +101,31 @@ def bearer(request: Request) -> str | None:
     return header[7:].strip() if header.lower().startswith("bearer ") else None
 
 
+def public_model_list(content: bytes, bound_model: str | None) -> dict[str, Any]:
+    """Publish model identifiers, never upstream checkpoint paths or policy bookkeeping."""
+    data = json.loads(content)
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+        raise ValueError("invalid upstream model listing")
+    models, seen = [], set()
+    for entry in data["data"]:
+        if not isinstance(entry, dict) or not isinstance(entry.get("id"), str) or not entry["id"]:
+            raise ValueError("invalid upstream model entry")
+        model = entry["id"]
+        if model in seen:
+            raise ValueError("duplicate upstream model identifier")
+        seen.add(model)
+        if bound_model is not None and model != bound_model:
+            continue
+        created = entry.get("created", 0)
+        if type(created) is not int or created < 0:
+            raise ValueError("invalid upstream model creation time")
+        # Omitted creation time uses zero; ownership names this API, not the host artifact.
+        models.append({"id": model, "object": "model", "created": created, "owned_by": "api"})
+    if bound_model is not None and not models:
+        raise ValueError("bound model is absent from upstream listing")
+    return {"object": "list", "data": models}
+
+
 @dataclass
 class Hold:
     """A paused run (or one agent of it): chat requests wait here until resume or stop."""
@@ -523,7 +548,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         route = gw.route(model)
         base.update({"upstream": route.upstream, "model_kind": route.kind})
         # A lease lasts through the final stream chunk. Other agents keep their own independent leases.
-        lock = gw.request_locks.setdefault(agent, asyncio.Lock()) if is_chat else None
+        lock = gw.request_locks.setdefault(agent, asyncio.Lock())
         lock_released = False
         streaming = False
 
@@ -536,12 +561,16 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         if lock is not None:
             await lock.acquire()
         try:
+            context = gw.rollout_bindings.get((run, agent)) if identified_by == "key" else None
+            if identified_by == "key" and gw.settings.require_rollout_binding and context is None:
+                gw.log({**base, "event": "rollout_denied", "reason": "missing_binding", "request": body})
+                return refusal("invalid")
+            bound_model = context["policy"]["model"] if context is not None else None
+            if is_models and bound_model is not None:
+                route = gw.route(bound_model)
+                base.update({"upstream": route.upstream, "model_kind": route.kind})
             if is_chat:
                 assert body is not None
-                context = gw.rollout_bindings.get((run, agent)) if identified_by == "key" else None
-                if identified_by == "key" and gw.settings.require_rollout_binding and context is None:
-                    gw.log({**base, "event": "rollout_denied", "reason": "missing_binding", "request": body})
-                    return refusal("invalid")
                 if context is not None:
                     base["rollout"] = copy.deepcopy(context)
                     try:
@@ -599,13 +628,32 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
             if is_chat:
                 headers["content-length"] = str(len(body_bytes))
 
-            upstream_req = route.client.build_request(request.method, "/" + path, content=body_bytes,
+            # Validate the same listing for HEAD; its public response below has no body.
+            upstream_req = route.client.build_request("GET" if is_models else request.method, "/" + path,
+                                                      content=b"" if is_models else body_bytes,
                                                       headers=headers, params=request.query_params)
             try:
                 upstream = await route.client.send(upstream_req, stream=True)
             except httpx.HTTPError as e:
                 gw.log({**base, "event": "upstream_error", "error": repr(e), "request": body})
                 return refusal("upstream")
+
+            if is_models:
+                try:
+                    try:
+                        content = await upstream.aread()
+                    finally:
+                        await upstream.aclose()
+                    if upstream.status_code != 200:
+                        raise ValueError(f"upstream model listing status {upstream.status_code}")
+                    public = public_model_list(content, bound_model)
+                except (httpx.HTTPError, ValueError) as exc:
+                    gw.log({**base, "event": "upstream_error", "error": repr(exc), "status": upstream.status_code})
+                    return refusal("upstream")
+                gw.log({**base, "event": "passthrough", "status": 200,
+                        "latency_ms": round((time.time() - t0) * 1000)})
+                return (Response(media_type="application/json") if request.method == "HEAD"
+                        else JSONResponse(public))
 
             resp_headers = {k: v for k, v in upstream.headers.items() if k.lower() not in HOP_BY_HOP}
 
@@ -661,9 +709,6 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                         "latency_ms": round((time.time() - t0) * 1000), "request": body,
                         "request_summary": request_summary(body), "response": parsed,
                         "usage_total": gw.usage_for(agent)})
-            else:
-                gw.log({**base, "event": "passthrough", "status": upstream.status_code,
-                        "latency_ms": round((time.time() - t0) * 1000)})
             return Response(content=content, status_code=upstream.status_code, headers=resp_headers,
                             media_type=upstream.headers.get("content-type"))
         finally:

@@ -47,9 +47,9 @@ def resolve_base(spec: TrainingSpec) -> pathlib.Path:
 
 def initial_policy(spec: TrainingSpec) -> PolicyIdentity:
     digest = checkpoint_sha256(resolve_base(spec))
-    return PolicyIdentity(id=policy_id(spec.base_model, spec.base_revision, digest, None),
+    return PolicyIdentity(id=policy_id(spec.base_model, spec.base_revision, digest, None, spec.dtype),
                           model=spec.initial_model, base_model=spec.base_model,
-                          base_revision=spec.base_revision, base_sha256=digest)
+                          base_revision=spec.base_revision, base_sha256=digest, dtype=spec.dtype)
 
 
 def write_json(path: pathlib.Path, value: object) -> None:

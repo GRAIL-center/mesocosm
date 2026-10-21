@@ -96,12 +96,14 @@ def reinforce_step(model: Any, batch: RolloutBatch, spec: TrainingSpec, torch: A
 
 
 def _load_model(base_path: pathlib.Path, policy: PolicyIdentity, spec: TrainingSpec, torch: Any) -> Any:
+    if policy.dtype != spec.dtype:
+        raise TrainingError("policy and training compute dtype differ")
     transformers = importlib.import_module("transformers")
     peft = importlib.import_module("peft")
     if not torch.cuda.is_available():
         raise TrainingError("real world training requires CUDA; CPU algorithm tests are separate")
     model = transformers.AutoModelForCausalLM.from_pretrained(
-        str(base_path), dtype=torch.bfloat16, attn_implementation="sdpa", local_files_only=True)
+        str(base_path), dtype=getattr(torch, spec.dtype), attn_implementation="sdpa", local_files_only=True)
     if "logits_to_keep" not in inspect.signature(model.forward).parameters:
         raise TrainingError("this trainer requires a causal LM with logits_to_keep support")
     # Gradient checkpointing needs training mode. Reject dropout configurations rather
@@ -136,7 +138,9 @@ def verify_rollout_policy(batch: RolloutBatch, policy: PolicyIdentity, spec: Tra
     actions. This checks exact action-token probabilities after the subsequent real world.
     Caller pauses inference and persists this receipt, then wakes the server in finally.
     """
-    if batch.policy != policy or (policy.base_model, policy.base_revision) != (spec.base_model, spec.base_revision):
+    if batch.policy != policy or (policy.base_model, policy.base_revision, policy.dtype) != (
+        spec.base_model, spec.base_revision, spec.dtype
+    ):
         raise TrainingError("evaluation batch does not identify the expected policy")
     base_path = resolve_base(spec)
     if checkpoint_sha256(base_path) != policy.base_sha256:
@@ -180,7 +184,9 @@ def reinforce_update(batch: RolloutBatch, policy: PolicyIdentity, spec: Training
     Caller must pause inference before this synchronous GPU operation and wake it in a
     finally block. An interrupted/failed update is never eligible for serving activation.
     """
-    if batch.policy != policy or (policy.base_model, policy.base_revision) != (spec.base_model, spec.base_revision):
+    if batch.policy != policy or (policy.base_model, policy.base_revision, policy.dtype) != (
+        spec.base_model, spec.base_revision, spec.dtype
+    ):
         raise TrainingError("batch, current policy and training configuration do not identify the same policy")
     root = pathlib.Path(output_dir).resolve()
     root.mkdir(parents=True, exist_ok=False)
@@ -216,7 +222,7 @@ def reinforce_update(batch: RolloutBatch, policy: PolicyIdentity, spec: Training
         digest = checkpoint_sha256(adapter_path, adapter=True)
         if digest == policy.adapter_sha256:
             raise TrainingError("saved adapter hash did not change")
-        identity = policy_id(policy.base_model, policy.base_revision, policy.base_sha256, digest)
+        identity = policy_id(policy.base_model, policy.base_revision, policy.base_sha256, digest, policy.dtype)
         updated = policy.model_copy(update={"id": identity, "model": f"policy-{identity[:24]}",
                                             "adapter_sha256": digest, "adapter_path": str(adapter_path)})
         receipt["next_policy"] = updated.model_dump(mode="json")

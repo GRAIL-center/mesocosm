@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import weakref
 from types import SimpleNamespace
@@ -9,7 +10,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from mesocosm.learning.checkpoints import checkpoint_sha256, write_json
+from mesocosm.learning.checkpoints import checkpoint_sha256, initial_policy, write_json
 from mesocosm.learning.config import PolicyIdentity, TrainingSpec, load_training, policy_id
 from mesocosm.learning.rollout import ActionRequest, AgentTrajectory, RolloutBatch
 from mesocosm.learning.serving import PolicyServingError, VLLMPolicyServer
@@ -24,9 +25,10 @@ from mesocosm.learning.training import (
 
 def policy(**overrides):
     values = {"model": "test-policy", "base_model": "test/model", "base_revision": "a" * 40,
-              "base_sha256": "b" * 64, "adapter_sha256": None, "adapter_path": None, **overrides}
+              "base_sha256": "b" * 64, "adapter_sha256": None, "adapter_path": None,
+              "dtype": "bfloat16", **overrides}
     values["id"] = policy_id(values["base_model"], values["base_revision"],
-                              values["base_sha256"], values["adapter_sha256"])
+                              values["base_sha256"], values["adapter_sha256"], values["dtype"])
     return PolicyIdentity(**values)
 
 
@@ -53,6 +55,47 @@ def test_policy_identity_cannot_be_relabeled_without_changing_digest():
     record["base_sha256"] = "c" * 64
     with pytest.raises(ValueError, match="content identity"):
         PolicyIdentity.model_validate(record)
+
+
+def test_precision_changes_identity_and_legacy_ids_are_not_silently_reinterpreted():
+    original = policy()
+    assert policy(dtype="float16").id != original.id
+    record = original.model_dump()
+    record["dtype"] = "float16"
+    with pytest.raises(ValueError, match="content identity"):
+        PolicyIdentity.model_validate(record)
+    record = original.model_dump()
+    old_identity = {key: record[key] for key in ("base_model", "base_revision", "base_sha256", "adapter_sha256")}
+    record["id"] = hashlib.sha256(json.dumps(old_identity, sort_keys=True).encode()).hexdigest()
+    del record["dtype"]
+    with pytest.raises(ValueError, match="content identity"):
+        PolicyIdentity.model_validate(record)
+    with pytest.raises(ValueError):
+        spec(dtype="float32")
+    with pytest.raises(ValueError):
+        policy(dtype="float32")
+
+
+@pytest.mark.parametrize("dtype", ["bfloat16", "float16"])
+def test_initial_policy_records_declared_precision(tmp_path, dtype):
+    (tmp_path / "config.json").write_text("{}")
+    (tmp_path / "model.safetensors").write_bytes(b"unit fixture")
+    configured = spec(dtype=dtype).model_copy(update={"base_model": str(tmp_path)})
+    current = initial_policy(configured)
+    assert current.dtype == dtype
+    assert current.id == policy_id(str(tmp_path), configured.base_revision, current.base_sha256, None, dtype)
+
+
+@pytest.mark.parametrize("evaluate", [False, True])
+def test_policy_precision_mismatch_fails_before_model_allocation(tmp_path, monkeypatch, evaluate):
+    def forbidden(*args):
+        raise AssertionError("mismatched policies must not load weights")
+    monkeypatch.setattr("mesocosm.learning.training.resolve_base", forbidden)
+    with pytest.raises(TrainingError, match="policy"):
+        if evaluate:
+            verify_rollout_policy(batch(), policy(), spec(dtype="float16"))
+        else:
+            reinforce_update(batch(), policy(), spec(dtype="float16"), tmp_path / "update")
 
 
 def test_action_boundaries_and_missing_rewards_fail_closed():
@@ -201,7 +244,8 @@ def test_evaluation_verifies_all_tokens_without_updating_weights(tmp_path, monke
     assert torch.equal(model.scores, original)
 
 
-def test_peft_qwen3_cpu_checkpoint_roundtrip_records_real_adapter_change(tmp_path, monkeypatch):
+@pytest.mark.parametrize("dtype", ["bfloat16", "float16"])
+def test_peft_qwen3_cpu_checkpoint_roundtrip_records_real_adapter_change(tmp_path, monkeypatch, dtype):
     """Tiny random model tests library integration, not external-task learning quality."""
     torch = pytest.importorskip("torch")
     transformers = pytest.importorskip("transformers")
@@ -209,11 +253,12 @@ def test_peft_qwen3_cpu_checkpoint_roundtrip_records_real_adapter_change(tmp_pat
     config = transformers.Qwen3Config(vocab_size=32, hidden_size=16, intermediate_size=32,
                                       num_hidden_layers=1, num_attention_heads=2, num_key_value_heads=1,
                                       head_dim=8, attention_dropout=0.0)
-    base = transformers.Qwen3ForCausalLM(config)
+    base = transformers.Qwen3ForCausalLM(config).to(getattr(torch, dtype))
     base_path = tmp_path / "base"
     base.save_pretrained(base_path, safe_serialization=True)
-    configured = spec(lora_rank=2, lora_alpha=4, baseline=0.5).model_copy(update={"base_model": str(base_path)})
-    current = policy(base_model=str(base_path), base_sha256=checkpoint_sha256(base_path))
+    configured = spec(dtype=dtype, lora_rank=2, lora_alpha=4, baseline=0.5, learning_rate=.01).model_copy(
+        update={"base_model": str(base_path)})
+    current = policy(dtype=dtype, base_model=str(base_path), base_sha256=checkpoint_sha256(base_path))
     model = peft.get_peft_model(base, peft.LoraConfig(task_type="CAUSAL_LM", r=2, lora_alpha=4,
                                                      target_modules=["q_proj", "v_proj"], lora_dropout=0.0))
     model.eval()
@@ -223,9 +268,11 @@ def test_peft_qwen3_cpu_checkpoint_roundtrip_records_real_adapter_change(tmp_pat
     assert receipt["status"] == "updated" and receipt["optimizer_steps"] == 1
     assert receipt["weight_delta_l2"] > 0 and receipt["rewards"] == [0, 0, 0]
     updated = PolicyIdentity.model_validate(receipt["next_policy"])
+    assert updated.dtype == dtype
     assert updated.id != current.id and updated.adapter_sha256 == checkpoint_sha256(updated.adapter_path, adapter=True)
-    loaded = peft.PeftModel.from_pretrained(transformers.Qwen3ForCausalLM.from_pretrained(base_path),
-                                           updated.adapter_path)
+    loaded = peft.PeftModel.from_pretrained(transformers.Qwen3ForCausalLM.from_pretrained(
+                                               base_path, dtype=getattr(torch, dtype)),
+                                           updated.adapter_path, is_trainable=True)
     loaded.eval()
     before = action_logprobs(model, rollout.trajectories[0].requests[0], torch)
     after = action_logprobs(loaded, rollout.trajectories[0].requests[0], torch)
@@ -298,6 +345,16 @@ def test_final_receipt_write_failure_always_releases_model_and_preserves_primary
         assert "receipt volume is full" in error.value.__notes__[0]
 
 
+def server_info(current):
+    return {"vllm_config": {
+        "model_config": {"model": current.base_model, "revision": current.base_revision,
+                         "dtype": f"torch.{current.dtype}", "quantization": None, "hf_overrides": {},
+                         "hf_config": {}, "enforce_eager": False},
+        "cache_config": {"cache_dtype": "auto"},
+        "lora_config": {"lora_dtype": f"torch.{current.dtype}"},
+    }, "vllm_env": {"SECRET_FIXTURE": "must-not-be-persisted"}, "system_env": {"private": "fixture"}}
+
+
 async def test_activation_checks_hash_registers_unique_alias_and_exercises_inference(tmp_path):
     (tmp_path / "adapter_config.json").write_text("{}")
     (tmp_path / "adapter_model.safetensors").write_bytes(b"unit-test adapter")
@@ -308,6 +365,9 @@ async def test_activation_checks_hash_registers_unique_alias_and_exercises_infer
         calls.append(request.url.path)
         if request.url.path == "/v1/models":
             return httpx.Response(200, json={"data": list(entries)})
+        if request.url.path == "/server_info":
+            assert request.url.params["config_format"] == "json"
+            return httpx.Response(200, json=server_info(current))
         if request.url.path == "/v1/load_lora_adapter":
             payload = json.loads(request.content)
             entries.append({"id": payload["lora_name"], "root": payload["lora_path"]})
@@ -323,12 +383,86 @@ async def test_activation_checks_hash_registers_unique_alias_and_exercises_infer
         await server.wake()
         receipt = await server.load(current)
         assert receipt["policy_id"] == current.id and receipt["probe_request_id"] == "probe-1"
-        assert calls == ["/sleep", "/wake_up", "/v1/models", "/v1/load_lora_adapter", "/v1/models", "/v1/completions"]
+        assert receipt["configuration"]["dtype"] == current.dtype
+        assert "must-not-be-persisted" not in json.dumps(receipt) and "system_env" not in receipt
+        assert calls == ["/sleep", "/wake_up", "/v1/models", "/v1/load_lora_adapter", "/v1/models",
+                         "/server_info", "/v1/completions"]
         with pytest.raises(PolicyServingError, match="already registered"):
             await server.load(current)
         (tmp_path / "adapter_model.safetensors").write_bytes(b"tampered")
         with pytest.raises(PolicyServingError, match="changed before"):
             await server.load(current)
+    finally:
+        await server.aclose()
+
+
+@pytest.mark.parametrize("failure", ["dtype", "model", "revision", "quantization", "kv", "head", "lora",
+                                     "overrides", "missing", "unavailable"])
+async def test_serving_configuration_failure_prevents_inference(failure):
+    current = policy(dtype="float16")
+    info = server_info(current)
+    config = info["vllm_config"]
+    if failure == "dtype":
+        config["model_config"]["dtype"] = "torch.bfloat16"
+    elif failure in {"model", "revision"}:
+        config["model_config"][failure] = "different"
+    elif failure == "quantization":
+        config["model_config"]["quantization"] = "fp8"
+    elif failure == "kv":
+        config["cache_config"]["cache_dtype"] = "fp8"
+    elif failure == "head":
+        config["model_config"]["hf_config"]["head_dtype"] = "float32"
+    elif failure == "lora":
+        config["lora_config"]["lora_dtype"] = "torch.bfloat16"
+    elif failure == "overrides":
+        config["model_config"]["hf_overrides"] = {"rope_theta": 1234}
+    elif failure == "missing":
+        del config["model_config"]["dtype"]
+    calls = []
+
+    def handle(request):
+        calls.append(request.url.path)
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": current.model}]})
+        assert request.url.path == "/server_info", "mismatch must fail before an inference request"
+        return httpx.Response(404 if failure == "unavailable" else 200, json=info)
+
+    server = VLLMPolicyServer("http://vllm", transport=httpx.MockTransport(handle))
+    try:
+        with pytest.raises(httpx.HTTPStatusError if failure == "unavailable" else PolicyServingError):
+            await server.verify(current)
+        assert calls == ["/v1/models", "/server_info"]
+    finally:
+        await server.aclose()
+
+
+@pytest.mark.parametrize("tampered", [False, True])
+async def test_local_serving_model_requires_full_checkpoint_identity(tmp_path, tampered):
+    (tmp_path / "config.json").write_text("{}")
+    weights = tmp_path / "model.safetensors"
+    weights.write_bytes(b"unit fixture")
+    current = policy(dtype="float16", base_sha256=checkpoint_sha256(tmp_path))
+    info = server_info(current)
+    info["vllm_config"]["model_config"].update(model=str(tmp_path), revision=None)
+    if tampered:
+        weights.write_bytes(b"changed data")
+
+    def handle(request):
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": current.model}]})
+        if request.url.path == "/server_info":
+            return httpx.Response(200, json=info)
+        assert not tampered
+        return httpx.Response(200, json={"model": current.model, "choices": [{"text": "fixture"}]})
+
+    server = VLLMPolicyServer("http://vllm", transport=httpx.MockTransport(handle))
+    try:
+        if tampered:
+            with pytest.raises(PolicyServingError, match="checkpoint"):
+                await server.verify(current)
+        else:
+            receipt = await server.verify(current)
+            assert receipt["configuration"]["model_verification"] == "local_checkpoint_sha256"
     finally:
         await server.aclose()
 

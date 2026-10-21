@@ -102,6 +102,75 @@ async def test_binding_requires_control_identity_and_exact_registered_agent_run(
     await app.state.gateway.client.aclose()
 
 
+async def test_training_model_list_exposes_only_the_bound_policy_and_requires_identity(tmp_path):
+    requests = []
+    listing = {"data": [{"id": "old-policy", "root": "/secret/old-adapter"},
+                        {"id": "policy-0", "root": "/secret/training/update-0001/adapter",
+                         "parent": "base-policy", "permission": [{"id": "/secret/permission"}]}]}
+
+    def upstream(request):
+        requests.append(request)
+        return httpx.Response(200, json=listing)
+
+    app = create_app(Settings(upstream="http://upstream", log_dir=tmp_path, require_rollout_binding=True,
+        agent_keys={f"key-{i}": {"agent": f"agent-{i}", "run": "world"} for i in range(1, 4)}),
+        transport=httpx.MockTransport(upstream))
+    transport = httpx.ASGITransport(app=app)
+    admin = GatewayAdmin("http://gateway", transport=transport)
+    await bind(admin)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
+        for key, status in (("unknown", 401), ("key-2", 400)):
+            response = await client.get("/v1/models", headers={"Authorization": f"Bearer {key}"})
+            assert response.status_code == status
+        assert not requests, "unknown or unbound training actors cannot discover upstream models"
+        response = await client.get("/v1/models", headers={"Authorization": "Bearer key-1",
+                                                           "X-Mesocosm-Agent": "agent-2"})
+        assert response.status_code == 200
+        assert response.json() == {"object": "list", "data": [
+            {"id": "policy-0", "object": "model", "created": 0, "owned_by": "api"}]}
+        assert "/secret" not in response.text and "old-policy" not in response.text
+        listing["data"] = listing["data"][:1]
+        absent = await client.get("/v1/models", headers={"Authorization": "Bearer key-1"})
+        assert absent.status_code == 502 and "old-policy" not in absent.text and "/secret" not in absent.text
+    await admin.aclose()
+    await app.state.gateway.client.aclose()
+
+
+async def test_model_listing_holds_its_binding_and_uses_the_bound_policy_upstream(tmp_path):
+    entered, release = asyncio.Event(), asyncio.Event()
+    requests = []
+
+    async def upstream(request):
+        requests.append(request)
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, json={"data": [{"id": "policy-0", "root": "/secret/adapter"}]})
+
+    app = create_app(Settings(upstream="http://default", log_dir=tmp_path, require_rollout_binding=True,
+        upstreams={"policy-0": {"url": "http://policy-server", "kind": "vllm"}},
+        agent_keys={"key-1": {"agent": "agent-1", "run": "world"}}),
+        transport=httpx.MockTransport(upstream))
+    transport = httpx.ASGITransport(app=app)
+    admin = GatewayAdmin("http://gateway", transport=transport)
+    await bind(admin)
+    async with httpx.AsyncClient(transport=transport, base_url="http://gateway") as client:
+        listing = asyncio.create_task(client.get("/v1/models", headers={"Authorization": "Bearer key-1"}))
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        try:
+            with pytest.raises(httpx.HTTPStatusError) as error:
+                await admin.unbind_rollout("agent-1", "world", "episode-1", "session-agent-1")
+            assert error.value.response.status_code == 409
+        finally:
+            release.set()
+        response = await asyncio.wait_for(listing, timeout=1)
+        assert response.status_code == 200 and requests[0].url.host == "policy-server"
+        receipt = await admin.unbind_rollout("agent-1", "world", "episode-1", "session-agent-1")
+        assert receipt.result == "applied"
+    await admin.aclose()
+    for upstream_client in app.state.gateway.clients.values():
+        await upstream_client.aclose()
+
+
 @pytest.mark.parametrize("stream", [False, True])
 async def test_bound_request_records_actual_sampling_tokens_and_unspoofable_context(tmp_path, stream):
     app, up, transport, admin = training_gateway(tmp_path)

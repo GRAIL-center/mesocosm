@@ -50,3 +50,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0044](0044-condition-led-experiments.md) | Condition-led repeated experiments, independent incentives and task outcomes, explicit context feedback, configurable posthoc monitoring and archived fixtures | accepted (supersedes the stated parts of ADR-0004, ADR-0013, ADR-0030 and ADR-0039) |
 | [0045](0045-on-policy-world-training.md) | On-policy REINFORCE LoRA updates between complete real multi-agent worlds, exact action/reward provenance, checkpoint activation and final policy verification | accepted |
 | [0046](0046-before-tool-monitor-intervention.md) | Bounded live monitor decisions at the supported OpenCode before-tool hook, with session attribution and fail-closed single-use approvals | accepted |
+| [0047](0047-explicit-policy-precision.md) | Explicit policy compute dtype, precision-sensitive identity, and verified serving configuration before real-agent rollouts | accepted |

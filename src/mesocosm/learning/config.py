@@ -10,6 +10,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+ComputeDType = Literal["bfloat16", "float16"]
+
 
 class TrainingModel(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -23,6 +25,7 @@ class PolicyIdentity(TrainingModel):
     base_model: str = Field(min_length=1)
     base_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
     base_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    dtype: ComputeDType = "bfloat16"
     adapter_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     adapter_path: str | None = None
 
@@ -30,7 +33,7 @@ class PolicyIdentity(TrainingModel):
     def adapter_identity(self) -> PolicyIdentity:
         if (self.adapter_sha256 is None) != (self.adapter_path is None):
             raise ValueError("adapter_path and adapter_sha256 must be supplied together")
-        if self.id != policy_id(self.base_model, self.base_revision, self.base_sha256, self.adapter_sha256):
+        if self.id != policy_id(self.base_model, self.base_revision, self.base_sha256, self.adapter_sha256, self.dtype):
             raise ValueError("policy id does not match its checkpoint content identity")
         return self
 
@@ -48,6 +51,7 @@ class TrainingSpec(TrainingModel):
     algorithm: Literal["reinforce"] = "reinforce"
     base_model: str = Field(min_length=1)
     base_revision: str = Field(pattern=r"^[a-f0-9]{40}$")
+    dtype: ComputeDType = "bfloat16"
     initial_model: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$")
     server_url: str = Field(pattern=r"^https?://")
     server_api_key_env: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]*$")
@@ -67,7 +71,8 @@ def load_training(path: str | pathlib.Path) -> TrainingSpec:
     return TrainingSpec.model_validate(data)
 
 
-def policy_id(base_model: str, base_revision: str, base_sha256: str, adapter_sha256: str | None) -> str:
+def policy_id(base_model: str, base_revision: str, base_sha256: str, adapter_sha256: str | None,
+              dtype: ComputeDType = "bfloat16") -> str:
     identity = {"base_model": base_model, "base_revision": base_revision,
-                "base_sha256": base_sha256, "adapter_sha256": adapter_sha256}
+                "base_sha256": base_sha256, "adapter_sha256": adapter_sha256, "dtype": dtype}
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()

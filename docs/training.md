@@ -21,6 +21,11 @@ uv sync --locked --extra gateway --extra learning
 
 The `learning` extra installs PyTorch, Transformers, PEFT and safetensors. The current trainer requires
 CUDA, a dropout-free causal LM exposing `logits_to_keep`, and plain LoRA on `q_proj` and `v_proj`.
+Set the same explicit `dtype` in the training spec and vLLM startup: `bfloat16` (the default) or
+`float16`. The trainer loads that dtype without hidden autocast or automatic loss scaling; nonfinite
+gradients fail before the optimizer step. Full `float32` training is rejected because the current
+vLLM CUDA dynamic-LoRA kernels support FP16/BF16 inputs and adapter weights. FP32 base-model inference
+can be a separate numerical diagnostic, but is not a supported training/activation path here.
 The controller and vLLM must run on the same inference host and see the same absolute checkpoint paths.
 GPU memory is shared sequentially: vLLM sleeps while training or evaluation recomputation runs.
 Host RAM must also hold vLLM's offloaded base weights during training.
@@ -70,6 +75,12 @@ administrative inference endpoint reachable only from the trusted control plane;
 authenticated gateway. `--max-lora-rank` must cover the training spec's rank. These flags enable the
 documented [sleep/wake](https://docs.vllm.ai/en/latest/features/sleep_mode/) and
 [dynamic adapter APIs](https://docs.vllm.ai/en/stable/features/lora/).
+Before agent rollout, the controller also reads the supported `/server_info?config_format=json`
+endpoint. It checks the resolved base model, pinned revision and dtype, requires unquantized weights,
+and accepts only a matching/automatic KV cache and LoRA dtype. The output head must use the model dtype;
+an FP32-head override or other model/config override that this trainer does not recompute is rejected.
+A local serving checkpoint is checked by its full content hash. Only selected model/precision settings
+are retained in the receipt; server environment variables and system environment data are not copied.
 
 Training-bound gateway requests enforce full-softmax sampling: temperature `1`, top-p `1`, top-k `-1`,
 min-p `0`, repetition penalty `1`, zero frequency/presence penalties, and exactly one completion.
@@ -89,6 +100,7 @@ episodes: 2
 algorithm: reinforce
 base_model: Qwen/Qwen3-4B-Instruct-2507
 base_revision: cdbee75f17c01a7cc42f958dc650907174af0554
+dtype: bfloat16
 initial_model: qwen3-4b
 server_url: http://172.17.0.1:8000
 server_api_key_env: VLLM_API_KEY
@@ -137,6 +149,13 @@ actual parameter delta and package versions. Recomputed action log probabilities
 policy within the configured tolerance before an optimizer step. Checkpoint loading uses a new alias,
 verifies its registered path and runs a real inference probe. The final real world must use that alias;
 its action probabilities are recomputed against the updated checkpoint without training.
+
+Compute dtype is part of the canonical policy hash, so changing precision requires a new policy identity
+and fresh rollouts. Matching declared dtypes does not guarantee cross-engine numerical agreement:
+batching, attention kernels and rounding can still differ. Keep the predeclared parity tolerance when
+investigating a failure; preserve the original batch and failed receipt. Historical policy IDs created
+before the precision contract are rejected by the new reader rather than silently reassigned a dtype.
+See [ADR-0047](adr/0047-explicit-policy-precision.md).
 
 Failures retain their artifacts, including world results before teardown and a completed but unactivated
 update after cancellation. Cancellation waits for an active GPU worker to release its model before
