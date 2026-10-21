@@ -131,13 +131,17 @@ class Follower:
     def _schedule_summaries(self) -> None:
         """Ask the model for a new line for every session whose activity changed; one task per node,
         bounded by the summarizer's semaphore and its per-node interval."""
-        self.summarizer.apply_cached(self.observer)
-        for node in self.summarizer.due(self.observer):
+        summarizer = self.summarizer
+        if summarizer is None:
+            return
+        summarizer.apply_cached(self.observer)
+        for node in summarizer.due(self.observer):
             agent = self.observer.agents.get(node.agent_id or "")
             asyncio.create_task(self._summarize(node, agent.task if agent else None))
 
     async def _summarize(self, node, task) -> None:
-        if await self.summarizer.summarize(node, task):
+        summarizer = self.summarizer
+        if summarizer is not None and await summarizer.summarize(node, task):
             async with self.changed:
                 self.version += 1
                 self.changed.notify_all()

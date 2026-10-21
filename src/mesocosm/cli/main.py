@@ -8,8 +8,13 @@ import json
 import pathlib
 import sys
 from importlib.metadata import PackageNotFoundError, version
+from typing import TYPE_CHECKING
 
 import typer
+
+if TYPE_CHECKING:
+    from mesocosm.core.run import RunResult
+    from mesocosm.learning.controller import RolloutContext
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Mesocosm research world")
 world_app = typer.Typer(no_args_is_help=True, help="World manifests")
@@ -22,6 +27,7 @@ probe_app = typer.Typer(no_args_is_help=True, help="Linear probes over captured 
 flags_app = typer.Typer(no_args_is_help=True, help="Candidate incidents and their review")
 scenario_app = typer.Typer(no_args_is_help=True, help="Deprecated authored fixture scenarios")
 experiment_app = typer.Typer(no_args_is_help=True, help="Repeated comparisons of enforced conditions")
+train_app = typer.Typer(no_args_is_help=True, help="On-policy weight updates from real multi-agent worlds")
 export_app = typer.Typer(no_args_is_help=True, help="Run bundles in formats other tools read")
 judge_app = typer.Typer(no_args_is_help=True, help="The judge's model components")
 app.add_typer(world_app, name="world")
@@ -31,6 +37,7 @@ app.add_typer(conditions_app, name="conditions")
 app.add_typer(flags_app, name="flags")
 app.add_typer(scenario_app, name="scenario")
 app.add_typer(experiment_app, name="experiment")
+app.add_typer(train_app, name="train")
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(activations_app, name="activations")
 activations_app.add_typer(probe_app, name="probe")
@@ -87,8 +94,11 @@ def capabilities(json_: bool = JSON_OPT) -> None:
                        "reward_allocation": ["individual", "team_mean", "mixed"],
                        "monitor_scope": ["per_agent", "joint"]},
         "mid_run_conditions": ["budget"],
-        "learning": {"supported": ["none", "in_context"], "weight_updating_rl": "unsupported"},
-        "monitor_timing": ["posthoc"],
+        "learning": {"supported": ["none", "in_context"], "weight_updating_rl": {
+            "status": "supported", "algorithm": "reinforce_lora", "command": "train run",
+            "scope": "shared causal LM, >=3 agents, complete native comparison worlds; see docs/training.md"}},
+        "monitor_timing": ["posthoc", "pre_action"],
+        "monitor_intervention": {"scope": "per-agent top-level OpenCode tool calls", "on_flag": ["deny", "terminate"]},
         "evidence": "docs/capability-matrix.md; automated tests are not live agent behavior evidence",
     }, json_)
 
@@ -163,7 +173,8 @@ def observe_serve(bundle: pathlib.Path,
 
 def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,
                 verifier_image: str | None, vllm_host: str = "host.docker.internal", vllm_port: int = 8000, *,
-                verifier_network: str = "none", allow_unenforced_storage: bool = False, task_runtime: str = "native"):
+                verifier_network: str = "none", allow_unenforced_storage: bool = False, task_runtime: str = "native",
+                rollout: RolloutContext | None = None):
     """The real components for a manifest: OpenCode servers, the gateway, Docker checks, the world services."""
     from mesocosm.adapters.opencode.client import OpenCodeClient
     from mesocosm.core.run import Components, DockerVerifier
@@ -200,6 +211,7 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
         services=ServicesAdmin(f"http://{service_address(spec, 'services')}") if spec.services.enabled else None,
         shared_files=DockerSharedDir(compose_file).list_files,
         monitor=_monitor_model(spec) if spec.judge.monitor.enabled else None,
+        rollout=rollout,
     )
 
 
@@ -222,14 +234,14 @@ async def _run_manifest(manifest: pathlib.Path, compose_file: pathlib.Path, runs
                         workspace_root: pathlib.Path, verifier_image: str | None,
                         vllm_host: str = "host.docker.internal", vllm_port: int = 8000, *,
                         verifier_network: str = "none", allow_unenforced_storage: bool = False,
-                        task_runtime: str = "native"):
+                        task_runtime: str = "native", rollout: RolloutContext | None = None):
     from mesocosm.core.manifest import load_manifest
     from mesocosm.core.run import run_world
 
     spec = load_manifest(manifest)
     components = _components(spec, compose_file, runs_root, workspace_root, verifier_image, vllm_host, vllm_port,
                              verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
-                             task_runtime=task_runtime)
+                             task_runtime=task_runtime, rollout=rollout)
     try:
         return await run_world(spec, manifest.resolve(), components, runs_root)
     finally:
@@ -241,7 +253,7 @@ async def _run_manifest(manifest: pathlib.Path, compose_file: pathlib.Path, runs
 def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,
                   verifier_image: str | None, vllm_port: int, vllm_host: str, stacks: list, *,
                   verifier_network: str = "none", allow_unenforced_storage: bool = False, task_runtime: str = "native",
-                  fresh_workspace: bool = False):
+                  fresh_workspace: bool = False, rollout: RolloutContext | None = None):
     """run_one for chains and scenarios: render the topology for the manifest (its run label names the log
     directory), take the previous stack down, bring this one up, then run. Every run gets a fresh world."""
     from mesocosm.core.manifest import load_manifest
@@ -258,7 +270,8 @@ def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_
         compose_file = compose_dir / f"{manifest.stem}.compose.yml"
         compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
                                              vllm_host=vllm_host, manifest_dir=manifest.resolve().parent,
-                                             runs_dir=str(runs_root.resolve()), workspace_root=trial_workspace))
+                                             runs_dir=str(runs_root.resolve()), workspace_root=trial_workspace,
+                                             require_rollout_binding=rollout is not None))
         write_agent_files(spec, label, runs_root.resolve() / label / "agents",
                           manifest_dir=manifest.resolve().parent, web_dir=runs_root.resolve() / label / "web")
         (runs_root / label).mkdir(parents=True, exist_ok=True)
@@ -269,7 +282,8 @@ def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_
         await stack.up()
         return await _run_manifest(manifest, compose_file, runs_root, trial_workspace, verifier_image, vllm_host,
                                    vllm_port, verifier_network=verifier_network,
-                                   allow_unenforced_storage=allow_unenforced_storage, task_runtime=task_runtime)
+                                   allow_unenforced_storage=allow_unenforced_storage, task_runtime=task_runtime,
+                                   rollout=rollout)
 
     return run_one
 
@@ -408,6 +422,61 @@ def experiment_run(experiment: pathlib.Path,
     _emit(experiment_table(out_dir), json_, ok=not (result.get("lifecycle_errors") or result["failed"]
                                                    or result["incomplete_records"]
                                                    or result["not_run"] or result["stopped"]))
+
+
+@train_app.command("run")
+def train_run(training: pathlib.Path,
+              out: pathlib.Path = typer.Option(None, "--out"),
+              runs_root: pathlib.Path = RUNS_ROOT_OPT,
+              workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
+              verifier_network: str = VERIFIER_NETWORK_OPT,
+              allow_unenforced_storage: bool = UNENFORCED_STORAGE_OPT,
+              vllm_port: int | None = typer.Option(None, "--vllm-port"),
+              vllm_host: str | None = typer.Option(None, "--vllm-host"),
+              json_: bool = JSON_OPT) -> None:
+    """Run fresh native worlds, train LoRA from measured returns, activate and evaluate the new policy."""
+    from contextlib import redirect_stdout
+    from urllib.parse import urlsplit
+
+    from mesocosm.learning.checkpoints import write_json
+    from mesocosm.learning.config import load_training
+    from mesocosm.learning.controller import run_training
+
+    out_dir = out
+    try:
+        spec = load_training(training)
+        out_dir = out or runs_root / "training" / spec.name
+        endpoint = urlsplit(spec.server_url)
+        if endpoint.scheme != "http" or not endpoint.hostname or endpoint.path not in ("", "/") \
+                or endpoint.query or endpoint.fragment or endpoint.username or endpoint.password:
+            raise ValueError("training's Compose profile requires server_url to be an HTTP root endpoint")
+        host, port = endpoint.hostname, endpoint.port or 80
+        if (vllm_host is not None and vllm_host != host) or (vllm_port is not None and vllm_port != port):
+            raise ValueError("gateway and policy activation must use the same TrainingSpec.server_url endpoint")
+
+        async def run_one(manifest: pathlib.Path, rollout: RolloutContext) -> RunResult:
+            stacks: list = []
+            runner = _stack_runner(out_dir, runs_root, workspace_root, None, port, host, stacks,
+                verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
+                task_runtime="native", fresh_workspace=True, rollout=rollout)
+            try:
+                run = await runner(manifest)
+                write_json(manifest.with_suffix(".result.json"), {
+                    "run_id": run.run_id, "status": run.status, "bundle": str(run.bundle_path), "error": run.error})
+                return run
+            finally:
+                if stacks:
+                    await stacks[-1].down()
+
+        with redirect_stdout(sys.stderr):
+            result = asyncio.run(run_training(spec, training.resolve(), out_dir, run_one))
+    except Exception as exc:
+        _emit({"status": "failed_training", "error": str(exc), "out": str(out_dir)}, json_, ok=False)
+        return
+    _emit({"status": result["status"], "out": str(out_dir), "episodes": len(result["episodes"]),
+           "updates": len(result["updates"]),
+           "performance_improvement_demonstrated": result["performance_improvement_demonstrated"]},
+          json_, ok=result["status"] == "ok")
 
 
 @experiment_app.command("report")
@@ -771,7 +840,8 @@ def judge_monitor(bundle: pathlib.Path,
     except (ValueError, OSError) as exc:
         _emit({"status": "invalid_monitor", "error": str(exc)}, json_, ok=False)
         return
-    options = config.model_dump(exclude={"enabled", "model", "threshold", "side_task_aware", "timing"},
+    options = config.model_dump(exclude={"enabled", "model", "threshold", "side_task_aware", "timing",
+                                         "decision_timeout_seconds", "poll_seconds", "on_flag"},
                                 exclude_none=True)
 
     async def main():

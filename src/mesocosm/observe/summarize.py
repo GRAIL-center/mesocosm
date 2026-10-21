@@ -117,7 +117,7 @@ class Summarizer:
 
     def due(self, observer: S.Observer, now: float | None = None) -> list[S.SessionNode]:
         now = now or time.time()
-        out = []
+        out: list[S.SessionNode] = []
         if not self.url:
             self.apply_cached(observer)
             return out

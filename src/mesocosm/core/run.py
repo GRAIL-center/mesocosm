@@ -22,8 +22,9 @@ import json
 import math
 import os
 import pathlib
+import sys
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -48,9 +49,12 @@ from mesocosm.env.egress import EgressResult
 from mesocosm.env.services.client import ServicesAdmin
 from mesocosm.gateway.client import GatewayAdmin
 from mesocosm.judge.flags import detect, flag_counts
+from mesocosm.judge.intervention import InterventionGate, InterventionState
+from mesocosm.learning.controller import RolloutContext
 
 
 class Harness(Protocol):
+    async def prepare_action_hook(self) -> dict[str, Any]: ...
     async def create_session(self, title: str) -> str: ...
     async def send_message(self, session_id: str, text: str, *, provider_id: str, model_id: str) -> dict[str, Any]: ...
     async def list_messages(self, session_id: str) -> list[dict[str, Any]]: ...
@@ -62,6 +66,7 @@ class Harness(Protocol):
 EVENT_GRACE_SECONDS = 0.5  # time the event collector gets to drain after the task's last message
 RECORD_SLACK_SECONDS = 5.0  # clock skew allowed between the control plane and the gateway/services hosts
 ABORT_TIMEOUT_SECONDS = 10.0
+FAILURE_SNAPSHOT_SECONDS = 10.0
 
 
 class RoundDeadlineExceeded(RuntimeError):
@@ -98,6 +103,8 @@ class Components:
     lineage: dict[str, Any] | None = None            # parent run, snapshot, patch -> lineage.json
     monitor: Any | None = None                       # judge.monitor's model (judge.monitor.MonitorModel), if enabled
     task_runtime: Any | None = None                   # prepares the task's native environment before a session
+    rollout: RolloutContext | None = None
+    intervention: InterventionState = field(default_factory=InterventionState)
 
 
 @dataclass
@@ -148,23 +155,60 @@ def _parts_summary(reply: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+async def _preserve_failure_gateway(manifest: WorldManifest, components: Components, bundle: RunBundle,
+                                    since: float) -> list[dict[str, Any]]:
+    """Bounded snapshots of available records; an aborted run never establishes complete call coverage."""
+    label = manifest.gateway.run_label or bundle.run_id
+    sources = [(label, "gateway/records.jsonl")]
+    if manifest.judge.monitor.enabled:
+        sources.append((f"{label}-monitor", "gateway/monitor-records.jsonl"))
+    coverage = []
+    for run_label, relative in sources:
+        item: dict[str, Any] = {"run_label": run_label, "path": f"native/{relative}",
+                                "run_complete": False, "snapshot_complete": False,
+                                "observed_model_calls": None, "status": "existing"}
+        if not (bundle.root / "native" / relative).exists():
+            count = 0
+            try:
+                async with asyncio.timeout(FAILURE_SNAPSHOT_SECONDS):
+                    with bundle.open_native(relative) as out:
+                        async for record in components.gateway.records(run_label, since=since):
+                            out.write(_json(record) + "\n")
+                            count += record.get("event") == "chat_completion"
+                item.update(status="captured", snapshot_complete=True, observed_model_calls=count)
+            except (Exception, asyncio.CancelledError) as exc:
+                item.update(status="partial_or_unavailable", observed_model_calls=count, error=repr(exc))
+        coverage.append(item)
+        bundle.record("gateway.failure_snapshot", **item)
+    return coverage
+
+
 async def run_world(manifest: WorldManifest, manifest_path: pathlib.Path, components: Components,
                     runs_root: pathlib.Path, run_id: str | None = None) -> RunResult:
+    started = time.time() - RECORD_SLACK_SECONDS
     bundle = RunBundle.create(runs_root, run_id)
     bundle.write_manifest(manifest.model_dump(mode="json"), manifest.digest(), path=manifest_path)
     try:
         return await _run(manifest, manifest_path, components, bundle)
-    except Exception as e:  # noqa: BLE001 - any failure is recorded in the bundle, then reported
+    except (Exception, asyncio.CancelledError) as e:  # original cancellation still propagates after preservation
         bundle.record("run.failed", error=repr(e))
-        status = ("stopped" if isinstance(e, EpisodeStopped) else
+        coverage = await _preserve_failure_gateway(manifest, components, bundle, started)
+        status = ("cancelled" if isinstance(e, asyncio.CancelledError) else
+                  "stopped" if isinstance(e, EpisodeStopped) else
                   "failed_deadline" if isinstance(e, RoundDeadlineExceeded) else
                   "failed_verifier" if isinstance(e, VerificationFailed) else "failed")
         events = bundle.events()
         rewards = {f"{event.agent_id}/{event.data['task']}": event.data.get("reward")
                    for event in events if event.kind == "verifier.reward"}
         bundle.write_summary({"status": status, "error": repr(e), "rewards": rewards,
+                              "model_calls": None, "gateway_coverage": coverage,
                               **outcome_records(events),
-                              "learning": {"mode": manifest.learning.mode, "weight_updates": 0}})
+                              "learning": {"mode": manifest.learning.mode, "weight_updates": 0},
+                              "monitor": components.intervention.summary()
+                              if manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "pre_action"
+                              else None})
+        if isinstance(e, asyncio.CancelledError):
+            raise
         return RunResult(bundle.run_id, bundle.root, status, rewards, repr(e))
 
 
@@ -187,7 +231,7 @@ async def _apply_memory_policy(manifest: WorldManifest, bundle: RunBundle, agent
     if task_runtime is not None:
         state["environment"] = await task_runtime.prepare(agent, task, workspace, reset=fresh,
                                                            restored=keep is not None)
-    if fresh:
+    if session_id is None or manifest.memory == "reset":
         session_id = await harness.create_session(f"{bundle.run_id}/{agent.id}/{task.name}")
         session_to_agent[session_id] = agent.id
     receipt = Receipt(op="conditions.set", run_id=bundle.run_id,
@@ -238,6 +282,8 @@ def _load_spec_tasks(spec: TaskSpec, manifest_path: pathlib.Path) -> list[Harbor
     an expanded collection takes each task's own name."""
     if spec.path:
         return [load_task(manifest_path.parent / spec.path)]
+    if spec.dataset is None:
+        raise ValueError("a task requires a path or dataset reference")
     dirs = resolve_dataset_tasks(spec.dataset, _tasks_root_dirs(manifest_path), spec.limit)
     name = spec.name if len(dirs) == 1 else None
     return [load_task(d, dataset=spec.dataset, name=name) for d in dirs]
@@ -322,30 +368,85 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
         limits = [v for v in (r["seconds"], remaining) if v is not None]
         timeout = min(limits) if limits else None
         task_limited = remaining is not None and (r["seconds"] is None or remaining <= r["seconds"])
+        gate = None
+        if manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "pre_action":
+            from mesocosm.adapters.opencode.action_plugin import action_plugin_digest
+            from mesocosm.env.compose import GATEWAY_URL, agent_api_key
+            from mesocosm.gateway.action_client import ActionAdmin
+
+            if components.monitor is None:
+                raise RuntimeError("pre_action monitoring requires an active monitor")
+            label = manifest.gateway.run_label or bundle.run_id
+            gate = InterventionGate(admin=ActionAdmin(components.gateway.client), monitor=components.monitor,
+                spec=manifest.judge.monitor, bundle=bundle, run_label=label, agent_id=agent.id,
+                session_id=ctx.session_id, task=task.name, harness=ctx.harness,
+                plugin_sha256=action_plugin_digest(GATEWAY_URL, agent_api_key(manifest, label, agent.id),
+                                                  min(600, manifest.judge.monitor.decision_timeout_seconds + 5)),
+                state=components.intervention)
+        rollout = components.rollout
+        binding = None
         try:
-            reply = await asyncio.wait_for(
-                ctx.harness.send_message(ctx.session_id, r["prompt"], provider_id=manifest.gateway.provider_id,
-                                         model_id=manifest.model_for(agent).id), timeout=timeout)
+            async with asyncio.timeout(timeout):
+                if gate is not None:
+                    await gate.prepare()
+                if rollout is not None:
+                    binding = await components.gateway.bind_rollout(
+                        agent.id, manifest.gateway.run_label or bundle.run_id, rollout.episode_id,
+                        task.name, r["index"], ctx.session_id, rollout.policy, bundle.run_id)
+                    bundle.record_receipt(binding.model_dump(mode="json"))
+                    if binding.result != "applied" or binding.verification is None or not binding.verification.ok:
+                        raise RuntimeError("gateway did not confirm the rollout binding")
+                    bundle.record("rollout.bound", agent_id=agent.id, event_id=binding.enforced_at.event_id,
+                                  **binding.verification.detail)
+                turn = ctx.harness.send_message(ctx.session_id, r["prompt"], provider_id=manifest.gateway.provider_id,
+                                                model_id=manifest.model_for(agent).id)
+                reply = await gate.run_turn(turn) if gate is not None else await turn
         except TimeoutError as e:
             if timeout is None:
+                await _abort_turn(ctx, bundle, agent.id, task.name, "harness_timeout")
+                await _preserve_failure_messages(ctx, bundle, agent.id, task.name, "harness_timeout")
                 raise
             scope, seconds = ("task", task_seconds) if task_limited else ("round", r["seconds"])
             bundle.record(f"harness.{scope}_timeout", agent_id=agent.id, task=task.name, round=r["index"],
                           seconds=seconds, session_id=ctx.session_id)
             confirmed = await _abort_turn(ctx, bundle, agent.id, task.name, "deadline")
+            await _preserve_failure_messages(ctx, bundle, agent.id, task.name, "deadline")
             raise RoundDeadlineExceeded(f"{agent.id}/{task.name} {scope} {r['index']} exceeded {seconds} seconds; "
                                         f"harness abort confirmed={confirmed}") from e
         except asyncio.CancelledError:
             await _abort_turn(ctx, bundle, agent.id, task.name, "run_cancelled")
+            await _preserve_failure_messages(ctx, bundle, agent.id, task.name, "run_cancelled")
             raise
         except Exception as exc:
             bundle.record("harness.failed", agent_id=agent.id, task=task.name, error=repr(exc))
             await _abort_turn(ctx, bundle, agent.id, task.name, "harness_error")
+            await _preserve_failure_messages(ctx, bundle, agent.id, task.name, "harness_error")
             raise
+        finally:
+            original_error = sys.exception()
+            try:
+                try:
+                    if binding is not None and rollout is not None:
+                        receipt = await components.gateway.unbind_rollout(
+                            agent.id, manifest.gateway.run_label or bundle.run_id, rollout.episode_id,
+                            ctx.session_id, bundle.run_id)
+                        bundle.record_receipt(receipt.model_dump(mode="json"))
+                        if receipt.result != "applied" or receipt.verification is None or not receipt.verification.ok:
+                            raise RuntimeError("gateway did not confirm closing the rollout binding")
+                        bundle.record("rollout.unbound", agent_id=agent.id, event_id=receipt.enforced_at.event_id,
+                                      **receipt.verification.detail)
+                finally:
+                    if gate is not None:
+                        await gate.close()
+            except (Exception, asyncio.CancelledError) as exc:
+                bundle.record("harness.control_cleanup_failed", agent_id=agent.id, task=task.name,
+                              error=repr(exc), original_error=repr(original_error) if original_error else None)
+                if original_error is None:
+                    raise
         if isinstance(sync, RewardEpisodes):
             sync.confirm_feedback(agent.id)
         bundle.record("harness.reply", agent_id=agent.id, step=bundle.next_step(agent.id),
-                      session_id=ctx.session_id, round=r["index"] if len(rounds) > 1 else None,
+                      session_id=ctx.session_id, task=task.name, round=r["index"],
                       parts=_parts_summary(reply))
     messages = await ctx.harness.list_messages(ctx.session_id)
     bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
@@ -386,6 +487,27 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     if sync is not None:
         await sync.finish(agent.id, task, reward.value)
     return reward.value
+
+
+async def _preserve_failure_messages(ctx: AgentContext, bundle: RunBundle, agent_id: str, task: str,
+                                     reason: str) -> None:
+    """Preserve the actual partial session on error, without turning capture errors into task outcomes."""
+    relative = f"{agent_id}/{task}/messages.json"
+    if (bundle.root / "native" / relative).exists() or ctx.session_id is None:
+        return
+    try:
+        async with asyncio.timeout(FAILURE_SNAPSHOT_SECONDS):
+            messages = await ctx.harness.list_messages(ctx.session_id)
+            if not isinstance(messages, list) or not all(isinstance(message, dict) for message in messages):
+                raise ValueError("invalid harness messages snapshot")
+            bundle.write_native(relative, _json(messages))
+        bundle.record("harness.failure_snapshot", agent_id=agent_id, task=task, session_id=ctx.session_id,
+                      path=f"native/{relative}", reason=reason, snapshot_complete=True, turn_complete=False,
+                      messages=len(messages))
+    except (Exception, asyncio.CancelledError) as exc:
+        bundle.record("harness.failure_snapshot", agent_id=agent_id, task=task, session_id=ctx.session_id,
+                      path=f"native/{relative}", reason=reason, snapshot_complete=False, turn_complete=False,
+                      messages=None, error=repr(exc))
 
 
 async def _abort_turn(ctx: AgentContext, bundle: RunBundle, agent_id: str, task: str, reason: str) -> bool:
@@ -528,6 +650,8 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
 
     health = await components.gateway.health()
     bundle.record("gateway.health", **health)
+    if components.rollout is not None and health.get("require_rollout_binding") is not True:
+        raise RuntimeError("training requires gateway enforcement of rollout bindings")
 
     probe_window = (time.time() - 1.0, 0.0)     # the egress check's own web requests are not agent behavior
     isolation = await components.egress.verify([a.id for a in manifest.agents])
@@ -702,14 +826,18 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     if components.shared_files is not None and "shared_dir" in manifest.channel_types():
         bundle.record("judge.state_check", check="shared_dir", files=await components.shared_files())
     monitor_summary = None
-    if components.monitor is not None and manifest.judge.monitor.enabled:
+    if components.monitor is not None and manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "posthoc":
         from mesocosm.judge.monitor import score_bundle
 
         config = manifest.judge.monitor
-        options = config.model_dump(exclude={"enabled", "model", "threshold", "side_task_aware", "timing"},
+        options = config.model_dump(exclude={"enabled", "model", "threshold", "side_task_aware", "timing",
+                                             "decision_timeout_seconds", "poll_seconds", "on_flag"},
                                     exclude_none=True)
         monitor_summary = await score_bundle(bundle, components.monitor, config.threshold,
                                              config.side_task_aware, **options)
+        bundle.record("monitor.done", **monitor_summary)
+    elif manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "pre_action":
+        monitor_summary = components.intervention.summary()
         bundle.record("monitor.done", **monitor_summary)
     events = bundle.events()
     flags = detect(events, bundle.run_id)
@@ -785,7 +913,8 @@ async def _end(task: asyncio.Task) -> None:
         pass
 
 
-async def _run_together(runners: list[Awaitable[dict[str, float | None]]]) -> list[dict[str, float | None]]:
+async def _run_together(runners: Sequence[Coroutine[Any, Any, dict[str, float | None]]]
+                       ) -> list[dict[str, float | None]]:
     """The agents run at the same time; the first failure cancels the others, so no runner outlives its
     run and keeps writing into the bundle (or into the next run's, in a chain)."""
     try:

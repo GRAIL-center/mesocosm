@@ -224,7 +224,9 @@ async def test_unreachable_gateway_is_a_recorded_failure(world, tmp_path):
     result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs2")
     assert result.status == "failed" and "Connect" in (result.error or "")
     bundle = RunBundle.open(result.bundle_path)
-    assert [e.kind for e in bundle.events()] == ["run.failed"]
+    assert [e.kind for e in bundle.events()] == ["run.failed", "gateway.failure_snapshot"]
+    assert bundle.events()[-1].data["snapshot_complete"] is False
+    assert json.loads((bundle.root / "summary.json").read_text())["model_calls"] is None
     assert json.loads((bundle.root / "summary.json").read_text())["status"] == "failed"
 
 
@@ -302,7 +304,9 @@ async def test_one_failing_agent_cancels_the_others(world):
     result = await asyncio.wait_for(run_world(manifest, MANIFEST, comps, root / "runs"), timeout=5)
     assert result.status == "failed_verifier" and "verifier container died" in result.error
     bundle = RunBundle.open(result.bundle_path)
-    assert bundle.events()[-1].kind == "run.failed" and "verifier container died" in bundle.events()[-1].data["error"]
+    failure = next(e for e in bundle.events() if e.kind == "run.failed")
+    assert "verifier container died" in failure.data["error"]
+    assert (bundle.root / "native/gateway/records.jsonl").exists()
 
 
 async def test_the_internet_is_a_verified_condition_and_web_records_join_the_bundle(world):
@@ -811,6 +815,9 @@ async def test_deadline_aborts_the_remote_turn_and_never_grades_partial_work(wor
     events = RunBundle.open(result.bundle_path).events()
     assert any(e.kind == f"harness.{scope}_timeout" for e in events)
     assert next(e for e in events if e.kind == "harness.aborted").data["confirmed"] is True
+    snapshot = next(e for e in events if e.kind == "harness.failure_snapshot")
+    assert snapshot.data["snapshot_complete"] is True and snapshot.data["turn_complete"] is False
+    assert (result.bundle_path / snapshot.data["path"]).is_file()
     assert not any(e.kind == "verifier.reward" for e in events)
 
 

@@ -184,7 +184,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 - Any outbound route from the sandbox network other than the two gateways: the model gateway and, when `internet.enabled`, the web gateway (ADR-0022). Never `network_mode: host`, a second NIC on an agent container, or internet that bypasses the web gateway's policy and log.
 - Approximating an unsupported condition with prompt text (ADR-0003). It must fail.
 - Committing anything under `runs/`, activations, or run logs.
-- Describing reward logging or context feedback as policy-weight training. Actual trainers are allowed by the research direction (ADR-0044), but require verified rollout provenance, action/reward boundaries, checkpoint updates and serving activation. No such training mode is currently implemented.
+- Describing reward logging or context feedback as policy-weight training. `train run` (ADR-0045) requires verified rollout provenance, action/reward boundaries, checkpoint updates and serving activation; report its evidence separately from context feedback and learning effectiveness.
 - Marking a capability `supported` without a linked evidence file or test.
 - Reintroducing MARGIN Arena as a dependency.
 - Enabling activation capture by default (ADR-0005).

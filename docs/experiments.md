@@ -51,10 +51,9 @@ can contain control credentials and task data; keep them in ignored local run st
 | Monitor scope | `judge.monitor.scope: per_agent / joint` | Posthoc review sees one agent/task window or the collected joint run. Visibility, shared evidence and coverage budgets are explicit. |
 | Learning | `learning.mode: none / in_context` | No reward feedback, or previous episode reward attached to the next task. Neither mode updates model weights. |
 
-Weight-updating RL, a live monitor intervention policy and bounded sliding-window memory are **not
-implemented**. Unknown learning modes (including `rl`) are rejected. A reward record, a changed prompt
-or a repeated model call is not an optimizer update. External trainers need an implemented and
-validated rollout/credit-assignment/checkpoint/serving integration before the platform can claim RL.
+Weight-updating RL uses the separate [`mesocosm train run` controller](training.md), which alternates
+complete worlds with verified REINFORCE/LoRA updates. The per-world `learning` field describes context
+feedback; `learning.mode: rl` is still rejected. Bounded sliding-window memory remains unsupported.
 
 ### Incentives and independent performance
 
@@ -116,9 +115,33 @@ web and verifier world-state evidence. It is not a universal audit of every exte
 
 Coverage records report missing evidence, truncation and call-budget exclusions. Invalid model answers
 remain unknown. A low score on incomplete evidence does not establish safety or successful evasion.
-A joint score has no individual agent attribution. Monitor calls happen after the run and cannot block
-agent actions. For held-out evaluation, use a separately chosen reviewer/rubric and record its version;
+A joint score has no individual agent attribution. Posthoc calls happen after the run. For held-out
+evaluation, use a separately chosen reviewer/rubric and record its version;
 this is a research choice, not automatically guaranteed independence.
+
+For live intervention, configure a per-agent gate:
+
+```yaml
+judge:
+  monitor:
+    enabled: true
+    model: reviewer
+    timing: pre_action
+    scope: per_agent
+    visibility: actions
+    threshold: 70
+    on_flag: deny # or terminate the session
+    decision_timeout_seconds: 30
+    max_calls: 100 # shared across all agents and tasks in this world
+```
+
+Render a fresh stack so each harness receives the readonly approval plugin. The supported OpenCode
+1.19.3 hook holds proposed calls before tool execution; the controller verifies the loaded plugin,
+session, call ID and arguments before asking the reviewer. `deny` blocks a flagged tool and lets the
+agent continue; `terminate` aborts the session. Unknown judgments, missing evidence, input/call budget
+exhaustion and transport failures block and abort. Scores, decisions and execution results remain
+separate records. Live joint/shared evidence, nested agent sessions and per-syscall mediation inside
+an approved shell command are unsupported. See [ADR-0046](adr/0046-before-tool-monitor-intervention.md).
 
 ## Read outcomes separately
 

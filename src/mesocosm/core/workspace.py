@@ -107,7 +107,8 @@ class RawLog:
     def append(self, part: dict) -> None:
         state = part.get("state") or {}
         call_id = part.get("callID") or part.get("id")
-        if part.get("type") != "tool" or state.get("status") != "completed" or call_id in self.seen:
+        if (part.get("type") != "tool" or state.get("status") != "completed"
+                or not isinstance(call_id, str) or not call_id or call_id in self.seen):
             return
         self.seen.add(call_id)
         self.seq += 1

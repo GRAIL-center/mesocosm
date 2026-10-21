@@ -27,6 +27,22 @@ class OpenCodeClient:
         r.raise_for_status()
         return r.json()
 
+    async def prepare_action_hook(self) -> dict[str, Any]:
+        """Initialize supported plugins before any prompt, and reject unverified harness versions.
+
+        Tool discovery loads the official plugin registry. Gateway readiness independently checks
+        the mounted plugin's actual file digest and binds its process instance to the session.
+        """
+        health = await self.health()
+        if health.get("healthy") is not True or health.get("version") != "1.19.3":
+            raise ValueError("rejected_unsupported: before-tool intervention requires OpenCode 1.19.3")
+        response = await self.client.get("/experimental/tool/ids")
+        response.raise_for_status()
+        ids = response.json()
+        if not isinstance(ids, list) or not all(isinstance(item, str) for item in ids):
+            raise ValueError("rejected_unsupported: harness tool discovery is unavailable")
+        return {"version": health["version"], "tool_ids": ids, "hook": "tool.execute.before"}
+
     async def providers(self) -> dict[str, Any]:
         r = await self.client.get("/config/providers")
         r.raise_for_status()

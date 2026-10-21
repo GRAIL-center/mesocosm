@@ -93,6 +93,8 @@ Start with the [three-agent setup guide](docs/native-multiagent.md). It walks th
 external task, starting a model server, launching the Docker environment and inspecting a run.
 The accompanying [example configuration](examples/world-native-three.yaml) shows how the pieces fit
 together. Then use the [experiment guide](docs/experiments.md) to compare conditions and repetitions.
+The [training guide](docs/training.md) adds policy updates from measured rewards; live monitoring can
+approve or block proposed tool calls before execution.
 
 You will need a Linux Docker host, Python and `uv`. Local model serving also requires a suitable
 NVIDIA GPU. The setup guide includes a Colab path and explains its differences from a regular
@@ -111,6 +113,7 @@ external task configurations from authored demonstrations and test fixtures.
 | Control Mesocosm from code or the command line | [Operation contract](docs/operation-contract.md) |
 | Check what is implemented and verified | [Capability matrix](docs/capability-matrix.md) |
 | Choose variables and compare experimental conditions | [Experiment guide](docs/experiments.md) |
+| Train a shared agent policy from real task outcomes | [Training guide](docs/training.md) |
 | Follow the design and development plans | [Design decisions](docs/adr/README.md) · [Milestones](docs/milestones.md) |
 
 ## Development
@@ -120,6 +123,8 @@ git clone https://github.com/GRAIL-center/mesocosm.git
 cd mesocosm
 uv sync --locked --extra dev --extra gateway
 uv run pytest
+uv run mypy src
+uv run ruff check .
 uv run mesocosm --help
 ```
 

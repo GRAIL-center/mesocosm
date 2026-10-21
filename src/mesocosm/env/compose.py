@@ -22,6 +22,7 @@ import shutil
 
 import yaml
 
+from mesocosm.adapters.opencode.action_plugin import render_action_plugin
 from mesocosm.adapters.opencode.client import render_opencode_config
 from mesocosm.core.manifest import AgentSpec, WorldManifest
 from mesocosm.env.web import WebPolicy, generate_ca, probe_hosts
@@ -123,6 +124,10 @@ def agent_files(manifest: WorldManifest, run_label: str, gateway_url: str = GATE
                                "[init]\n\tdefaultBranch = main\n")}
         if agent.persona and agent.persona.brief:
             files["AGENTS.md"] = agent.persona.brief.rstrip("\n") + "\n"
+        if manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "pre_action":
+            files["plugins/approval-gate.js"] = render_action_plugin(
+                gateway_url, agent_api_key(manifest, run_label, agent.id),
+                min(600, manifest.judge.monitor.decision_timeout_seconds + 5))
         out[agent.id] = files
     return out
 
@@ -141,6 +146,7 @@ def write_agent_files(manifest: WorldManifest, run_label: str, files_dir: pathli
         (files_dir / agent.id).mkdir(parents=True, exist_ok=True)
         for name, content in agent_files(manifest, run_label, **kwargs)[agent.id].items():
             path = files_dir / agent.id / name
+            path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             written.append(path)
         if agent.skills:
@@ -181,7 +187,8 @@ def egress_proxy_env(manifest: WorldManifest) -> dict[str, str]:
 def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_label: str,
                    vllm_port: int = 8000, vllm_host: str = "host.docker.internal", runs_dir: str = "runs",
                    opencode_version: str = "1.19.3", manifest_dir: pathlib.Path | None = None,
-                   files_dir: pathlib.Path | None = None, workspace_root: pathlib.Path | None = None) -> dict:
+                   files_dir: pathlib.Path | None = None, workspace_root: pathlib.Path | None = None,
+                   require_rollout_binding: bool = False) -> dict:
     """`vllm_host` is how the gateway container reaches the inference server on the host; rootless Docker
     maps `host-gateway` to the bridge, so there the slirp4netns host address 10.0.2.2 is needed.
 
@@ -220,7 +227,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
             "environment": {
                 "MESOCOSM_UPSTREAM": f"http://{vllm_host}:{vllm_port}",
                 "MESOCOSM_LOG_DIR": f"/runs/{run_label}",
-                "MESOCOSM_RETURN_TOKEN_IDS": "1" if manifest.observe.activations else "0",
+                "MESOCOSM_RETURN_TOKEN_IDS": "1" if manifest.observe.activations or require_rollout_binding else "0",
+                "MESOCOSM_REQUIRE_ROLLOUT_BINDING": "1" if require_rollout_binding else "0",
                 "MESOCOSM_GATEWAY_HOST": "0.0.0.0",
                 "MESOCOSM_CONTROL_KEY": manifest.gateway.api_key,
                 "MESOCOSM_AGENT_KEYS": json.dumps(agent_keys(manifest, run_label)),
@@ -247,6 +255,9 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
         },
     }
     if services_on:
+        exposure = manifest.conditions.get("exposure") or {}
+        if not isinstance(exposure, dict):
+            raise ValueError("conditions.exposure must be a mapping")
         volumes = [f"{runs}:/runs"]
         if manifest.services.wiki.docs:
             volumes.append(f"{(manifest_dir / manifest.services.wiki.docs).resolve()}:/data/wiki:ro")
@@ -266,7 +277,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_GIT_REPOS": ",".join(manifest.services.git),
                 "MESOCOSM_PROTECTED_REPOS": ",".join(manifest.services.protected_repos),
                 "MESOCOSM_MCP": "1" if manifest.services.mcp else "0",
-                "MESOCOSM_WIKI_VISIBILITY": json.dumps((manifest.conditions.get("exposure") or {}).get("wiki", {})),
+                "MESOCOSM_WIKI_VISIBILITY": json.dumps(exposure.get("wiki", {})),
                 "MESOCOSM_ACCOUNTS": json.dumps([a.model_dump() for a in manifest.services.accounts]),
                 "MESOCOSM_CHAT": json.dumps(manifest.services.chat.model_dump()
                                             if manifest.services.chat.enabled else None),
@@ -316,6 +327,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
         files = files_root / agent.id
         mounts = [f"{files}/opencode.json:/root/.config/opencode/opencode.json:ro",
                   f"{files}/gitconfig:/root/.gitconfig:ro"]
+        if manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "pre_action":
+            mounts.append(f"{files}/plugins/approval-gate.js:/root/.config/opencode/plugins/approval-gate.js:ro")
         if agent.persona and agent.persona.brief:
             mounts.append(f"{files}/AGENTS.md:/root/.config/opencode/AGENTS.md:ro")
         if agent.skills:

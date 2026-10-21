@@ -549,8 +549,8 @@ class Observer:
             if parent_id:
                 node.parent_id = parent_id
                 parent = self._session(parent_id, ts)
-                if sid not in parent.children:
-                    parent.children.append(sid)
+                if node.session_id not in parent.children:
+                    parent.children.append(node.session_id)
                 node.agent_id = node.agent_id or parent.agent_id
                 agent = self.agents.get(node.agent_id or "")
                 if agent and sid in agent.root_sessions:      # seen before its parent was known

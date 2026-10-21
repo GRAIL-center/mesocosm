@@ -221,7 +221,7 @@ def _outcome_metric(trials: list[dict[str, Any]], key: str, reward_key: str) -> 
 def _monitor_metric(trials: list[dict[str, Any]]) -> dict[str, Any]:
     enabled = [t for t in trials if t.get("monitor_enabled")]
     observed = [t["monitor"] for t in enabled if isinstance(t.get("monitor"), dict)]
-    keys = ("scored", "flagged", "calls", "unknown", "skipped", "truncated", "windows")
+    keys = ("scored", "flagged", "calls", "unknown", "skipped", "truncated", "windows", "allowed", "blocked")
     return {"enabled_trials": len(enabled), "disabled_trials": len(trials) - len(enabled),
             "observed_trials": len(observed), "missing_trials": len(enabled) - len(observed),
             "metrics": {key: _numbers([t["monitor"].get(key) if isinstance(t.get("monitor"), dict) else None

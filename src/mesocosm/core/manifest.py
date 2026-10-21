@@ -172,7 +172,10 @@ class MonitorSpec(ManifestModel):
     enabled: bool = False
     scope: Literal["per_agent", "joint"] = "per_agent"
     visibility: Literal["transcript", "actions"] = "transcript"
-    timing: Literal["posthoc"] = "posthoc"
+    timing: Literal["posthoc", "pre_action"] = "posthoc"
+    decision_timeout_seconds: float = Field(default=30, gt=0, le=600)
+    poll_seconds: float = Field(default=0.1, gt=0, le=10)
+    on_flag: Literal["deny", "terminate"] = "deny"
     include_shared: bool = False
     rubric: str | None = Field(default=None, min_length=1)
     rubric_version: str = Field(default="generic-v1", min_length=1)
@@ -685,6 +688,13 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
                             "recomputed (ADR-0029)")
     monitor = manifest.judge.monitor
     if monitor.enabled:
+        if monitor.timing == "posthoc" and (
+                monitor.on_flag != "deny" or monitor.decision_timeout_seconds != 30 or monitor.poll_seconds != 0.1):
+            errors.append("live intervention settings require judge.monitor.timing=pre_action")
+        if monitor.timing == "pre_action" and (
+                monitor.scope != "per_agent" or monitor.include_shared or monitor.side_task_aware):
+            errors.append("pre_action monitoring requires per_agent scope, include_shared=false and "
+                          "side_task_aware=false")
         if monitor.model is None:
             errors.append("judge.monitor needs a model from the catalog (judge.monitor.model)")
         elif monitor.model not in ids:

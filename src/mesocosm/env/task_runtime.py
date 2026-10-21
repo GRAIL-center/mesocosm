@@ -55,9 +55,16 @@ def environment_key(task: HarborTask, opencode_version: str) -> str:
 
 
 def harness_dockerfile(base: str, version: str, user: str) -> str:
-    """A Debian/Ubuntu native image with the published harness, retaining its final user and cwd."""
+    """The published harness and plugin SDK, retaining the native user, cwd and config environment.
+
+    OpenCode 1.19.3 waits for SDK installation when loading a local plugin. Prepare its official
+    package/lock/node_modules in both custom and global config directories before network isolation.
+    """
+    account = shlex.quote((user or "root").split(":", 1)[0])
     return ("FROM node:22-bookworm-slim AS coding_harness\n"
             f"RUN npm install -g --prefix /opt/coding-harness {shlex.quote('opencode-ai@' + version)}\n"
+            "RUN npm install --prefix /opt/harness-config --ignore-scripts --no-audit --no-fund "
+            f"--save-exact {shlex.quote('@opencode-ai/plugin@' + version)}\n"
             f"FROM {base}\nUSER root\n"
             "RUN command -v apt-get >/dev/null || "
             "{ echo 'Native harness currently requires Debian/Ubuntu' >&2; exit 1; }; "
@@ -65,6 +72,14 @@ def harness_dockerfile(base: str, version: str, user: str) -> str:
             "&& rm -rf /var/lib/apt/lists/*\n"
             "COPY --from=coding_harness /usr/local/bin/node /usr/local/bin/node\n"
             "COPY --from=coding_harness /opt/coding-harness /opt/coding-harness\n"
+            "COPY --from=coding_harness /opt/harness-config /etc/opencode\n"
+            "RUN config_dir=\"${XDG_CONFIG_HOME:-${HOME}/.config}/opencode\" "
+            "&& if [ \"$config_dir\" != /etc/opencode ]; then "
+            "mkdir -p \"$config_dir\" && cp -a /etc/opencode/. \"$config_dir/\"; fi "
+            f"&& task_home=\"$(getent passwd {account} | cut -d: -f6)\" "
+            "&& if [ -n \"$task_home\" ] && [ -z \"${XDG_CONFIG_HOME:-}\" ]; then "
+            "mkdir -p \"$task_home/.config/opencode\" "
+            "&& cp -a /etc/opencode/. \"$task_home/.config/opencode/\"; fi\n"
             "RUN ln -sf /opt/coding-harness/bin/opencode /usr/local/bin/opencode "
             "&& test -x /usr/local/bin/opencode && /usr/local/bin/opencode --version\n"
             f"USER {user or 'root'}\n")

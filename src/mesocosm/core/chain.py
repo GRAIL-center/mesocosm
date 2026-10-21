@@ -56,7 +56,7 @@ def load_plan(path: str | pathlib.Path) -> ChainPlan:
 
 def expand(plan: ChainPlan, plan_path: pathlib.Path) -> list[dict[str, Any]]:
     """One entry per run, numbered from 1, manifests resolved relative to the plan file."""
-    entries = []
+    entries: list[dict[str, Any]] = []
     for item in plan.runs:
         manifest = (plan_path.parent / item.manifest).resolve()
         for _ in range(item.repeat):

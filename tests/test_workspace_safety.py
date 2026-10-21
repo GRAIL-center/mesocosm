@@ -38,3 +38,11 @@ def test_raw_log_regular_append_remains_readable(tmp_path):
     log.append(part)
     assert log.path.read_text().count("\n") == 1
     assert log.stats("task")["entries"] == 1
+
+
+@pytest.mark.parametrize("call_id", [None, "", 3])
+def test_raw_log_ignores_unidentifiable_tool_calls(tmp_path, call_id):
+    log = RawLog(tmp_path)
+    log.append({"type": "tool", "callID": call_id, "state": {"status": "completed"}})
+    assert not log.path.exists()
+    assert log.seen == set()

@@ -19,10 +19,11 @@ class DockerWorldState:
         proc = await asyncio.create_subprocess_exec("docker", "compose", "-f", self.compose_file, *args,
                                                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
         out, _ = await proc.communicate()
+        returncode = await proc.wait()
         text = out.decode("utf-8", "replace")
-        if check and proc.returncode != 0:
-            raise RuntimeError(f"docker compose {' '.join(args)} failed ({proc.returncode}): {text[-1500:]}")
-        return proc.returncode, text
+        if check and returncode != 0:
+            raise RuntimeError(f"docker compose {' '.join(args)} failed ({returncode}): {text[-1500:]}")
+        return returncode, text
 
     async def export_services(self, dest: pathlib.Path) -> None:
         dest.mkdir(parents=True, exist_ok=True)

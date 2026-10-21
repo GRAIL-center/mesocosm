@@ -10,7 +10,10 @@ RUN apt-get update \
 
 # The version the Colab spike validated (issue #3).
 ARG OPENCODE_VERSION=1.19.3
-RUN npm install -g "opencode-ai@${OPENCODE_VERSION}"
+RUN npm install -g "opencode-ai@${OPENCODE_VERSION}" \
+ && npm install --prefix /root/.config/opencode --ignore-scripts --no-audit --no-fund \
+    --save-exact "@opencode-ai/plugin@${OPENCODE_VERSION}"
+# Local plugins wait for the SDK dependency tree; install it before sandbox egress is closed.
 
 # The package index inside the sandbox (mesocosm.env.services); pip never sees the internet.
 ENV PIP_INDEX_URL=http://pypi/simple PIP_TRUSTED_HOST=pypi PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_BREAK_SYSTEM_PACKAGES=1

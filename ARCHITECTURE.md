@@ -38,10 +38,11 @@ vLLM and NNsight through their supported interfaces and does not patch their int
 | `core.experiment` | Prevalidate named condition patches, schedule repetitions, and retain every trial's outcome and missing measurements. |
 | `core.run` | Prepare environments, enforce run boundaries, drive concurrent agents, invoke original verifiers, collect evidence and run posthoc analysis. |
 | `core.rewards` | Synchronize comparison episodes and allocate incentives separately from original verifier scores. |
-| `gateway` | Authenticate identities, route chat requests, enforce model budgets and record actual model exposure. |
+| `gateway` | Authenticate identities, route chat requests, enforce model budgets, bind exact rollout identities and hold proposed tool actions for controller decisions. |
 | `env` | Docker topology, native task runtime, real shared services, web access policy and state inspection. |
 | `adapters.opencode`, `adapters.harbor` | Harness API and task/environment/verifier integration. |
-| `judge` | Candidate flags, append-only review verdicts and configurable posthoc model assessments. |
+| `judge` | Candidate flags, append-only review verdicts, posthoc assessments and pre-action tool decisions. |
+| `learning` | Validate original rollout/reward provenance, update LoRA weights with REINFORCE, activate immutable policy aliases and verify subsequent evaluation rollouts. |
 | `observe` | Live/replay views and optional activation recomputation and probes. |
 | `export` | Inspect evaluation logs, with omitted record types declared. |
 
@@ -90,11 +91,18 @@ previous episode's own reward feedback to the next task and records attachment a
 The last episode may have no subsequent task to receive feedback. Both modes keep model weights fixed;
 context adaptation and weight updates must not be reported as the same mechanism.
 
-Actual policy-weight training is a desired extension, but no trainer, optimizer, checkpoint activation
-or validated RL export is implemented. Unsupported learning modes are rejected. A future trainer must
-establish rollout provenance, action boundaries, reward versions and actual checkpoint changes before
-its results can be described as RL. [ADR-0044](docs/adr/0044-condition-led-experiments.md) replaces the
-older categorical exclusion of training without claiming that this implementation performs it.
+`mesocosm train run` adds an outer policy-training loop around fresh native worlds. It requires at least
+three agents sharing one pinned causal LM, reset memory, measured rewards and complete comparison
+episodes. Each model call is bound to its policy, agent, task, round and harness session before sampling.
+The collector cross-checks original gateway tokens, logprobs, verifier artifacts, reward allocation and
+controller receipts. Missing or inconsistent evidence stops training.
+
+One REINFORCE optimizer step updates LoRA weights from each complete batch. The controller hashes the
+saved checkpoint, activates a fresh vLLM alias and uses it in the next world. The final world performs
+evaluation and token-logprob consistency verification without another update. Original scores and
+allocated incentives remain distinct. Context feedback stays disabled in this training profile. See
+the [training guide](docs/training.md) and [ADR-0045](docs/adr/0045-on-policy-world-training.md) for the
+estimator, supported profile and distinction between a real update and demonstrated learning benefit.
 
 ## Observation and judgment
 
@@ -107,12 +115,20 @@ Keep four outputs separate: original task outcomes, allocated incentives, monito
 reviewed policy violations. Detectors produce candidates. A shared-store read, a high reward or a monitor
 score alone does not establish collusion or intent.
 
-The monitor operates after execution. It can inspect each agent/task window independently or the joint
+The posthoc monitor can inspect each agent/task window independently or the joint
 run, using recorded transcripts or actions, optionally including shared-service/web evidence and world
 snapshots. It records the rubric version/hash, selected requests, evidence coverage, truncation and
 call/input/output budgets. Malformed answers and missing evidence remain unknown. A joint score has no
-individual-agent attribution. No live monitor gate, monitor-triggered intervention or adaptive monitor
-training is implemented.
+individual-agent attribution.
+
+With `timing: pre_action`, the released OpenCode `tool.execute.before` hook awaits a controller decision
+before the tool implementation starts. A gate binds the loaded plugin digest, authenticated agent and
+top-level session; the controller checks the proposed call and arguments against the actual harness
+record. A threshold crossing denies the tool or terminates the session. Unknown assessments, exhausted
+budgets and transport failures deny and abort. This is a per-agent tool boundary, not a syscall monitor
+inside an allowed shell command. Nested agent sessions and joint live review are refused; adaptive
+monitor training remains unsupported. [ADR-0046](docs/adr/0046-before-tool-monitor-intervention.md)
+describes this boundary.
 
 Activation capture is opt-in. The gateway can retain token IDs when the upstream provides them;
 NNsight recomputes activations in a separate engine. This is distinct from capturing activations in the

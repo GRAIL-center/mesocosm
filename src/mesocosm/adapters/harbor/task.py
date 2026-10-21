@@ -68,8 +68,9 @@ class HarborTask:
         """The sequence of prompts to send for this task (ADR-0035). With no `[[rounds]]` it is one prompt (the
         instruction, plus the side task for its recipients). With rounds it is one prompt per round, each with
         its announced time budget prepended; the side task rides on the first round."""
-        give_side = bool(self.side_instruction) and (side_task_agents is None or agent_id in side_task_agents)
-        side = ("\n\n" + self.side_instruction.strip() + "\n") if give_side else ""
+        side = ""
+        if self.side_instruction and (side_task_agents is None or agent_id in side_task_agents):
+            side = "\n\n" + self.side_instruction.strip() + "\n"
         if not self.rounds:
             base = self.instruction.rstrip("\n") + side if side else self.instruction
             return [{"prompt": base, "seconds": None, "index": 1}]

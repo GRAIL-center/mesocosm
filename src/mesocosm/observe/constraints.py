@@ -38,13 +38,13 @@ class ConstraintFacts:
     clock_anchor: float | None = None                                          # the run start the world counts from
     first_ts: float | None = None
     active: dict[str, list[float]] = field(default_factory=dict)               # agent -> [first session, last activity]
-    memory: dict[str, Counter] = field(default_factory=lambda: defaultdict(Counter))   # agent -> result -> n
+    memory: dict[str, Counter[str]] = field(default_factory=lambda: defaultdict(Counter))   # agent -> result -> n
     aborted: str | None = None
     chat_sent: Counter = field(default_factory=Counter)                         # (agent, epoch) -> messages
     chat_rejected: Counter = field(default_factory=Counter)                     # (agent, reason) -> n
     chat_epoch: str | None = None
-    ledger_sent: Counter = field(default_factory=Counter)                       # agent -> amount
-    ledger_received: Counter = field(default_factory=Counter)
+    ledger_sent: dict[str, float] = field(default_factory=lambda: defaultdict(float))   # agent -> amount
+    ledger_received: dict[str, float] = field(default_factory=lambda: defaultdict(float))
     ledger_transfers: int = 0
     ledger_refused: Counter = field(default_factory=Counter)                    # agent -> n
     channel_use: Counter = field(default_factory=Counter)                       # (agent, channel) -> requests
@@ -407,7 +407,7 @@ def _ledger(services: dict[str, Any], facts: ConstraintFacts, ids: list[str]) ->
 
 def _memory(spec: dict[str, Any], facts: ConstraintFacts, ids: list[str]) -> dict[str, Any]:
     mode = spec.get("memory", "reset")
-    results = Counter()
+    results: Counter[str] = Counter()
     for a in ids:
         results.update(facts.memory.get(a, Counter()))
     state = "breach" if results.get("failed") else "ok" if results else "pending"
@@ -416,7 +416,7 @@ def _memory(spec: dict[str, Any], facts: ConstraintFacts, ids: list[str]) -> dic
     return _item("memory", "conditions", "basket" if mode == "reset" else "basket_full", "Memory", state, mode, note,
                  rows=[["policy", policy],
                        ["receipts", ", ".join(f"{k} {v}" for k, v in results.items()) or "none yet"]],
-                 agents=[{"agent_id": a, "state": "breach" if facts.memory.get(a, {}).get("failed") else
+                 agents=[{"agent_id": a, "state": "breach" if facts.memory.get(a, Counter()).get("failed") else
                           "ok" if facts.memory.get(a) else "pending",
                           "value": f"{sum(facts.memory.get(a, Counter()).values())} task boundaries"} for a in ids])
 
@@ -499,7 +499,7 @@ def _models(spec: dict[str, Any], ids: list[str]) -> dict[str, Any]:
     default = spec.get("model") or {}
     catalog = {m.get("id"): m for m in [default, *(spec.get("models") or [])] if m.get("id")}
     of = {a.get("id"): a.get("model") or default.get("id") for a in spec.get("agents") or []}
-    used = sorted({of.get(a) for a in ids if of.get(a)})
+    used = sorted({model for a in ids if isinstance(model := of.get(a), str) and model})
     value = used[0] if len(used) == 1 else f"{len(used)} models"
     kinds = {catalog.get(m, {}).get("kind", "vllm") for m in used}
     return _item("models", "conditions", "sapling", "Models", "info", value or "?",

@@ -34,6 +34,13 @@ dev = [
   "mypy>=1.11",
   "numpy>=1.26",
   "safetensors>=0.4",
+  "types-pyyaml>=6.0",
+]
+learning = [
+    "peft>=0.21.2",
+    "safetensors>=0.4",
+    "torch>=2.13",
+    "transformers>=5.17",
 ]
 
 [project.scripts]

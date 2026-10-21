@@ -242,3 +242,25 @@ async def test_cancelling_docker_work_kills_and_reaps_the_cli(tmp_path, monkeypa
     with pytest.raises(asyncio.CancelledError):
         await running
     assert process.killed and process.waited
+
+
+@pytest.mark.parametrize("version,user,account", [("1.19.3", "root", "root"), ("1.19.3", "1000:1000", "1000")])
+def test_native_harness_preinstalls_matching_sdk_in_custom_and_native_global_config(version, user, account):
+    dockerfile = harness_dockerfile("native-task", version, user)
+    assert f"--save-exact @opencode-ai/plugin@{version}" in dockerfile
+    assert "--ignore-scripts --no-audit --no-fund" in dockerfile
+    assert "COPY --from=coding_harness /opt/harness-config /etc/opencode" in dockerfile
+    assert f"getent passwd {account}" in dockerfile
+    assert '${XDG_CONFIG_HOME:-${HOME}/.config}/opencode' in dockerfile
+    assert '$task_home/.config/opencode' in dockerfile
+    assert "ENV XDG_CONFIG_HOME" not in dockerfile, "the native application's config environment survives"
+    assert dockerfile.endswith(f"USER {user}\n")
+    assert dockerfile.index("npm install --prefix /opt/harness-config") < dockerfile.index("FROM native-task")
+
+
+def test_bootstrap_harness_sdk_is_pinned_to_the_same_version():
+    dockerfile = (pathlib.Path(__file__).resolve().parents[1] / "spike/docker/Dockerfile.agent").read_text()
+    assert 'opencode-ai@${OPENCODE_VERSION}' in dockerfile
+    assert 'npm install --prefix /root/.config/opencode' in dockerfile
+    assert '@opencode-ai/plugin@${OPENCODE_VERSION}' in dockerfile
+    assert '--save-exact' in dockerfile and '--ignore-scripts' in dockerfile
