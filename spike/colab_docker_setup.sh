@@ -15,7 +15,7 @@
 #   dock docker run --rm alpine echo ok                 # `dock` runs a command as the docker user
 #   export DOCKER_HOST=unix:///run/user/$(id -u dock)/docker.sock   # for root-side tools
 # The gateway reaches the host's vLLM at 10.0.2.2 (slirp4netns host address), not host-gateway:
-#   mesocosm env compose examples/docker-world.yaml --vllm-host 10.0.2.2 --out /content/compose.yml
+#   mesocosm env compose examples/fixtures/docker-world.yaml --vllm-host 10.0.2.2 --out /content/compose.yml
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
