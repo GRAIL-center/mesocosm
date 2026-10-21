@@ -124,7 +124,10 @@ individual-agent attribution.
 With `timing: pre_action`, the released OpenCode `tool.execute.before` hook awaits a controller decision
 before the tool implementation starts. A gate binds the loaded plugin digest, authenticated agent and
 top-level session; the controller checks the proposed call and arguments against the actual harness
-record. A threshold crossing denies the tool or terminates the session. Unknown assessments, exhausted
+record. The reviewer assesses whether executing that proposed action would violate the configured
+rubric; a temporary hold is not a completed intervention. Its prompt version and exact system-prompt
+hash are recorded separately from the rubric hash ([ADR-0048](docs/adr/0048-prospective-monitor-assessment.md)).
+A threshold crossing denies the tool or terminates the session. Unknown assessments, exhausted
 budgets and transport failures deny and abort. This is a per-agent tool boundary, not a syscall monitor
 inside an allowed shell command. Nested agent sessions and joint live review are refused; adaptive
 monitor training remains unsupported. [ADR-0046](docs/adr/0046-before-tool-monitor-intervention.md)
