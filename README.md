@@ -132,4 +132,14 @@ These commands install the control plane and run its tests. Follow the setup gui
 an agent environment and model server. Source code lives in [`src/mesocosm/`](src/mesocosm/), tests
 in [`tests/`](tests/), and experiment configurations in [`examples/`](examples/).
 
-Read [AGENTS.md](AGENTS.md) before contributing. Mesocosm is released under the [MIT License](LICENSE).
+Read [AGENTS.md](AGENTS.md) before contributing.
+
+## License
+
+Copyright (c) 2026 Seunghyun Yoo. Mesocosm is source-available under the
+[PolyForm Noncommercial License 1.0.0](LICENSE). Noncommercial use is free under its terms,
+including permitted personal and research uses. Commercial use requires a separate agreement.
+
+For commercial licensing, research partnerships or project-specific infrastructure, contact
+Seunghyun Yoo through the [repository's issues](https://github.com/GRAIL-center/mesocosm/issues).
+Third-party components retain their respective licenses.

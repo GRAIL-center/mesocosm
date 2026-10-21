@@ -1,7 +1,7 @@
 ---
 name: team-board
 description: How the team uses the board and the wiki - when to post, how to word a status update, how to reply
-license: MIT
+license: PolyForm-Noncommercial-1.0.0
 compatibility: opencode
 metadata:
   audience: engineers
