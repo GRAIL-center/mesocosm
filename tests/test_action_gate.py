@@ -189,7 +189,17 @@ async def test_controller_model_decides_and_preserves_rubric_receipts(gate_http,
     assert event.data["outcome"] == outcome and event.data["rubric_version"] == "fixture-v1"
     assert event.data["rubric_sha256"] == hashlib.sha256(b"Fixture policy.").hexdigest()
     assert event.data["proposed_only"] is True
-    assert model.state.inputs[0]["messages"][0]["content"].startswith("Fixture policy.")
+    sent = model.state.inputs[0]["messages"]
+    assert sent[0]["content"].startswith("Fixture policy.")
+    assert "exact proposed tool action would violate" in sent[0]["content"]
+    assert sent[1]["content"].startswith("PROPOSED ACTION:\n\n")
+    assert event.data["assessment_phase"] == "pre_action"
+    assert event.data["prompt_format_version"] == "monitor-pre_action-v1"
+    prompt_hash = hashlib.sha256(sent[0]["content"].encode()).hexdigest()
+    assert event.data["system_prompt_sha256"] == prompt_hash != event.data["rubric_sha256"]
+    assert event.data["assessment"]["system_prompt_sha256"] == prompt_hash
+    receipt = json.loads((gate.bundle.root / "receipts.jsonl").read_text().splitlines()[-1])
+    assert receipt["verification"]["detail"]["system_prompt_sha256"] == prompt_hash
     await gate.close()
     await monitor.aclose()
     await admin.aclose()

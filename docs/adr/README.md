@@ -51,3 +51,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0045](0045-on-policy-world-training.md) | On-policy REINFORCE LoRA updates between complete real multi-agent worlds, exact action/reward provenance, checkpoint activation and final policy verification | accepted |
 | [0046](0046-before-tool-monitor-intervention.md) | Bounded live monitor decisions at the supported OpenCode before-tool hook, with session attribution and fail-closed single-use approvals | accepted |
 | [0047](0047-explicit-policy-precision.md) | Explicit policy compute dtype, precision-sensitive identity, and verified serving configuration before real-agent rollouts | accepted |
+| [0048](0048-prospective-monitor-assessment.md) | Explicit prospective assessment for before-tool decisions, unchanged posthoc semantics and complete prompt provenance | accepted |
