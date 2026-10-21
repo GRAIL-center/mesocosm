@@ -3,8 +3,9 @@
 The README uses three visuals, each with light and dark versions selected through `<picture>` and
 `prefers-color-scheme`: the project banner, the current system overview and an actual observer replay.
 The banner and system overview are rendered at 2× resolution from the editable HTML sources below.
-The overview distinguishes model requests, proposed tool actions, original verification and optional
-policy updates between worlds. It is a conceptual system diagram, not an execution trace.
+The overview distinguishes model requests, proposed tool actions, original verification, reward
+allocation from verifier or peer inputs, and optional policy updates between worlds. It is a conceptual
+system diagram, not an execution trace.
 
 | File | What it is | Made from |
 |---|---|---|

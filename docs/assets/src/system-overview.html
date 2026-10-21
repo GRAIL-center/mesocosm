@@ -81,13 +81,14 @@
     .wires .model { stroke: var(--info); }
     .wires .tool { stroke: var(--tool); }
     .wires .evidence { stroke: var(--muted); stroke-dasharray: 4 5; }
+    .wires .allocation { fill: var(--panel); stroke: var(--line2); stroke-width: 1; }
     .wires text { fill: var(--muted); font: 14px var(--text); text-anchor: middle; }
     .wires .model-label { fill: var(--info); }
     .wires .tool-label { fill: var(--tool); }
   </style>
 </head>
 <body>
-  <main id="figure" aria-label="Mesocosm connects independent agents to model serving and native task environments. Optional live monitoring gates tools; original verifiers measure outcomes; optional training updates the next world's policy.">
+  <main id="figure" aria-label="Mesocosm connects independent agents to model serving and native task environments. Optional live monitoring gates tools. Original verifier outcomes stay independent; verifier or peer rewards are allocated before optional training updates the next world's policy.">
     <header class="intro">
       <div class="eyebrow">MESOCOSM / SYSTEM OVERVIEW</div>
       <h1>Set the conditions. Let the agents act.</h1>
@@ -119,9 +120,13 @@
       <text x="453" y="476">Action records</text>
       <path class="evidence" d="M924 508 V570" marker-end="url(#arrow)"></path>
       <text x="991" y="540">File snapshot</text>
-      <path class="evidence" d="M768 624 H650" marker-end="url(#arrow)"></path>
-      <text x="709" y="601">Measured</text>
-      <text x="709" y="617">returns</text>
+      <text x="709" y="540">or peer verdicts</text>
+      <path class="evidence" d="M709 549 V596" marker-end="url(#arrow)"></path>
+      <path class="evidence" d="M768 624 H755" marker-end="url(#arrow)"></path>
+      <rect class="allocation" x="663" y="596" width="92" height="56" rx="8"></rect>
+      <text x="709" y="619">Reward</text>
+      <text x="709" y="638">allocation</text>
+      <path class="evidence" d="M663 624 H650" marker-end="url(#arrow)"></path>
     </svg>
 
     <section class="node gateway">
