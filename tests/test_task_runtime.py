@@ -405,6 +405,7 @@ async def test_real_compose_main_and_sidecars_keep_native_settings_and_protected
     assert main["working_dir"] == "/app/native-project"
     assert main["environment"]["DATABASE_URL"] == "postgres://db:5432/application"
     assert main["environment"]["OPENCODE_SERVER_PASSWORD"] == "secret-agent-1"
+    assert json.loads(main["environment"]["OPENCODE_CONFIG_CONTENT"]) == {"compaction": {"auto": False, "prune": False}}
     assert "OPENCODE_SERVER_PASSWORD" not in rendered["services"][db].get("environment", {})
     assert main["depends_on"][db] == {"condition": "service_healthy"}
     assert "localhost:9000/health" in main["healthcheck"]["test"][1]
@@ -545,7 +546,7 @@ async def test_memory_carry_retains_sidecars_and_resumes_only_at_next_prepare(tm
     assert not runtime.containers and not runtime.volumes
 
 
-@pytest.mark.parametrize("key", ["OPENCODE_SERVER_PASSWORD", "OPENCODE_CONFIG_DIR", "MESOCOSM_CONTROL_KEY"])
+@pytest.mark.parametrize("key", ["OPENCODE_SERVER_PASSWORD", "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT", "MESOCOSM_CONTROL_KEY"])
 async def test_native_task_cannot_override_controller_authentication(tmp_path, key):
     runtime = DockerCommands(tmp_path)
     native = compose_task(tmp_path)

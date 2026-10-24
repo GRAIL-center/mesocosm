@@ -48,6 +48,12 @@ class GatewayAdmin:
         r.raise_for_status()
         return r.json()
 
+    async def terminal_refusal(self, run: str, agent_id: str, *, after: int = 0) -> dict[str, Any]:
+        """Small authenticated denial receipt; reaching a quota without a rejected call is not terminal."""
+        r = await self.client.get("/admin/terminal-refusal", params={"run": run, "agent_id": agent_id, "after": after})
+        r.raise_for_status()
+        return r.json()
+
     async def bind_rollout(self, agent_id: str, run: str, episode_id: str, task: str, round: int,
                            session_id: str, policy: PolicyIdentity, run_id: str | None = None) -> Receipt:
         return await self._control("rollout/bind", agent_id=agent_id, run=run, episode_id=episode_id,

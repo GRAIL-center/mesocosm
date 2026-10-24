@@ -1,6 +1,7 @@
 """Collector provenance rejection with explicit unit fixtures and real gateway recording code."""
 
 import asyncio
+import copy
 import json
 
 import httpx
@@ -148,6 +149,55 @@ async def test_collector_accepts_complete_horizon_limited_sampling_without_fabri
     alter_completion(bundle, lambda record: record["response"].update(finish_reason="length"))
     batch = collect_rollouts(bundle, policy(), "episode-1")
     assert batch.trajectories[0].requests[0].token_ids == [3, 4]
+
+
+async def test_collector_accepts_legacy_complete_records_without_admission_journal(tmp_path):
+    bundle = await complete_bundle(tmp_path)
+    rewrite(bundle.root / "native/gateway/records.jsonl",
+            lambda records: records.__setitem__(slice(None), [record for record in records
+                                                               if record["event"] != "request_admitted"]))
+    assert len(collect_rollouts(bundle, policy(), "episode-1").trajectories) == 3
+
+
+@pytest.mark.parametrize("mutation", ["unsettled", "missing", "duplicate", "unknown", "terminal_refusal",
+                                     "agent", "run", "binding", "identity", "late", "sticky_unknown"])
+async def test_collector_requires_complete_admissions_bound_to_the_exact_source_request(tmp_path, mutation):
+    bundle = await complete_bundle(tmp_path)
+
+    def change(records):
+        index = next(index for index, record in enumerate(records) if record["event"] == "request_admitted")
+        admission = records[index]
+        if mutation == "unsettled":
+            extra = copy.deepcopy(admission)
+            extra["request_id"] = "interrupted-extra-request"
+            records.insert(index, extra)
+        elif mutation == "missing":
+            records.pop(index)
+        elif mutation == "duplicate":
+            records.insert(index, copy.deepcopy(admission))
+        elif mutation in {"unknown", "terminal_refusal"}:
+            extra = copy.deepcopy(admission)
+            extra["event"] = "request_usage_unknown" if mutation == "unknown" else "terminal_refusal"
+            records.insert(index + 1, extra)
+        elif mutation == "agent":
+            admission["agent"] = "agent-2" if admission["agent"] != "agent-2" else "agent-1"
+        elif mutation == "run":
+            admission["run"] = "another-run"
+        elif mutation == "binding":
+            admission["rollout"]["session_id"] = "another-session"
+        elif mutation == "identity":
+            admission["identified_by"] = "header"
+        elif mutation == "sticky_unknown":
+            admission["missing_usage"] = True
+        else:
+            records.pop(index)
+            completion = next(index for index, record in enumerate(records)
+                              if record["event"] == "chat_completion" and record["request_id"] == admission["request_id"])
+            records.insert(completion + 1, admission)
+
+    rewrite(bundle.root / "native/gateway/records.jsonl", change)
+    with pytest.raises(ValueError, match="invalid rollout"):
+        collect_rollouts(bundle, policy(), "episode-1")
 
 
 async def test_peer_reward_requires_exact_native_verdict_sources(tmp_path):

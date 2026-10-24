@@ -350,11 +350,20 @@ class Observer:
             return
         self._tick(ts)
         event = rec.get("event")
-        if event == "receipt":
+        if event in {"receipt", "request_admitted", "request_usage_unknown",
+                     "resource_admitted", "resource_released", "resource_close_unknown"}:
+            # Accounting/control records share a request ID with its eventual outcome.
+            # They remain in native evidence, but must not claim the request dedup slot
+            # or appear as completed model calls in the live request projection.
             return
         agent_id = rec.get("agent") or "unknown"
         if self.known_agents and agent_id not in self.known_agents:
             self.ignored_records += 1          # e.g. a curl smoke test sharing the gateway log
+            return
+        if event == "terminal_refusal":
+            # Some quota denials have no budget_exhausted companion. Surface the
+            # confirmed block without consuming a model request's dedup slot.
+            self._agent(agent_id).blocked = rec.get("dimension") or "budget"
             return
         rid = rec.get("request_id")
         if rid and rid in self._seen_requests:

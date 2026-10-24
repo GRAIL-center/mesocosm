@@ -30,6 +30,7 @@ from typing import Any, Protocol, TypeVar
 
 from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task, resolve_dataset_tasks
 from mesocosm.adapters.opencode.client import normalize_event
+from mesocosm.adapters.opencode.trajectory import TaskTurn, send_turn
 from mesocosm.core.control import stop_requested
 from mesocosm.core.legacy_peer_review import EpisodeSync  # legacy import compatibility
 from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, TaskSpec, WorldManifest
@@ -50,7 +51,7 @@ from mesocosm.env.egress import EgressResult
 from mesocosm.env.services.client import ServicesAdmin
 from mesocosm.gateway.client import GatewayAdmin
 from mesocosm.judge.flags import detect, flag_counts
-from mesocosm.judge.intervention import InterventionGate, InterventionState
+from mesocosm.judge.intervention import InterventionError, InterventionGate, InterventionState
 from mesocosm.learning.controller import RolloutContext
 
 
@@ -68,6 +69,8 @@ EVENT_GRACE_SECONDS = 0.5  # time the event collector gets to drain after the ta
 RECORD_SLACK_SECONDS = 5.0  # clock skew allowed between the control plane and the gateway/services hosts
 ABORT_TIMEOUT_SECONDS = 10.0
 FAILURE_SNAPSHOT_SECONDS = 10.0
+BUDGET_POLL_SECONDS = 0.5
+BUDGET_CONTROL_TIMEOUT_SECONDS = 5.0
 T = TypeVar("T")
 
 
@@ -77,6 +80,14 @@ class RoundDeadlineExceeded(RuntimeError):
 
 class VerificationFailed(RuntimeError):
     """The verifier did not produce a valid measurement."""
+
+
+class HarnessTurnIncomplete(RuntimeError):
+    """A returned harness turn lacks a successful terminal assistant message."""
+
+
+class BudgetRejected(RuntimeError):
+    """The gateway refused an actual request against a terminal resource limit."""
 
 
 class Verifier(Protocol):
@@ -195,6 +206,102 @@ def _parts_summary(reply: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _require_complete_turn(turn: TaskTurn) -> dict[str, Any]:
+    reply_info = (turn.reply or {}).get("info", {})
+    reply_time = reply_info.get("time")
+    if reply_info.get("error") is not None:
+        raise HarnessTurnIncomplete("HTTP reply contains a terminal assistant error")
+    if (reply_info.get("finish") != "stop" or not isinstance(reply_time, dict)
+            or reply_time.get("completed") is None):
+        raise HarnessTurnIncomplete("HTTP reply lacks a completed terminal stop")
+    if (reply_info.get("id") in turn.message_errors
+            or reply_info.get("id") in turn.unfinished_message_ids):
+        raise HarnessTurnIncomplete("HTTP reply conflicts with terminal history evidence")
+    latest = next((message for message in reversed(turn.messages)
+                   if message.get("info", {}).get("role") == "assistant"), None)
+    if (latest is None or latest["info"].get("finish") != "stop"
+            or latest["info"]["id"] in turn.message_errors
+            or latest["info"]["id"] in turn.unfinished_message_ids):
+        raise HarnessTurnIncomplete("latest native assistant message did not complete normally")
+    final = next((message for message in turn.messages
+                  if message.get("info", {}).get("id") == turn.final_message_id), None)
+    if final is None or turn.finish_reason != "stop":
+        raise HarnessTurnIncomplete(f"terminal assistant finish is {turn.finish_reason!r}; expected 'stop'")
+    if turn.final_message_id in turn.message_errors:
+        raise HarnessTurnIncomplete("terminal assistant returned an error")
+    if turn.final_message_id in turn.unfinished_message_ids:
+        raise HarnessTurnIncomplete("terminal assistant completion was not recorded")
+    for message in [*turn.messages, turn.reply or {}]:
+        for part in message.get("parts", []):
+            state = part.get("state")
+            if part.get("type") == "tool" and (not isinstance(state, dict)
+                                                or state.get("status") not in {"completed", "error"}):
+                raise HarnessTurnIncomplete("returned turn contains an unfinished tool call")
+    return final
+
+
+def _record_turn(bundle: RunBundle, agent_id: str, task: str, round_index: int, turn: TaskTurn) -> None:
+    path = f"{agent_id}/{task}/turn-{round_index}.json"
+    data = _json(turn.model_dump(mode="json"))
+    bundle.write_native(path, data)
+    bundle.record("harness.turn", agent_id=agent_id, task=task, round=round_index,
+                  session_id=turn.session_id, user_message_id=turn.user_message_id,
+                  final_message_id=turn.final_message_id, finish_reason=turn.finish_reason,
+                  path=f"native/{path}", sha256=hashlib.sha256(data.encode()).hexdigest(),
+                  messages=len(turn.messages), text_parts=len(turn.text_parts),
+                  message_error_ids=list(turn.message_errors), length_message_ids=turn.length_message_ids,
+                  unfinished_message_ids=turn.unfinished_message_ids)
+
+
+async def _budget_state(gateway: GatewayAdmin, run_label: str, agent_id: str, *, after: int) -> dict[str, Any]:
+    try:
+        async with asyncio.timeout(BUDGET_CONTROL_TIMEOUT_SECONDS):
+            state = await gateway.terminal_refusal(run_label, agent_id, after=after)
+    except TimeoutError as exc:
+        raise RuntimeError("terminal budget refusal control timed out") from exc
+    if (not isinstance(state, dict) or "refusal" not in state
+            or type(state.get("cursor")) is not int or state["cursor"] < after):
+        raise RuntimeError("invalid terminal budget refusal cursor")
+    refusal = state.get("refusal")
+    if refusal is not None and (not isinstance(refusal, dict) or refusal.get("run") != run_label
+                                or refusal.get("agent") != agent_id
+                                or type(refusal.get("sequence")) is not int
+                                or not after < refusal["sequence"] <= state["cursor"]
+                                or any(not isinstance(refusal.get(field), str) or not refusal[field]
+                                       for field in ("dimension", "reason", "event_id"))):
+        raise RuntimeError("invalid terminal budget refusal receipt")
+    return state
+
+
+async def _watch_turn_budget(operation: Callable[[], Coroutine[Any, Any, T]], gateway: GatewayAdmin, bundle: RunBundle,
+                             run_label: str, agent_id: str, task: str, *, after: int,
+                             on_interrupt: Callable[[], Awaitable[None]] | None = None) -> T:
+    pending = asyncio.create_task(operation())
+    termination: asyncio.Future[None] | None = None
+    try:
+        while True:
+            done, _ = await asyncio.wait([pending], timeout=BUDGET_POLL_SECONDS)
+            if done:
+                # Preserve a transport/control failure instead of replacing it with a final poll failure.
+                result = await pending
+            state = await _budget_state(gateway, run_label, agent_id, after=after)
+            if (refusal := state["refusal"]) is not None:
+                bundle.record("harness.budget_rejected", agent_id=agent_id, task=task, refusal=refusal)
+                raise BudgetRejected(f"{agent_id}/{task}: {refusal['dimension']} ({refusal['reason']})")
+            after = state["cursor"]
+            if done:
+                return result
+    except BaseException:
+        if on_interrupt is not None:
+            # RPC cancellation may itself wait for workload exit; start termination first.
+            termination = asyncio.ensure_future(on_interrupt())
+        raise
+    finally:
+        if not pending.done():
+            pending.cancel()
+        await asyncio.gather(pending, *([termination] if termination is not None else []), return_exceptions=True)
+
+
 async def _preserve_failure_gateway(manifest: WorldManifest, components: Components, bundle: RunBundle,
                                     since: float) -> list[dict[str, Any]]:
     """Bounded snapshots of available records; an aborted run never establishes complete call coverage."""
@@ -273,9 +380,13 @@ async def run_world(manifest: WorldManifest, manifest_path: pathlib.Path, compon
         except RuntimeCleanupError:
             pass  # The cleanup record preserves the failure alongside the original execution error.
         coverage = await _preserve_failure_gateway(manifest, components, bundle, started)
+        budget_rejected = isinstance(e, BudgetRejected) or (
+            isinstance(e, InterventionError) and isinstance(e.__cause__, BudgetRejected))
         status = ("cancelled" if isinstance(e, asyncio.CancelledError) else
                   "stopped" if isinstance(e, EpisodeStopped) else
                   "failed_deadline" if isinstance(e, RoundDeadlineExceeded) else
+                  "failed_budget" if budget_rejected else
+                  "failed_harness_turn" if isinstance(e, HarnessTurnIncomplete) else
                   "failed_verifier" if isinstance(e, VerificationFailed) else
                   "failed_cleanup" if isinstance(e, RuntimeCleanupError) else "failed")
         events = bundle.events()
@@ -491,10 +602,24 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
                         raise RuntimeError("gateway did not confirm the rollout binding")
                     bundle.record("rollout.bound", agent_id=agent.id, event_id=binding.enforced_at.event_id,
                                   **binding.verification.detail)
-                turn = ctx.harness.send_message(ctx.session_id, r["prompt"], provider_id=manifest.gateway.provider_id,
+                label = manifest.gateway.run_label or bundle.run_id
+                budget_state = await _budget_state(components.gateway, label, agent.id, after=0)
+                session_id = ctx.session_id
+
+                async def turn(prompt: str = r["prompt"], round_index: int = r["index"],
+                               session: str = session_id) -> TaskTurn:
+                    completed = await send_turn(ctx.harness, session, prompt,
+                                                provider_id=manifest.gateway.provider_id,
                                                 model_id=manifest.model_for(agent).id)
-                reply = await _interruptible_turn(gate.run_turn(turn) if gate is not None else turn, bundle,
-                    lambda: _terminate_workload(components, bundle, agent.id, task.name, "turn_interrupted"))
+                    _record_turn(bundle, agent.id, task.name, round_index, completed)
+                    return completed
+
+                terminate_turn = _turn_terminator(components, bundle, agent.id, task.name)
+                watched = _watch_turn_budget(turn, components.gateway, bundle, label, agent.id,
+                                             task.name, after=budget_state["cursor"], on_interrupt=terminate_turn)
+                completed = await _interruptible_turn(gate.run_turn(watched) if gate is not None else watched, bundle,
+                                                      terminate_turn)
+                reply = _require_complete_turn(completed)
         except TimeoutError as e:
             if timeout is None:
                 await _abort_turn(ctx, bundle, agent.id, task.name, "harness_timeout")
@@ -666,6 +791,21 @@ async def _terminate_workload(components: Components, bundle: RunBundle, agent_i
                   evidence=evidence, harness_abort_is_workload_termination=False)
 
 
+def _turn_terminator(components: Components, bundle: RunBundle, agent_id: str,
+                     task: str) -> Callable[[], Awaitable[None]]:
+    """Share one termination operation between nested turn cancellation boundaries."""
+    termination: asyncio.Task[None] | None = None
+
+    async def terminate() -> None:
+        nonlocal termination
+        if termination is None:
+            termination = asyncio.create_task(_terminate_workload(components, bundle, agent_id, task,
+                                                                  "turn_interrupted"))
+        await asyncio.shield(termination)
+
+    return terminate
+
+
 def _require_reward(reward: Reward, task: HarborTask, script: str) -> None:
     if reward.value is None or not math.isfinite(reward.value):
         raise VerificationFailed(f"verifier {task.name}/{script} produced no finite reward (source={reward.source})")
@@ -720,7 +860,8 @@ async def _run_agent(manifest: WorldManifest, components: Components, bundle: Ru
     ctx = AgentContext(harness=components.harness_for(agent), workspace=components.workspace_for(agent))
     try:
         for task in tasks:
-            if stop_requested(bundle.root):                 # `mesocosm stop`: finish between tasks, never mid-task
+            # Active turns also observe this marker; do not start another task.
+            if stop_requested(bundle.root):
                 bundle.record("run.stopped", agent_id=agent.id, before_task=task.name)
                 break
             rewards[f"{agent.id}/{task.name}"] = await _run_task(manifest, components, bundle, agent, task, ctx, marks,

@@ -23,7 +23,7 @@ import shutil
 import yaml
 
 from mesocosm.adapters.opencode.action_plugin import render_action_plugin
-from mesocosm.adapters.opencode.client import render_opencode_config
+from mesocosm.adapters.opencode.client import CONTEXT_CONFIG, render_opencode_config
 from mesocosm.core.manifest import AgentSpec, WorldManifest
 from mesocosm.env.web import WebPolicy, generate_ca, probe_hosts
 
@@ -356,7 +356,8 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                       "args": {"OPENCODE_VERSION": opencode_version}},
             "networks": {network_of[agent.id]: {"ipv4_address": agent_ip[agent.id]}},
             # Standard upstream auth protects the harness from other agents and task sidecars.
-            "environment": {"OPENCODE_SERVER_USERNAME": username, "OPENCODE_SERVER_PASSWORD": password},
+            "environment": {"OPENCODE_SERVER_USERNAME": username, "OPENCODE_SERVER_PASSWORD": password,
+                            "OPENCODE_CONFIG_CONTENT": CONTEXT_CONFIG},
             "volumes": [f"{workspaces / agent.id}:/work", *mounts]
             + (["shared:/shared"] if "shared_dir" in channels else []),
             "depends_on": depends,

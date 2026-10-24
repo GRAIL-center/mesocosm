@@ -45,7 +45,8 @@ def test_compose_topology_invariants():
         assert a["healthcheck"]["test"][-1].endswith("http://127.0.0.1:4096/global/health")
         assert "$${OPENCODE_SERVER_PASSWORD}" in a["healthcheck"]["test"][-1]
         assert a["environment"] == {"OPENCODE_SERVER_USERNAME": "opencode",
-                                    "OPENCODE_SERVER_PASSWORD": harness_auth(manifest, "lbl", agent_id)[1]}
+                                    "OPENCODE_SERVER_PASSWORD": harness_auth(manifest, "lbl", agent_id)[1],
+                                    "OPENCODE_CONFIG_CONTENT": '{"compaction":{"auto":false,"prune":false}}'}
         files = str(ROOT / "runs" / "lbl" / "agents" / agent_id)
         assert a["volumes"] == [f"{ROOT}/spike/workspace/{agent_id}:/work",
                                 f"{files}/opencode.json:/root/.config/opencode/opencode.json:ro",
@@ -319,7 +320,8 @@ def test_the_web_gateway_is_the_only_route_out_and_agents_carry_only_standard_pr
     plain = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     off = render_compose(plain, repo_root=ROOT, run_label="lbl")
     assert "web" not in off["services"]
-    assert set(off["services"]["agent-1"]["environment"]) == {"OPENCODE_SERVER_USERNAME", "OPENCODE_SERVER_PASSWORD"}
+    assert set(off["services"]["agent-1"]["environment"]) == {"OPENCODE_SERVER_USERNAME", "OPENCODE_SERVER_PASSWORD",
+                                                             "OPENCODE_CONFIG_CONTENT"}
     assert egress_proxy_env(plain) == {"MESOCOSM_PROXY": ""} and egress_env(plain, plain.agents[0])["MESOCOSM_PROXY"] == ""
     assert "web" not in off["services"]["agent-1"]["depends_on"]
 
@@ -345,7 +347,8 @@ def test_each_agent_gets_its_own_model_and_the_gateway_the_catalog_with_keys_pas
     assert env["BASELINE_KEY"] == "${BASELINE_KEY:?BASELINE_KEY is required by model baseline-x in the manifest}", \
         "compose interpolates the key at `up`; the file never holds it"
     for agent_id in ("agent-1", "agent-2"):
-        assert set(compose["services"][agent_id]["environment"]) == {"OPENCODE_SERVER_USERNAME", "OPENCODE_SERVER_PASSWORD"}
+        assert set(compose["services"][agent_id]["environment"]) == {"OPENCODE_SERVER_USERNAME", "OPENCODE_SERVER_PASSWORD",
+                                                                   "OPENCODE_CONFIG_CONTENT"}
     files = agent_files(manifest, "lbl")
     one, two = json.loads(files["agent-1"]["opencode.json"]), json.loads(files["agent-2"]["opencode.json"])
     assert one["model"] == f"internal/{manifest.model.id}" and two["model"] == "internal/baseline-x"

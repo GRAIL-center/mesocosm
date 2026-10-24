@@ -96,6 +96,11 @@ See [research controls](docs/research-controls.md) for relay, restart and infere
 `memory: reset` clears the managed workspace and opens a new harness session; `carry` retains both
 within the run. Neither option describes a complete reset or serialization of harness internals.
 Native carried workspaces cannot be transferred arbitrarily between incompatible task environments.
+Managed OpenCode configurations disable automatic compaction and pruning, preserving tool results
+in the working history. Context overflow ends the turn explicitly. Each round retains its complete
+native turn separately from the last HTTP reply; terminal errors and truncated endings prevent grading.
+An actual terminal model-budget refusal triggers controller abort, while the last admitted request
+can finish normally. See [ADR-0052](docs/adr/0052-harness-turn-evidence-and-termination.md).
 
 ## Outcomes, incentives and learning
 

@@ -145,8 +145,9 @@ class Hold:
 def parse_sse(raw: str) -> dict[str, Any]:
     """Collapse an OpenAI-style chat completion SSE stream into one record.
 
-    Returns content, tool_calls (arguments concatenated per index), finish_reason, usage (if the
+    Returns content, reasoning, tool_calls (arguments concatenated per index), finish_reason, usage (if the
     server sent a usage chunk), and vLLM's prompt_token_ids / token_ids when present.
+    Prefer current `reasoning` text, falling back to legacy `reasoning_content` without duplicating aliases.
     Unparseable lines are counted, not raised.
     """
     out: dict[str, Any] = {
@@ -192,8 +193,9 @@ def parse_sse(raw: str) -> dict[str, Any]:
             delta = choice.get("delta") or {}
             if delta.get("content"):
                 out["content"] += delta["content"]
-            if delta.get("reasoning_content"):
-                out["reasoning"] += delta["reasoning_content"]
+            reasoning = delta.get("reasoning") or delta.get("reasoning_content")
+            if reasoning:
+                out["reasoning"] += reasoning
             for tc in delta.get("tool_calls") or []:
                 idx = tc.get("index", 0)
                 slot = tool_calls.setdefault(
@@ -217,7 +219,8 @@ def summarize_response(data: dict[str, Any]) -> dict[str, Any]:
     msg = choice.get("message") or {}
     return {
         "id": data.get("id"), "model": data.get("model"),
-        "content": msg.get("content") or "", "reasoning": msg.get("reasoning_content") or "",
+        "content": msg.get("content") or "",
+        "reasoning": msg.get("reasoning") or msg.get("reasoning_content") or "",
         "tool_calls": msg.get("tool_calls") or [], "finish_reason": choice.get("finish_reason"),
         "usage": data.get("usage"), "prompt_token_ids": data.get("prompt_token_ids"),
         "token_ids": choice.get("token_ids"),
@@ -265,16 +268,30 @@ class Gateway:
         self.missing_usage: set[str] = set()
         self.holds: dict[tuple[str, str | None], Hold] = {}
         self.stopped: dict[str, float] = {}
+        self.refusal_sequence = 0
+        self.terminal_refusals: dict[tuple[str, str], dict[str, Any]] = {}
         self._log_file: TextIO | None = None
-        self._restore_team_resources()
+        self._restore_state()
 
-    def _restore_team_resources(self) -> None:
+    def _restore_state(self) -> None:
         path = self.settings.log_dir / "gateway.jsonl"
         if not path.is_file():
             return
+        admitted: dict[str, str] = {}
+        pending: dict[str, str] = {}
+        completed: set[str] = set()
         with path.open() as stream:
             for line in stream:
                 record = json.loads(line)
+                self._restore_agent_record(record, admitted, pending, completed)
+                if record.get("event") == "terminal_refusal":
+                    sequence = record.get("sequence")
+                    if (type(sequence) is not int or sequence <= self.refusal_sequence
+                            or not isinstance(record.get("run"), str) or not isinstance(record.get("agent"), str)):
+                        raise ValueError("invalid persisted terminal refusal")
+                    self.refusal_sequence = sequence
+                    self.terminal_refusals[(record["run"], record["agent"])] = record
+                    continue
                 if record.get("event") not in {"resource_admitted", "resource_released", "resource_close_unknown"}:
                     continue
                 for key in ("requests", "completion_tokens", "active", "reserved_completion_tokens"):
@@ -290,6 +307,85 @@ class Gateway:
                     used_requests=record["requests"], used_completion_tokens=record["completion_tokens"],
                     active=record["active"], reserved=record["reserved_completion_tokens"],
                     unknown_usage=bool(record.get("unknown_usage")) or record["active"] > 0)
+        # An admission without settlement may already have reached the upstream.
+        # Its request is spent; missing token measurements never become a refund.
+        self.missing_usage.update(pending.values())
+
+    def _restore_agent_record(self, record: dict[str, Any], admitted: dict[str, str],
+                              pending: dict[str, str], completed: set[str]) -> None:
+        event = record.get("event")
+        if event == "receipt" and record.get("op") == "conditions.set" and record.get("result") == "applied":
+            requested = record.get("requested") or {}
+            if requested.get("condition") == "budget":
+                agent, budget = requested.get("agent_id"), requested.get("value")
+                if (not isinstance(agent, str) or not agent or not isinstance(budget, dict)
+                        or any(key not in BUDGET_KEYS or type(value) is not int or value < 0
+                               for key, value in budget.items())):
+                    raise ValueError("invalid persisted agent budget")
+                self.budgets[agent] = dict(budget)
+            return
+        chat_error = (event == "upstream_error" and record.get("method") == "POST"
+                      and str(record.get("path", "")).rstrip("/") == "/v1/chat/completions")
+        if event not in {"request_admitted", "request_usage_unknown", "chat_completion", "resource_admitted"}:
+            if not chat_error:
+                return
+        agent, request_id = record.get("agent"), record.get("request_id")
+        if not isinstance(agent, str) or not agent or not isinstance(request_id, str) or not request_id:
+            raise ValueError("persisted agent accounting identity is missing")
+        if request_id in admitted and admitted[request_id] != agent:
+            raise ValueError("conflicting persisted request identity")
+        if event in {"request_admitted", "request_usage_unknown", "chat_completion"}:
+            counters = record.get("usage_total")
+            if (not isinstance(counters, dict)
+                    or any(type(counters.get(key)) is not int or counters[key] < 0 for key in BUDGET_KEYS)):
+                raise ValueError("invalid persisted agent usage counters")
+            previous = self.usage_for(agent)
+            if any(counters[key] < previous[key] for key in BUDGET_KEYS):
+                raise ValueError("persisted agent usage went backwards; cannot recover this legacy log safely")
+            expected_requests = previous["requests"] + (request_id not in admitted)
+            if counters["requests"] < expected_requests:
+                raise ValueError("persisted agent usage does not include the admitted request")
+            if counters["requests"] > expected_requests:
+                # A legacy cancellation could leave no settlement record at all.
+                # Its later cumulative count is known, but its token cost is not.
+                self.missing_usage.add(agent)
+            self.usage[agent] = {key: counters[key] for key in BUDGET_KEYS}
+            unknown = record.get("missing_usage")
+            if unknown is not None and type(unknown) is not bool:
+                raise ValueError("invalid persisted missing-usage state")
+            if event == "chat_completion" and unknown is None:
+                # Older completed records already contain cumulative counters. Do not
+                # count their requests twice; absent usage retains the old fail-closed policy.
+                unknown = not bool((record.get("response") or {}).get("usage"))
+            if unknown or event == "request_usage_unknown":
+                self.missing_usage.add(agent)
+        elif request_id not in admitted:
+            # Legacy team admissions and chat transport errors establish a real
+            # attempt even when their old format lacks a per-agent counter snapshot.
+            self.usage_for(agent)["requests"] += 1
+        admitted[request_id] = agent
+        if event in {"request_admitted", "resource_admitted"}:
+            if request_id in completed:
+                raise ValueError("persisted request was admitted after completion")
+            pending[request_id] = agent
+        else:
+            pending.pop(request_id, None)
+            if chat_error or event == "request_usage_unknown":
+                self.missing_usage.add(agent)
+            if event == "chat_completion":
+                if request_id in completed:
+                    raise ValueError("duplicate persisted chat completion")
+                completed.add(request_id)
+
+    def record_admission(self, base: dict[str, Any]) -> None:
+        """Persist the spent request before forwarding any bytes to the upstream."""
+        agent = base["agent"]
+        self.usage_for(agent)["requests"] += 1
+        self.log({**base, "event": "request_admitted", "usage_total": self.usage_for(agent),
+                  "missing_usage": agent in self.missing_usage})
+        assert self._log_file is not None
+        self._log_file.flush()
+        os.fsync(self._log_file.fileno())
 
     def route(self, model: str | None) -> Route:
         """The upstream for a model id (ADR-0029): a configured one, else the default inference server."""
@@ -323,6 +419,20 @@ class Gateway:
                 rec = json.loads(line)
                 if rec.get("run") == run and (since is None or float(rec.get("ts") or 0) >= since):
                     yield line if line.endswith("\n") else line + "\n"
+
+    def terminal_refusal(self, base: dict[str, Any], dimension: str, reason: str) -> None:
+        """Publish an actual terminal denial, never a prediction from a full but still active quota.
+
+        Keep one small receipt per run/agent. The append-only log retains every denial; polling
+        controllers do not need to repeatedly download prompts or tool outputs to stop retries.
+        """
+        sequence = self.refusal_sequence + 1
+        record = {"event": "terminal_refusal", "sequence": sequence, "event_id": str(uuid.uuid4()),
+                  "ts": time.time(), "run": base["run"], "agent": base["agent"],
+                  "request_id": base["request_id"], "dimension": dimension, "reason": reason}
+        self.log(record)
+        self.refusal_sequence = sequence
+        self.terminal_refusals[(base["run"], base["agent"])] = record
 
     def usage_for(self, agent: str) -> dict[str, int]:
         return self.usage.setdefault(agent, {k: 0 for k in BUDGET_KEYS})
@@ -499,6 +609,14 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 "team": {run: pool.snapshot() for run, pool in gw.team_resources.items()},
                 "team_limits": gw.settings.team_resources}
 
+    @app.get("/admin/terminal-refusal")
+    async def terminal_refusal(run: str, agent_id: str, after: int = 0) -> Response:
+        if after < 0 or after > gw.refusal_sequence:
+            return JSONResponse(status_code=409, content={"detail": "terminal refusal cursor unavailable"})
+        record = gw.terminal_refusals.get((run, agent_id))
+        return JSONResponse({"cursor": gw.refusal_sequence,
+                             "refusal": record if record is not None and record["sequence"] > after else None})
+
     @app.post("/admin/budget")
     async def set_budget(req: BudgetRequest) -> dict[str, Any]:
         return gw.set_budget(req.agent_id, req.budget, req.run_id).model_dump(mode="json")
@@ -632,6 +750,8 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                     return refusal("stopped")
                 exhausted = gw.budget_exhausted(agent)
                 if exhausted:
+                    gw.terminal_refusal(base, exhausted,
+                        "usage_unknown" if exhausted != "requests" and agent in gw.missing_usage else "quota_exhausted")
                     gw.log({**base, "event": "budget_exhausted", "dimension": exhausted,
                             "usage": gw.usage_for(agent), "budget": gw.budgets.get(agent),
                             "request": body, "request_summary": request_summary(body)})
@@ -644,6 +764,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                         return invalid_request("invalid completion count")
                     allowance = remaining // count
                     if allowance < 1:
+                        gw.terminal_refusal(base, "completion_tokens", "request_exceeds_remaining_budget")
                         return refusal("budget", param="completion_tokens")
                     limit_keys = [k for k in ("max_tokens", "max_completion_tokens") if k in body] or ["max_tokens"]
                     for limit_key in limit_keys:
@@ -667,13 +788,24 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                         pool.acquire(request_id, body)
                     except ResourceExhausted as exc:
                         gw.log({**base, "event": "resource_denied", "reason": str(exc), **pool.snapshot()})
+                        if str(exc) == "team_requests":
+                            gw.terminal_refusal(base, str(exc), "quota_exhausted")
+                        elif str(exc) == "team_completion_tokens":
+                            count = body.get("n", 1)
+                            available = ((pool.completion_tokens or 0) - pool.used_completion_tokens)
+                            if pool.unknown_usage:
+                                gw.terminal_refusal(base, str(exc), "usage_unknown")
+                            elif available <= 0:
+                                gw.terminal_refusal(base, str(exc), "quota_exhausted")
+                            elif type(count) is int and available < count:
+                                gw.terminal_refusal(base, str(exc), "request_exceeds_remaining_budget")
                         return refusal("budget", param=str(exc))
                     except ValueError as exc:
                         return invalid_request(str(exc))
                     gw.log({**base, "event": "resource_admitted", "resource": "team_model", **pool.snapshot()})
                 body_bytes = json.dumps(body).encode("utf-8")
                 # No await between the quota check and admission: an upstream attempt consumes one request.
-                gw.usage_for(agent)["requests"] += 1
+                gw.record_admission(base)
                 admitted = True
 
             headers = {k: v for k, v in request.headers.items()
@@ -735,7 +867,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                         gw.log({**base, "event": "chat_completion", "stream": True, "status": upstream.status_code,
                                 "latency_ms": round((time.time() - t0) * 1000), "request": body,
                                 "request_summary": request_summary(body), "response": parsed,
-                                "usage_total": gw.usage_for(agent)})
+                                "usage_total": gw.usage_for(agent), "missing_usage": agent in gw.missing_usage})
                     finally:
                         try:
                             await upstream.aclose()
@@ -781,13 +913,15 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 gw.log({**base, "event": "chat_completion", "stream": False, "status": upstream.status_code,
                         "latency_ms": round((time.time() - t0) * 1000), "request": body,
                         "request_summary": request_summary(body), "response": parsed,
-                        "usage_total": gw.usage_for(agent)})
+                        "usage_total": gw.usage_for(agent), "missing_usage": agent in gw.missing_usage})
             return Response(content=content, status_code=upstream.status_code, headers=resp_headers,
                             media_type=upstream.headers.get("content-type"))
         finally:
             if not streaming:
                 if admitted and not usage_recorded:
                     gw.add_usage(agent, None)
+                    gw.log({**base, "event": "request_usage_unknown", "usage_total": gw.usage_for(agent),
+                            "missing_usage": True})
                 release()
 
     return app

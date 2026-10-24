@@ -111,6 +111,7 @@ def test_render_opencode_config_routes_everything_through_the_gateway():
     assert prov["options"]["baseURL"] == "http://gateway:8080/v1"
     assert prov["options"]["headers"] == {"X-Mesocosm-Agent": "agent-7", "X-Mesocosm-Run": "run_1"}
     assert cfg["model"] == "internal/qwen3-4b" and cfg["permission"] == "allow"
+    assert cfg["compaction"] == {"auto": False, "prune": False}
     json.dumps(cfg)  # serializable
     # a sandbox agent is identified by its key alone: no identity headers, nothing named after the platform
     plain = render_opencode_config(gateway_url="http://gateway:8080", model_id="qwen3-4b", api_key="sk-abc",

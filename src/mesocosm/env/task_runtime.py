@@ -25,6 +25,7 @@ from typing import Any, Literal
 import yaml
 
 from mesocosm.adapters.harbor.task import HarborTask, Reward, read_reward
+from mesocosm.adapters.opencode.client import CONTEXT_CONFIG
 from mesocosm.core.manifest import AgentSpec
 from mesocosm.env.egress import DockerEgressVerifier
 from mesocosm.env.lifecycle import CONTAINER_ID, container_evidence, isolation_evidence
@@ -748,7 +749,8 @@ class DockerTaskRuntime:
                 mounts.append(mount)
         mounts.append(f"{startup}:/opt/agent-start.sh:ro")
         env = {**_compose_literals(task_env), **(service.get("environment") or {}),
-               "OPENCODE_CONFIG": "/etc/opencode/opencode.json", "OPENCODE_CONFIG_DIR": "/etc/opencode"}
+               "OPENCODE_CONFIG": "/etc/opencode/opencode.json", "OPENCODE_CONFIG_DIR": "/etc/opencode",
+               "OPENCODE_CONFIG_CONTENT": CONTEXT_CONFIG}
         if group.stack is not None:
             for key in ("NO_PROXY", "no_proxy"):
                 if key in env:
@@ -1050,7 +1052,8 @@ class DockerTaskRuntime:
                         "--label", f"com.docker.compose.service={name}"]
             for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy",
                         "all_proxy", "no_proxy", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENCODE_CONFIG",
-                        "OPENCODE_CONFIG_DIR", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME"):
+                        "OPENCODE_CONFIG_DIR", "OPENCODE_CONFIG_CONTENT", "OPENCODE_SERVER_PASSWORD",
+                        "OPENCODE_SERVER_USERNAME"):
                 cmd[2:2] = ["-e", f"{key}="]
             for name_, value in self.applied_resources(task).items():
                 cmd[2:2] = [{"cpus": "--cpus", "mem_limit": "--memory"}[name_], str(value)]
