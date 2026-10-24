@@ -1,3 +1,4 @@
+import base64
 import json
 
 import httpx
@@ -5,6 +6,22 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 
 from mesocosm.adapters.opencode.client import OpenCodeClient, normalize_event, render_opencode_config
+
+
+async def test_controller_authenticates_harness_requests_including_events():
+    seen = []
+    def respond(request):
+        seen.append(request.headers.get("authorization"))
+        return httpx.Response(200, json={"healthy": True, "id": "session"})
+    client = OpenCodeClient("http://agent:4096", auth=("opencode", "per-agent-secret"),
+                            transport=httpx.MockTransport(respond))
+    try:
+        await client.health()
+        await client.create_session("task")
+        assert [item async for item in client.events()] == []
+    finally:
+        await client.aclose()
+    assert seen == ["Basic " + base64.b64encode(b"opencode:per-agent-secret").decode()] * 3
 
 
 def fake_opencode() -> FastAPI:

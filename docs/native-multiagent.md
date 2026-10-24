@@ -222,7 +222,7 @@ changes alongside the result rather than claiming they match a standard Linux de
 ## Fixture mode
 
 The earlier hand-written tasks remain useful for component smoke tests. Run them explicitly with
-`--task-runtime fixture --verifier-image <image>`, using their matching model credentials and Docker
+`--task-runtime fixture --verifier-image <image>` with `profile: fixture`, using their matching model credentials and Docker
 stack. For the shell-only smoke verifiers, the explicit image can be `debian:bookworm-slim`.
 Their fixed-string or filename rewards are fixture checks, not evidence that the native three-agent
 workload succeeded. See [`examples/README.md`](../examples/README.md)

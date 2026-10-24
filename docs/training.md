@@ -52,6 +52,10 @@ Generic peer-verdict rewards require `peer_review.protocol: ratings` and complet
 legacy peer-review scoring is rejected. Missing measurements never become zero. The original verifier
 results remain recorded independently of the incentive source and allocation.
 
+Training requires `profile: research` and `task_services: isolated`. The new shared-service runtime
+reports one team measurement, and its measurement identity is not yet integrated with the policy-weight
+rollout collector. That combination fails explicitly; context feedback remains separately available.
+
 ## Start an inference server that can accept updates
 
 Start the pinned model in the serving environment, using the same revision as the training spec.

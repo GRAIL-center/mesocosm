@@ -89,7 +89,10 @@ def capabilities(json_: bool = JSON_OPT) -> None:
     """List adapters and their verification status (see docs/capability-matrix.md)."""
     _emit({
         "harness_adapters": {"opencode": "native three-agent execution verified; see capability matrix limits"},
-        "task_adapters": {"harbor": "native single-container Debian/Ubuntu filesystem profile"},
+        "task_adapters": {"harbor": "Debian/Ubuntu agents; original Compose sidecars and separate verifiers",
+                          "native_service_acceptance": "unverified with real agents; see research runtime guide"},
+        "profiles": {"research": "default; rejects known fixture mechanisms", "fixture": "authored regression inputs"},
+        "task_services": {"isolated": "per-agent services", "shared": "one service group and one team measurement"},
         "experiments": {"conditions": "named patches", "repetitions": True, "outcome_dependent_stopping": False},
         "conditions": {"initial_budget": "agents[].budget at gateway", "memory": ["reset", "carry"],
                        "reward_source": ["verifier", "peer_verdict"],
@@ -98,7 +101,7 @@ def capabilities(json_: bool = JSON_OPT) -> None:
         "mid_run_conditions": ["budget"],
         "learning": {"supported": ["none", "in_context"], "weight_updating_rl": {
             "status": "supported", "algorithm": "reinforce_lora", "command": "train run",
-            "scope": "shared causal LM, >=3 agents, complete native comparison worlds; see docs/training.md"}},
+            "scope": "shared causal LM, >=3 agents, isolated task services; see docs/training.md"}},
         "monitor_timing": ["posthoc", "pre_action"],
         "monitor_intervention": {"scope": ["per_agent", "joint"], "boundary": "top-level OpenCode tool calls",
                                  "on_flag": ["deny", "terminate"]},
@@ -187,7 +190,8 @@ def world_validate(manifest: pathlib.Path, json_: bool = JSON_OPT) -> None:
 
 @env_app.command("compose")
 def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "--out"),
-                run_label: str = typer.Option("spike-docker", "--run-label"),
+                run_label: str | None = typer.Option(None, "--run-label",
+                    help="Must match gateway.run_label; defaults to that value or spike-docker"),
                 vllm_port: int = typer.Option(8000, "--vllm-port"),
                 vllm_host: str = typer.Option("host.docker.internal", "--vllm-host",
                                               help="Inference host as seen from the gateway container "
@@ -198,6 +202,12 @@ def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "
     from mesocosm.env.compose import compose_yaml, write_agent_files
 
     spec = load_manifest(manifest)
+    expected_label = spec.gateway.run_label or "spike-docker"
+    if run_label is not None and run_label != expected_label:
+        _emit({"status": "invalid_configuration", "error": "--run-label must match gateway.run_label "
+               "(or spike-docker when unset); set it in the manifest before rendering"}, json_, ok=False)
+        return
+    run_label = expected_label
     text = compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=run_label,
                         vllm_port=vllm_port, vllm_host=vllm_host, manifest_dir=manifest.resolve().parent)
     if out:
@@ -251,7 +261,7 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
     """The real components for a manifest: OpenCode servers, the gateway, Docker checks, the world services."""
     from mesocosm.adapters.opencode.client import OpenCodeClient
     from mesocosm.core.run import Components, DockerVerifier
-    from mesocosm.env.compose import egress_env, service_address
+    from mesocosm.env.compose import egress_env, harness_auth, service_address
     from mesocosm.env.egress import DockerEgressVerifier
     from mesocosm.env.services.client import ServicesAdmin
     from mesocosm.env.shared import DockerSharedDir
@@ -269,20 +279,27 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
         raise ValueError("native runtime requires a non-default gateway control key")
     if task_runtime == "fixture" and not verifier_image:
         raise ValueError("fixture runtime requires an explicit --verifier-image")
+    if task_runtime == "fixture" and spec.profile != "fixture":
+        raise ValueError("fixture runtime requires profile: fixture")
     native = DockerTaskRuntime(compose_file, runs_root / (spec.gateway.run_label or "spike-docker") / "runtime",
                                verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
-                               egress=egress) if task_runtime == "native" else None
+                               egress=egress, agent_ids=[a.id for a in spec.agents],
+                               task_services=spec.task_services, memory=spec.memory
+                               ) if task_runtime == "native" else None
     return Components(
-        harness_for=lambda a: OpenCodeClient(a.harness_url(), timeout=None),
+        harness_for=lambda a: OpenCodeClient(a.harness_url(), timeout=None,
+            auth=harness_auth(spec, spec.gateway.run_label or "spike-docker", a.id)),
         gateway=GatewayAdmin(spec.gateway.url, api_key=spec.gateway.api_key),
         egress=egress,
         verifier=native or DockerVerifier(verifier_image),
         task_runtime=native,
+        finish_runtime=native.finish if native is not None else None,
         workspace_for=lambda a: workspace_root / a.id,
         services_log=runs_root / (spec.gateway.run_label or "spike-docker") / "services.jsonl",
         web_log=runs_root / (spec.gateway.run_label or "spike-docker") / "web" / "web.jsonl",
         web_policy=runs_root / (spec.gateway.run_label or "spike-docker") / "web" / "policy.json",
-        services=ServicesAdmin(f"http://{service_address(spec, 'services')}") if spec.services.enabled else None,
+        services=ServicesAdmin(f"http://{service_address(spec, 'services')}", spec.gateway.api_key)
+                 if spec.services.enabled else None,
         shared_files=DockerSharedDir(compose_file).list_files,
         monitor=_monitor_model(spec) if spec.judge.monitor.enabled else None,
         rollout=rollout,
@@ -967,6 +984,36 @@ def flags_review(bundle: pathlib.Path, flag_id: str,
         _emit({"error": str(e)}, json_, ok=False)
         return
     _emit(record, json_)
+
+@app.command("diagnose")
+def diagnose(bundle: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Separate model tool output, harness execution, refusals and original task scores."""
+    from mesocosm.core.diagnostics import diagnose_bundle
+
+    try:
+        result = diagnose_bundle(bundle)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        _emit({"status": "invalid_bundle", "error_type": type(exc).__name__}, json_, ok=False)
+        return
+    _emit(result, json_)
+
+
+@env_app.command("calibrate")
+def env_calibrate(task: pathlib.Path, out: pathlib.Path = typer.Option(..., "--out"),
+                  expected_score: float = typer.Option(1.0, "--expected-score",
+                                                       help="Expected reference score on the original task scale"),
+                  verifier_network: str = VERIFIER_NETWORK_OPT, json_: bool = JSON_OPT) -> None:
+    """Check the original verifier before/after the unchanged reference in fresh environments."""
+    from mesocosm.env.reference import calibrate_native
+
+    try:
+        result = asyncio.run(calibrate_native(task, out, expected_score=expected_score,
+                                              verifier_network=verifier_network))
+    except (OSError, ValueError, RuntimeError) as exc:
+        _emit({"status": "failed_calibration", "error_type": type(exc).__name__}, json_, ok=False)
+        return
+    _emit(result, json_, ok=result.get("status") == "completed" and result.get("matches_expected") is True)
+
 
 if __name__ == "__main__":
     app()

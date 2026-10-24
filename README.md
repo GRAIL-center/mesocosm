@@ -107,8 +107,9 @@ This installs the control plane. Continue with the workflow you need:
 3. **Add policy updates.** Follow the [training guide](docs/training.md) to collect rollouts,
    update a shared policy and deploy its checkpoint into the next world.
 
-Mesocosm is **pre-alpha**. Native execution currently supports Debian/Ubuntu single-container
-filesystem tasks. The [capability matrix](docs/capability-matrix.md) documents supported settings,
+Mesocosm is **pre-alpha**. The native runtime uses Debian/Ubuntu task environments and can connect
+original application/database services with isolated or shared state. The [research runtime guide](docs/research-runtime.md)
+explains configuration and verification boundaries. The [capability matrix](docs/capability-matrix.md) documents settings,
 verification evidence and deployment limits, including the Colab path. The
 [examples guide](examples/README.md) separates external-task configurations from authored fixtures.
 

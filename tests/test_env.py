@@ -9,12 +9,25 @@ from mesocosm.env.compose import (
     agent_files,
     compose_yaml,
     egress_env,
+    harness_auth,
     render_compose,
     write_agent_files,
 )
 from mesocosm.env.egress import parse_egress_output
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+
+def test_harness_passwords_are_distinct_from_peer_model_and_control_keys():
+    manifest = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
+    credentials = [harness_auth(manifest, label, agent)[1]
+                   for label in ("run-a", "run-b") for agent in ("agent-1", "agent-2", "agent-3")]
+    assert len(set(credentials)) == 6
+    assert all(len(password) == 64 and password != manifest.gateway.api_key for password in credentials)
+    assert harness_auth(manifest, "run-a", "agent-1")[1] != agent_api_key(manifest, "run-a", "agent-1")
+    first = harness_auth(manifest, "run-a", "agent-1")
+    manifest.gateway.api_key = "a different controller secret"
+    assert harness_auth(manifest, "run-a", "agent-1") != first
 
 
 def test_compose_topology_invariants():
@@ -29,8 +42,10 @@ def test_compose_topology_invariants():
         a = svc[agent_id]
         assert a["networks"] == {"sandbox": {"ipv4_address": f"172.30.0.{10 + i}"}}
         assert "ports" not in a and "network_mode" not in a and "extra_hosts" not in a
-        assert a["healthcheck"]["test"][-1] == "http://127.0.0.1:4096/global/health"
-        assert "environment" not in a, "nothing of the platform in the agent's environment (ADR-0019)"
+        assert a["healthcheck"]["test"][-1].endswith("http://127.0.0.1:4096/global/health")
+        assert "$${OPENCODE_SERVER_PASSWORD}" in a["healthcheck"]["test"][-1]
+        assert a["environment"] == {"OPENCODE_SERVER_USERNAME": "opencode",
+                                    "OPENCODE_SERVER_PASSWORD": harness_auth(manifest, "lbl", agent_id)[1]}
         files = str(ROOT / "runs" / "lbl" / "agents" / agent_id)
         assert a["volumes"] == [f"{ROOT}/spike/workspace/{agent_id}:/work",
                                 f"{files}/opencode.json:/root/.config/opencode/opencode.json:ro",
@@ -46,6 +61,7 @@ def test_compose_topology_invariants():
     world = svc["services"]
     assert world["networks"] == {"sandbox": {"ipv4_address": "172.30.0.3", "aliases": ["services", "board", "wiki", "git", "pypi"]}}
     assert world["environment"]["MESOCOSM_AGENT_IPS"] == '{"172.30.0.10": "agent-1", "172.30.0.11": "agent-2"}'
+    assert world["environment"]["MESOCOSM_CONTROL_KEY"] == manifest.gateway.api_key
     assert world["environment"]["MESOCOSM_PERSONAS"] == '{"agent-1": "agent-1", "agent-2": "agent-2"}'
     assert egress_env(manifest, manifest.agents[0]) == {
         "MESOCOSM_GATEWAY_URL": "http://gateway:8080", "MESOCOSM_UPSTREAM_PROBE": "http://host.docker.internal:8000/v1/models",
@@ -213,7 +229,8 @@ def test_agent_files_carry_the_harness_config_and_identity_and_nothing_of_the_pl
     assert compose["services"]["services"]["environment"]["MESOCOSM_PERSONAS"] == '{"agent-1": "agent-1", "agent-2": "jkim"}'
     text = compose_yaml(manifest, repo_root=ROOT, run_label="lbl", files_dir=tmp_path / "agents")
     agent_section = text[text.index("  agent-1:"):text.index("  agent-2:")]
-    assert "MESOCOSM" not in agent_section and "environment" not in agent_section
+    assert "MESOCOSM" not in agent_section
+    assert "OPENCODE_SERVER_PASSWORD" in agent_section
 
 
 def test_mcp_servers_and_skills_reach_the_agent_through_its_config_and_mounts(tmp_path):
@@ -301,7 +318,8 @@ def test_the_web_gateway_is_the_only_route_out_and_agents_carry_only_standard_pr
     # disabled: no web service, no proxy variables, and the check expects the proxy name to be absent
     plain = load_manifest(ROOT / "examples" / "fixtures" / "spike-world.yaml")
     off = render_compose(plain, repo_root=ROOT, run_label="lbl")
-    assert "web" not in off["services"] and "environment" not in off["services"]["agent-1"]
+    assert "web" not in off["services"]
+    assert set(off["services"]["agent-1"]["environment"]) == {"OPENCODE_SERVER_USERNAME", "OPENCODE_SERVER_PASSWORD"}
     assert egress_proxy_env(plain) == {"MESOCOSM_PROXY": ""} and egress_env(plain, plain.agents[0])["MESOCOSM_PROXY"] == ""
     assert "web" not in off["services"]["agent-1"]["depends_on"]
 
@@ -327,7 +345,7 @@ def test_each_agent_gets_its_own_model_and_the_gateway_the_catalog_with_keys_pas
     assert env["BASELINE_KEY"] == "${BASELINE_KEY:?BASELINE_KEY is required by model baseline-x in the manifest}", \
         "compose interpolates the key at `up`; the file never holds it"
     for agent_id in ("agent-1", "agent-2"):
-        assert "environment" not in compose["services"][agent_id], "nothing of ours on an agent"
+        assert set(compose["services"][agent_id]["environment"]) == {"OPENCODE_SERVER_USERNAME", "OPENCODE_SERVER_PASSWORD"}
     files = agent_files(manifest, "lbl")
     one, two = json.loads(files["agent-1"]["opencode.json"]), json.loads(files["agent-2"]["opencode.json"])
     assert one["model"] == f"internal/{manifest.model.id}" and two["model"] == "internal/baseline-x"

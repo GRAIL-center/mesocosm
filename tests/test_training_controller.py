@@ -222,6 +222,7 @@ async def test_cancelled_thread_finishes_and_releases_gpu_before_wake(tmp_path, 
 
 @pytest.mark.parametrize("change", [{"memory": "carry"}, {"learning": {"mode": "in_context"}},
                                   {"rewards": {"enabled": False}},
+                                  {"profile": "fixture"}, {"task_services": "shared"},
                                   {"model": {"id": "base", "hf_repo": "test/model", "revision": "c" * 40}}])
 def test_unsupported_training_world_fails_before_server_or_output(tmp_path, monkeypatch, change):
     configured, path, out, _, calls, _ = setup(tmp_path, monkeypatch)

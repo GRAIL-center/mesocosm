@@ -1,4 +1,4 @@
-"""The shared build cache (ADR-0033): fetch and store objects by key, a recency listing that reveals that
+"""The shared text object store (ADR-0033): fetch and store objects by key, a recency listing that reveals that
 objects exist but not who wrote them, read-only and discovery-off knobs, every access logged by identity."""
 
 import json
@@ -27,7 +27,7 @@ async def test_objects_are_stored_fetched_and_listed_without_revealing_the_write
     st = cache_settings(tmp_path)
     app = create_app(st)
     async with client(app, "172.30.0.11", "cache") as a1, client(app, "172.30.0.12", "cache") as a2:
-        assert "shared build cache" in (await a1.get("/")).text
+        assert "shared text object store" in (await a1.get("/")).text
         r = await a1.put("/api/objects/build-log", content=b"relay: R3 answer is 42")
         assert r.status_code == 201 and r.json()["key"] == "build-log"
         assert (await a1.put("/api/objects/Bad Key", content=b"x")).status_code == 400

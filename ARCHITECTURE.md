@@ -17,8 +17,11 @@ This document describes the implemented structure and its boundaries. Consult th
 Each agent has its own OpenCode server, session, gateway credential and workspace. The native task
 runtime builds from the task's declared Docker environment, adds the released harness, and preserves
 the task's user and working directory. It runs the original filesystem verifier in a separate snapshot.
-The current profile is Debian/Ubuntu, single-container filesystem tasks; task Compose stacks, task GPUs,
-separate verifier images and live-process verification are unsupported.
+The agent profile remains Debian/Ubuntu. A validated subset of original task Compose sidecars supports
+isolated or shared service state, with fresh separate verifiers for declared artifacts or live services.
+Shared mode keeps distinct agent workspaces and records one team measurement. Task GPUs, shared-main
+RPC and arbitrary agent-process restoration remain unsupported. This extension has command-level tests;
+new real-agent acceptance remains unverified ([research runtime](docs/research-runtime.md), ADR-0050).
 
 Agents use an internal Docker network. The model gateway connects them to inference; the optional web
 gateway provides configured internet access. Shared volumes and services are explicit affordances.
@@ -157,6 +160,9 @@ content requires explicit configuration and provenance; archived fixture histori
 The optional cache is a text object store, while clock, ledger and vault provide simulated time,
 balances and canned secrets. These facilities are not substitutes for an application's actual cache,
 compute allocation or credential authority.
+Research is the default execution profile and rejects simulated time/balances, canned secrets, service
+history seeds and authored task extensions. Regression fixtures explicitly opt into `profile: fixture`.
+Service admin routes require a control credential, and each harness has its own upstream server password.
 
 Persistent mode assigns tasks from a shared queue. Snapshots save declared workspace/service/shared-file
 state and queue metadata, verify file hashes on restore, and record lineage and missing coverage.

@@ -62,7 +62,15 @@ class DockerStack:
         return text
 
     async def _compose(self, *args: str, timeout: float | None = None) -> str:
-        return await self._docker("compose", "-f", self.compose_file, *args, timeout=timeout)
+        companion = pathlib.Path(self.compose_file + ".runtime.yaml")
+        selected = self.compose_file
+        if companion.is_file() and args and args[0] in ("down", "ps"):
+            base = yaml.safe_load(pathlib.Path(self.compose_file).read_text())
+            runtime = yaml.safe_load(companion.read_text())
+            if runtime.get("name") != base.get("name"):
+                raise ValueError("native cleanup companion names a different Compose project")
+            selected = str(companion)
+        return await self._docker("compose", "-f", selected, *args, timeout=timeout)
 
     def _project(self, agent_id: str) -> str:
         config = yaml.safe_load(pathlib.Path(self.compose_file).read_text())
@@ -179,12 +187,15 @@ class DockerStack:
         self.cleanup_evidence = None
         try:
             async with asyncio.timeout(timeout):
-                output = await self._compose("down", "-v", "--timeout", "10")
+                companion = pathlib.Path(self.compose_file + ".runtime.yaml")
+                extra = ("--remove-orphans",) if companion.is_file() else ()
+                output = await self._compose("down", "-v", "--timeout", "10", *extra)
                 remaining = (await self._compose("ps", "--all", "--quiet")).split()
                 self.cleanup_evidence = {"method": "compose_down_and_inventory", "remaining_containers": remaining,
                                          "containers_removed": not remaining, "observed_at": time.time()}
                 if remaining:
                     raise RuntimeError("project containers remain after Compose down")
+                companion.unlink(missing_ok=True)
                 return output
         except asyncio.CancelledError:
             self.cleanup_error = StackCleanupError(self.compose_file, "teardown cancelled; world state is unknown")

@@ -67,7 +67,8 @@ async def test_run_world_emits_collectable_three_agent_multi_task_native_bundle(
         if rounds > 1:
             task.joinpath("task.toml").write_text('[[rounds]]\nprompt="Begin the task."\n'
                                                 '[[rounds]]\nprompt="Finish the task."\n')
-    manifest = WorldManifest.model_validate({"name": "training-runtime", "model": {"id": "policy-0"},
+    manifest = WorldManifest.model_validate({"name": "training-runtime", "profile": "fixture",
+                "model": {"id": "policy-0"},
                 "agents": [{"id": f"agent-{i}"} for i in range(1, 4)],
                 "tasks": [{"path": "first"}, {"path": "second"}],
                 "gateway": {"url": "http://gateway", "run_label": "world"}, "rewards": {"enabled": True}})

@@ -52,6 +52,11 @@ def training_world(spec: TrainingSpec, path: pathlib.Path) -> WorldManifest:
     report = validate_manifest(base_path)
     if not report.ok:
         raise ValueError(f"invalid training world: {report.errors}")
+    if world.profile != "research":
+        raise ValueError("training requires profile: research")
+    if world.task_services == "shared":
+        raise ValueError("rejected_unsupported: shared-service team measurements are not yet integrated "
+                         "with policy-weight training; use isolated task services")
     if len(world.agents) < 3 or world.mode != "comparison" or world.memory != "reset":
         raise ValueError("rejected_unsupported: training requires >=3 agents, comparison mode and reset memory")
     if not world.rewards.enabled or world.learning.mode != "none":

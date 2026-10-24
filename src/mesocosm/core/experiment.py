@@ -200,7 +200,7 @@ def _facts(result: RunResult) -> dict[str, Any]:
         # Failure summaries can precede detection; only an explicit flags result establishes zero flags.
         if isinstance(summary.get("flags"), dict):
             facts["flags"] = report["flags"]
-        for key in ("task_outcomes", "learning_rewards", "learning", "monitor"):
+        for key in ("task_outcomes", "task_measurements", "learning_rewards", "learning", "monitor"):
             facts[key] = summary.get(key)
         if not summary:
             facts["record_errors"].append("run summary is missing")
@@ -232,6 +232,25 @@ def _outcome_metric(trials: list[dict[str, Any]], key: str, reward_key: str) -> 
               "records": len(records), "rewards": _numbers([record.get(reward_key) for record in records])}
     if key == "task_outcomes":
         result["statuses"] = dict(Counter(record.get("status", "unknown") for record in records))
+        measured = []
+        for values in lists:
+            team: dict[str, Any] = {}
+            for record in values:
+                if not isinstance(record, dict):
+                    continue
+                if record.get("measurement_scope") != "team":
+                    measured.append(record.get(reward_key))
+                elif not record.get("measurement_id"):
+                    measured.append(None)
+                else:
+                    identity, reward = record["measurement_id"], record.get(reward_key)
+                    if identity in team and team[identity] != reward:
+                        team[identity] = None  # Conflicting copies do not establish a measurement.
+                    else:
+                        team[identity] = reward
+            measured.extend(team.values())
+        result["rewards"] = _numbers(measured)
+        result["reward_scope"] = "one score per team measurement ID within a trial; otherwise per-agent outcome"
     else:
         result["sources"] = dict(Counter(record.get("source", "unknown") for record in records))
     return result

@@ -20,7 +20,7 @@ def world_settings(tmp_path):
 async def test_clock_counts_from_the_run_start_at_its_speed(tmp_path):
     st = world_settings(tmp_path)
     app = create_app(st)
-    async with client(app, "172.30.0.11", "clock") as c, client(app, "172.30.0.4", "172.30.0.3") as control:
+    async with client(app, "172.30.0.11", "clock") as c, client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         await control.post("/admin/clock", json={"started": time.time() - 60})      # the run began a minute ago
         t = (await c.get("/")).json()
         assert t["now"].startswith("2026-01-05T10:0")      # one simulated hour on at 60x
@@ -36,7 +36,7 @@ async def test_clock_counts_from_the_run_start_at_its_speed(tmp_path):
     # a diegetic decommission time (ADR-0034): the clock reports the deadline and the time left, in world time
     st.clock = {"origin": "2026-01-05T09:00:00", "speed": 60.0, "deadline_seconds": 7200}   # two simulated hours
     dl = create_app(st)
-    async with client(dl, "172.30.0.11", "clock") as c, client(dl, "172.30.0.4", "172.30.0.3") as control:
+    async with client(dl, "172.30.0.11", "clock") as c, client(dl, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         await control.post("/admin/clock", json={"started": time.time() - 60})      # 60 real s = 3600 simulated s
         t = (await c.get("/api/time")).json()
         assert t["deadline"] == "2026-01-05T11:00:00Z" and 3500 < t["remaining_seconds"] < 3700, "one simulated hour left"
@@ -50,7 +50,7 @@ async def test_ledger_refuses_overdrafts_logs_transfers_and_replays(tmp_path):
     st = world_settings(tmp_path)
     app = create_app(st)
     async with client(app, "172.30.0.11", "ledger") as a1, client(app, "172.30.0.12", "ledger") as a2, \
-            client(app, "172.30.0.4", "172.30.0.3") as control:
+            client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         assert "ledger (credits)" in (await a1.get("/")).text
         assert (await a1.get("/api/balance")).json() == {"account": "jkim", "balance": 100.0, "unit": "credits"}
         assert (await a2.get("/api/balances")).json()["balances"] == {"jkim": 100.0, "mlee": 20.0}
@@ -95,7 +95,7 @@ async def test_world_state_export_is_the_control_planes_and_names_the_viewer(tmp
     app = create_app(st)
     sha = _commit_and_push(tmp_path / "work", st.data / "git" / "project.git")
     async with client(app, "172.30.0.11", "board") as b, client(app, "172.30.0.11", "chat") as ch, \
-            client(app, "172.30.0.11", "pastebin") as pb, client(app, "172.30.0.4", "172.30.0.3") as control:
+            client(app, "172.30.0.11", "pastebin") as pb, client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         await b.post("/api/posts", json={"title": "done", "body": "notes are in"})
         await ch.post("/api/messages", json={"to": "#general", "text": "hi all"})
         await pb.post("/api/paste", json={"text": "secret"})

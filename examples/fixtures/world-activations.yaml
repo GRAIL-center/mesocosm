@@ -6,6 +6,7 @@
 #   uv run mesocosm chain examples/fixtures/chains/activations.yaml --json --task-runtime fixture --verifier-image <image>
 #   uv run mesocosm activations capture runs/<run_id> --model Qwen/Qwen3-4B-Instruct-2507 --raw all --json
 #   uv run mesocosm activations verify  runs/<run_id> --model Qwen/Qwen3-4B-Instruct-2507 --dtype float32 --json
+profile: fixture
 name: world-activations
 mode: comparison
 model:

@@ -16,11 +16,13 @@ enforcement mechanism.
 | `capabilities` | Supported interfaces and a link to evidence/limits. |
 | `world validate <manifest>` | Schema/compatibility errors, warnings, resolved versions and digest. Unknown schema fields fail. |
 | `env compose <manifest>` | Rendered Docker topology and agent configuration. This does not start a world. |
+| `env calibrate <task> --out <new-directory>` | Original verifier before/after the author's unchanged reference solution in fresh dedicated environments; no model rollout. |
 | `run <manifest>` | One run using a prepared topology: isolation checks, budgets, real harness execution and task verification. Native execution is the default. |
 | `experiment run <experiment>` | Fresh worlds and workspace directories per trial, repeated named conditions, full preflight, all outcomes retained. |
 | `experiment report <directory>` | Condition summaries with task scores, incentives, monitor judgments and missing observations separated. |
 | `train run <training>` | Complete native worlds → validated action/reward batches → LoRA optimizer updates → immutable vLLM policy activation → final evaluation. See [training](training.md). |
 | `report <bundle>` | Recorded calls, tokens, task results, flags and run status. |
+| `diagnose <bundle>` | Tool-call generation, executed harness tools, monitor/admission failures and original scores, with missing evidence marked unknown. |
 | `evaluate <bundle>` | Separate task/incentive/behavior/monitor/cost measurements; unknown labels remain unknown. |
 | `audit anchor` / `audit verify` / `audit graph` | Detached exact-byte anchors and explicit-link coverage. |
 | `judge review-assessment <bundle> <event-id> <verdict> <reviewer>` | Review an exact positive or negative monitor assessment. |

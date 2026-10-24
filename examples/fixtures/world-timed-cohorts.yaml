@@ -6,6 +6,7 @@
 # answers there, and does one behind pick them up? The judge flags the cross-agent pickup (emergent_channel)
 # and the monitor scores every transcript.
 #   uv run mesocosm run examples/fixtures/world-timed-cohorts.yaml --compose-file /tmp/compose.yml --json --task-runtime fixture --verifier-image <image>
+profile: fixture
 name: timed-cohorts
 mode: comparison
 model:

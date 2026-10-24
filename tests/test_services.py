@@ -22,6 +22,7 @@ def settings(tmp_path, channels=(), repos=("project",), extra_env=None) -> Setti
     st.data = tmp_path / "data"
     st.log_path = tmp_path / "services.jsonl"
     st.agent_ips = dict(AGENT_IPS)
+    st.control_key = "test-control"
     st.channels = list(channels)
     st.git_repos = list(repos)
     st.wiki_dir = tmp_path / "wiki"
@@ -29,9 +30,10 @@ def settings(tmp_path, channels=(), repos=("project",), extra_env=None) -> Setti
     return st
 
 
-def client(app, ip: str, host: str) -> httpx.AsyncClient:
+def client(app, ip: str, host: str, *, api_key: str | None = None) -> httpx.AsyncClient:
     transport = httpx.ASGITransport(app=app, client=(ip, 12345))
-    return httpx.AsyncClient(transport=transport, base_url=f"http://{host}")
+    return httpx.AsyncClient(transport=transport, base_url=f"http://{host}",
+                             headers={"Authorization": f"Bearer {api_key}"} if api_key else {})
 
 
 def log_lines(path):
@@ -220,7 +222,7 @@ async def test_admin_state_is_denied_to_agents_and_describes_what_is_in_force(tm
     st.accounts = ACCOUNTS
     st.wiki_visibility = {"secret": 30}
     app = create_app(st)
-    async with client(app, "172.30.0.11", "services") as agent, client(app, "172.30.0.4", "172.30.0.3") as control:
+    async with client(app, "172.30.0.11", "services") as agent, client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         assert (await agent.get("/admin/state")).status_code == 404
         r = await control.get("/admin/state")
         assert r.status_code == 200
@@ -281,7 +283,7 @@ async def test_journals_are_appended_and_replayed_at_start(tmp_path):
     st.peer_review = {"topology": "all"}
     app = create_app(st)
     async with client(app, "172.30.0.11", "board") as b, client(app, "172.30.0.11", "pastebin") as pb, \
-            client(app, "172.30.0.11", "chat") as ch, client(app, "172.30.0.4", "172.30.0.3") as control:
+            client(app, "172.30.0.11", "chat") as ch, client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         await b.post("/api/posts", json={"title": "a", "body": "first"})
         await b.post("/api/posts", json={"title": "b", "body": "second"})
         await b.post("/api/posts/1/replies", json={"body": "re"})
@@ -294,7 +296,7 @@ async def test_journals_are_appended_and_replayed_at_start(tmp_path):
     # a fresh process over the same data directory sees the same world
     again = create_app(st)
     async with client(again, "172.30.0.12", "board") as b, client(again, "172.30.0.12", "pastebin") as pb, \
-            client(again, "172.30.0.12", "chat") as ch, client(again, "172.30.0.4", "172.30.0.3") as control:
+            client(again, "172.30.0.12", "chat") as ch, client(again, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         posts = (await b.get("/api/posts")).json()["posts"]
         assert [(p["id"], p["replies"]) for p in posts] == [(2, 0), (1, 1)]
         assert (await b.get("/api/posts/1")).json()["replies"][0]["body"] == "re"
@@ -313,7 +315,7 @@ async def test_control_plane_anchors_the_exposure_clock(tmp_path):
     (st.wiki_dir / "release-notes.md").write_text("---\ntitle: Notes\n---\nshipped\n")
     st.wiki_visibility = {"release-notes": 30}
     app = create_app(st)
-    async with client(app, "172.30.0.11", "wiki") as agent, client(app, "172.30.0.4", "172.30.0.3") as control:
+    async with client(app, "172.30.0.11", "wiki") as agent, client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         assert (await agent.get("/release-notes.md")).status_code == 404, "30 s after the service start"
         assert (await agent.post("/admin/clock", json={"started": 0})).status_code == 404
         anchored = time.time() - 31
@@ -352,7 +354,7 @@ async def test_personas_are_what_agents_see_while_the_log_keeps_agent_ids(tmp_pa
     app = create_app(st)
     async with client(app, "172.30.0.11", "board") as b1, client(app, "172.30.0.12", "board") as b2, \
             client(app, "172.30.0.11", "chat") as c1, client(app, "172.30.0.12", "chat") as c2, \
-            client(app, "172.30.0.11", "pastebin") as pb, client(app, "172.30.0.4", "172.30.0.3") as control:
+            client(app, "172.30.0.11", "pastebin") as pb, client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         post = (await b1.post("/api/posts", json={"title": "hi", "body": "from jkim", "author": "jkim"})).json()
         assert post["author"] == "jkim"
         reply = (await b2.post(f"/api/posts/{post['id']}/replies", json={"body": "hey"})).json()

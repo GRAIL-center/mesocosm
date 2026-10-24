@@ -2,6 +2,7 @@
 # team account, a repository to push to, and a wiki page that is published while they work. The verifier
 # grades the workspace and the world's state (world.json) with two checkpoints (ADR-0028).
 [metadata]
+fixture = true
 name = "world-exchange"
 difficulty = "trivial"
 tags = ["smoke", "services", "channels", "exposure"]

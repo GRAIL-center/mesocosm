@@ -70,6 +70,7 @@ def test_permission_only_changes_are_input_drift(tmp_path, relative):
 def test_referenced_external_input_changes_are_pinned(tmp_path, reference):
     path, _ = task_world(tmp_path)
     data = yaml.safe_load(path.read_text())
+    data["profile"] = "fixture"  # This regression includes authored service seeds.
     for name in ("skill", "wiki", "seed"):
         (tmp_path / name).mkdir()
         (tmp_path / name / "input.txt").write_text("original")

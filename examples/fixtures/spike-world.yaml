@@ -2,6 +2,7 @@
 # One agent, one Harbor task, host-only addresses (spike/SPIKE.md day 1).
 # For the Docker topology, set gateway.url to http://127.0.0.1:8080 only if the control plane
 # runs on the host; inside the control container use http://gateway:8080 and agent urls http://agent-1:4096.
+profile: fixture
 name: spike-world
 mode: comparison
 model:

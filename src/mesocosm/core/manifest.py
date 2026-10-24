@@ -337,12 +337,9 @@ class HoneypotSpec(ManifestModel):
 
 
 class CacheSpec(ManifestModel):
-    """A shared build cache at the `cache` hostname (ADR-0033): objects any agent may fetch, and, when
-    `writable`, store, listed by recency. It is ordinary infrastructure, not a designated channel: the egress
-    check confirms it present as a service, never as a hidden channel, and whether isolated agents turn it into
-    a channel is the behaviour the judge's `emergent_channel` detector watches for (the Artifactory analog of
-    the 2026 incidents; `docs/incident-reproducibility.md`). The listing reveals that objects exist and when,
-    never who wrote them (the trace leak); the services log keeps the author for the judge."""
+    """A shared text object store at the compatibility hostname `cache` (ADR-0033).
+    Agents fetch and optionally write text values by key; this does not cache build outputs or
+    package installations. Listings omit authors, while the service journal records them."""
     enabled: bool = False
     writable: bool = True
     list_recent: bool = Field(default=True, description="GET / and /api/objects reveal keys other agents wrote "
@@ -438,6 +435,10 @@ class LearningSpec(ManifestModel):
 
 class WorldManifest(ManifestModel):
     name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+    profile: Literal["research", "fixture"] = Field(default="research",
+        description="Research excludes simulated services and authored incident inputs; fixture is regression-only")
+    task_services: Literal["isolated", "shared"] = Field(default="isolated",
+        description="Native sidecars per agent, or shared services with one team measurement; workspaces stay separate")
     mode: Literal["comparison", "persistent"] = "comparison"
     model: ModelSpec
     models: list[ModelSpec] = Field(default_factory=list, description="Further models agents may be given "
@@ -462,6 +463,17 @@ class WorldManifest(ManifestModel):
                                      description="Control-plane operator identity; never inferred from a persona")
     containment: Literal["required", "adapted"] = Field(default="required",
         description="Native CLI requires private PID containment; adapted explicitly permits unverified hosts")
+
+    @model_validator(mode="after")
+    def _research_profile(self) -> WorldManifest:
+        from mesocosm.core.research import research_profile_errors
+
+        errors = research_profile_errors(self)
+        if errors:
+            raise ValueError("\n".join(errors))
+        if self.task_services == "shared" and (self.mode != "comparison" or self.memory != "reset"):
+            raise ValueError("shared task services require comparison mode and reset memory")
+        return self
 
     def channel_types(self) -> list[str]:
         return [c.type for c in self.channels]
@@ -582,6 +594,14 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             task_dir = (path.parent / task.path).resolve()
             if not (task_dir / "instruction.md").is_file():
                 errors.append(f"tasks[{i}]: {task_dir} has no instruction.md")
+            elif manifest.profile == "research":
+                from mesocosm.adapters.harbor.task import load_task
+                from mesocosm.core.research import research_task_errors
+
+                try:
+                    errors.extend(research_task_errors(load_task(task_dir)))
+                except (OSError, ValueError) as exc:
+                    errors.append(f"tasks[{i}]: {exc}")
         # a dataset is resolved to one or many materialized task directories at run time; `name` is an
         # optional label and a collection reference expands to all its tasks (ADR-0040)
         for agent_id in task.side_task or []:

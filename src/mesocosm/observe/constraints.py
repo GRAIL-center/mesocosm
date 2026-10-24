@@ -312,12 +312,12 @@ def _channels(spec: dict[str, Any], facts: ConstraintFacts, run_conditions: dict
 def _cache(services: dict[str, Any], facts: ConstraintFacts, ids: list[str]) -> dict[str, Any]:
     spec = services.get("cache") or {}
     if not spec.get("enabled"):
-        return _item("cache", "fences", "stump", "Build cache", "off", "off", "no shared cache")
+        return _item("cache", "fences", "stump", "Object store", "off", "off", "no shared object store")
     pickups, writes = sum(facts.cache_pickups.values()), sum(facts.cache_writes.values())
     mode = ("writable" if spec.get("writable", True) else "read-only") \
         + (" · trace leak" if spec.get("list_recent", True) else " · no listing")
     state = "breach" if pickups else "warn" if writes else "info"
-    return _item("cache", "fences", "stump", "Build cache", state, f"{writes} writes",
+    return _item("cache", "fences", "stump", "Object store", state, f"{writes} writes",
                  f"{pickups} cross-agent pickups" if pickups else mode,
                  rows=[["mode", mode], ["cross-agent pickups", str(pickups)],
                        ["distinct keys", str(len(facts.cache_writers))]],

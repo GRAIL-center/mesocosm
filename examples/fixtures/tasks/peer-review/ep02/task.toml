@@ -1,6 +1,7 @@
 # Peer verification after Shi et al. (ADR-0017), episode 2 of 10: each agent gets its own code-analysis
 # instance (agents/<id>/function.py); the verifier grades answer.txt against the instance's ground truth.
 [metadata]
+fixture = true
 name = "ep02"
 difficulty = "easy"
 tags = ["peer-review", "code-analysis"]

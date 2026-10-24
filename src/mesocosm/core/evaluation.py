@@ -16,6 +16,7 @@ import yaml
 from mesocosm.adapters.harbor.task import load_task, resolve_dataset_tasks
 from mesocosm.core.manifest import WorldManifest
 from mesocosm.core.records import Event, RunBundle
+from mesocosm.core.research import validate_research_tasks
 from mesocosm.core.rewards import outcome_records
 from mesocosm.env.task_runtime import environment_source
 
@@ -93,6 +94,8 @@ def input_snapshot(manifest_path: pathlib.Path, *, baseline: bool = False) -> di
     raw = manifest_path.read_bytes()
     data = yaml.safe_load(raw)
     world = WorldManifest.model_validate(data)
+    if baseline and world.profile != "research":
+        raise ValueError("baseline requires profile: research")
     if baseline and (len(world.agents) < 3 or world.stream.dir or not world.tasks):
         raise ValueError("rejected_unsupported: baseline requires >=3 agents and a fixed task collection")
     pin_task_paths(data, manifest_path.parent, required=baseline)
@@ -103,6 +106,7 @@ def input_snapshot(manifest_path: pathlib.Path, *, baseline: bool = False) -> di
             continue
         path = (manifest_path.parent / spec["path"]).resolve()
         task = load_task(path)
+        validate_research_tasks(world, [task])
         if baseline:
             environment_source(task)
             if not task.has_tests:
@@ -119,7 +123,8 @@ def input_snapshot(manifest_path: pathlib.Path, *, baseline: bool = False) -> di
             "external_inputs": _external_inputs(world, manifest_path.parent),
             "models": models, "model_pin_assurance": "declared_revision; serving_identity_unverified",
             "runtime": {"python": platform.python_version(), "system": platform.system(),
-                        "machine": platform.machine(), "native_profile": "single-container-filesystem",
+                        "machine": platform.machine(), "native_profile": "native-task-with-declared-services",
+                        "task_services": world.task_services,
                         "container_image_identity": "recorded by native runtime, not resolved by this snapshot"},
             "sampling_determinism_verified": False, "baseline": baseline}
 

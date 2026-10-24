@@ -135,7 +135,7 @@ async def test_shared_request_caps_are_atomic_and_survive_restart(tmp_path):
         assert sorted(response.status_code for response in responses) == [200, 200, 429]
     restarted = create_app(st)
     async with client(restarted, "172.30.0.11", "board") as agent, \
-            client(restarted, "172.30.0.4", "services") as control:
+            client(restarted, "172.30.0.4", "services", api_key="test-control") as control:
         assert (await agent.get("/api/posts")).status_code == 429
         assert (await agent.post("/admin/epoch", json={"epoch": "reset-attempt"})).status_code == 404
         state = (await control.get("/admin/state")).json()

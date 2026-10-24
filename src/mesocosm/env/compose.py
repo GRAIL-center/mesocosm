@@ -68,6 +68,13 @@ def agent_keys(manifest: WorldManifest, run_label: str) -> dict[str, dict[str, s
     return {agent_api_key(manifest, run_label, a.id): {"agent": a.id, "run": run_label} for a in manifest.agents}
 
 
+def harness_auth(manifest: WorldManifest, run_label: str, agent_id: str) -> tuple[str, str]:
+    """Upstream server authentication, distinct from model and control credentials."""
+    identity = json.dumps(["harness", run_label, agent_id], separators=(",", ":")).encode()
+    password = hmac.new(manifest.gateway.api_key.encode(), identity, hashlib.sha256).hexdigest()
+    return "opencode", password
+
+
 def world_hostnames(manifest: WorldManifest) -> list[str]:
     """The world services' hostnames (short); the agent-facing list, without `services` and `pastebin`."""
     channels = manifest.channel_types()
@@ -274,6 +281,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
             "networks": attach(3, sandboxes, aliases),
             "environment": {
                 "MESOCOSM_SERVICES_LOG": f"/runs/{run_label}/services.jsonl",
+                "MESOCOSM_CONTROL_KEY": manifest.gateway.api_key,
                 "MESOCOSM_SERVICE_LIMITS": json.dumps(manifest.resources.service_requests),
                 "MESOCOSM_ACCESS": json.dumps(manifest.services.access.model_dump()
                                               if manifest.services.access is not None else None),
@@ -331,6 +339,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
         if manifest.internet.enabled:
             depends["web"] = {"condition": "service_healthy"}
         files = files_root / agent.id
+        username, password = harness_auth(manifest, run_label, agent.id)
         mounts = [f"{files}/opencode.json:/root/.config/opencode/opencode.json:ro",
                   f"{files}/gitconfig:/root/.gitconfig:ro"]
         if manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "pre_action":
@@ -346,19 +355,22 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
             "build": {"context": spike, "dockerfile": "docker/Dockerfile.agent",
                       "args": {"OPENCODE_VERSION": opencode_version}},
             "networks": {network_of[agent.id]: {"ipv4_address": agent_ip[agent.id]}},
-            # No environment of ours: the agent's config and identity are mounted files (ADR-0019).
+            # Standard upstream auth protects the harness from other agents and task sidecars.
+            "environment": {"OPENCODE_SERVER_USERNAME": username, "OPENCODE_SERVER_PASSWORD": password},
             "volumes": [f"{workspaces / agent.id}:/work", *mounts]
             + (["shared:/shared"] if "shared_dir" in channels else []),
             "depends_on": depends,
             # `up --wait` returns only once the OpenCode server answers; the run manager connects right after
-            "healthcheck": {"test": ["CMD", "curl", "-fsS", "http://127.0.0.1:4096/global/health"],
+            "healthcheck": {"test": ["CMD-SHELL", 'curl -fsS -u '
+                                     '"$${OPENCODE_SERVER_USERNAME}:$${OPENCODE_SERVER_PASSWORD}" '
+                                     'http://127.0.0.1:4096/global/health'],
                             "interval": "3s", "timeout": "3s", "retries": 40, "start_period": "10s"},
         }
         if agent.persona and agent.persona.hostname:
             services[agent.id]["hostname"] = agent.persona.hostname
         if manifest.internet.enabled:
             # standard proxy and CA variables, as on any workstation behind a corporate proxy; nothing of ours
-            services[agent.id]["environment"] = proxy_environment(manifest)
+            services[agent.id]["environment"].update(proxy_environment(manifest))
     out = {
         "name": f"mesocosm-{manifest.name}",
         "services": services,

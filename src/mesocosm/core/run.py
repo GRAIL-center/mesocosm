@@ -36,6 +36,7 @@ from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, TaskSpec, Worl
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.core.records import EventIdentity, EventLink, RunBundle
 from mesocosm.core.report import agent_seconds
+from mesocosm.core.research import validate_research_tasks
 from mesocosm.core.rewards import EpisodeStopped, RewardEpisodes, outcome_records
 from mesocosm.core.workspace import (
     RawLog,
@@ -107,6 +108,43 @@ class Components:
     rollout: RolloutContext | None = None
     intervention: InterventionState = field(default_factory=InterventionState)
     workloads: Any | None = None  # Docker ownership, isolation inspection and verified container termination
+    team_measurements: dict[str, dict[str, Any]] = field(default_factory=dict)
+    finish_runtime: Callable[[], Awaitable[Any]] | None = None
+
+
+class RuntimeCleanupError(RuntimeError):
+    """Owned native workloads could not be removed before finalizing the run."""
+
+
+async def _finish_runtime(components: Components, bundle: RunBundle) -> None:
+    finish = components.finish_runtime
+    if finish is None:
+        return
+    components.finish_runtime = None
+
+    async def complete() -> None:
+        try:
+            await finish()
+        except (Exception, asyncio.CancelledError) as exc:
+            bundle.record("runtime.cleanup", status="failed", error=repr(exc))
+            raise RuntimeCleanupError(str(exc) or "native runtime cleanup was cancelled") from exc
+        bundle.record("runtime.cleanup", status="complete")
+
+    cleanup = asyncio.create_task(complete())
+    try:
+        await asyncio.shield(cleanup)
+    except asyncio.CancelledError:
+        # The caller still owns this cleanup after cancellation. Await the same task before
+        # propagating cancellation; its receipt preserves any failure without replacing it.
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                continue
+            except RuntimeCleanupError:
+                break
+        cleanup.exception()
+        raise
 
 
 @dataclass
@@ -230,11 +268,16 @@ async def run_world(manifest: WorldManifest, manifest_path: pathlib.Path, compon
             bundle.record("run.model_stop_failed", error=repr(stop_error))
         await asyncio.gather(*(_terminate_workload(components, bundle, agent.id, "run_cleanup", repr(e))
                                for agent in manifest.agents))
+        try:
+            await _finish_runtime(components, bundle)
+        except RuntimeCleanupError:
+            pass  # The cleanup record preserves the failure alongside the original execution error.
         coverage = await _preserve_failure_gateway(manifest, components, bundle, started)
         status = ("cancelled" if isinstance(e, asyncio.CancelledError) else
                   "stopped" if isinstance(e, EpisodeStopped) else
                   "failed_deadline" if isinstance(e, RoundDeadlineExceeded) else
-                  "failed_verifier" if isinstance(e, VerificationFailed) else "failed")
+                  "failed_verifier" if isinstance(e, VerificationFailed) else
+                  "failed_cleanup" if isinstance(e, RuntimeCleanupError) else "failed")
         events = bundle.events()
         rewards = {f"{event.agent_id}/{event.data['task']}": event.data.get("reward")
                    for event in events if event.kind == "verifier.reward"}
@@ -349,6 +392,7 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     """One task for one agent: memory policy, planted files, harness turn, native log, verifier, state check;
     under peer review also the episode's opening, scoring and feedback; with a side task its delivery and
     its own verifier (ADR-0030)."""
+    validate_research_tasks(manifest, [task])
     if sync is not None:
         await sync.open(task)
     if components.task_runtime is not None:
@@ -512,22 +556,24 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     logs_dir = bundle.root / "verifier" / agent.id / task.name
     logs_dir.mkdir(parents=True, exist_ok=True)
     if components.services is not None:
-        # The world as it stands goes to the verifier as /logs/world.json (ADR-0028): a task can grade what the
-        # agent did to the board, the wiki, the chat, the ledger or the repositories, not only its workspace.
+        # Preserve the built-in state view. Isolated graders can read /logs/world.json (ADR-0028);
+        # shared service-only graders must not inherit one participant's private state view.
         world = _json(await components.services.world_state(agent.id))
         (logs_dir / "world.json").write_text(world, encoding="utf-8")
         bundle.record("verifier.world_state", agent_id=agent.id, task=task.name, size=len(world),
+                      provided_to_verifier=manifest.task_services != "shared",
                       sha256=hashlib.sha256(world.encode("utf-8")).hexdigest())
     try:
         reward = await components.verifier.verify(task, ctx.workspace, logs_dir)
         _require_reward(reward, task, "test.sh")
+        measurement, links = _measurement_evidence(manifest, components, bundle, task, reward, logs_dir,
+                                                     str(transcript.event_id))
     except Exception as exc:
         bundle.record("verifier.failed", agent_id=agent.id, task=task.name, script="test.sh", error=repr(exc))
         raise VerificationFailed(f"{agent.id}/{task.name}: {exc}") from exc
     bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
                   task=task.name, reward=reward.value, source=reward.source, labels=reward.labels,
-                  links=[EventLink(event_id=str(transcript.event_id), relation="measured",
-                                   evidence="original verifier invoked after this task session completed")],
+                  links=links, **measurement,
                   link_coverage="partial",
                   checkpoints=reward.checkpoints or None, **marks)
     if side_given and task.has_side_tests:
@@ -625,6 +671,39 @@ def _require_reward(reward: Reward, task: HarborTask, script: str) -> None:
         raise VerificationFailed(f"verifier {task.name}/{script} produced no finite reward (source={reward.source})")
 
 
+def _measurement_evidence(manifest: WorldManifest, components: Components, bundle: RunBundle,
+                          task: HarborTask, reward: Reward, logs_dir: pathlib.Path,
+                          transcript_id: str) -> tuple[dict[str, Any], list[EventLink]]:
+    if manifest.task_services != "shared":
+        return {}, [EventLink(event_id=transcript_id, relation="measured",
+                              evidence="original verifier invoked after this task session completed")]
+    metadata = json.loads((logs_dir / "environment.json").read_text())
+    participants = sorted(a.id for a in manifest.agents)
+    measurement_id = metadata.get("measurement_id")
+    if (metadata.get("measurement_scope") != "team" or not isinstance(measurement_id, str)
+            or not measurement_id or sorted(metadata.get("participant_ids") or []) != participants):
+        raise VerificationFailed("shared task services require one identified team measurement")
+    measurement: dict[str, Any] = {"measurement_id": measurement_id, "measurement_scope": "team",
+                                   "participant_ids": participants}
+    identity = {"task": task.name, "reward": reward.value, "participant_ids": participants}
+    previous = components.team_measurements.get(measurement_id)
+    if previous is not None and previous["identity"] != identity:
+        raise VerificationFailed("conflicting copies of the same team measurement")
+    if previous is None:
+        transcripts = [event for event in bundle.events() if event.kind == "harness.transcript"
+                       and event.agent_id in participants and event.data.get("task") == task.name]
+        if sorted(event.agent_id for event in transcripts if event.agent_id) != participants:
+            raise VerificationFailed("team measurement arrived before every participant transcript")
+        team = bundle.record("verifier.team_reward", task=task.name, reward=reward.value, source=reward.source,
+            **measurement, links=[EventLink(event_id=str(event.event_id), relation="measured",
+                evidence="shared service state graded once after all participant sessions completed")
+                for event in transcripts], link_coverage="partial")
+        previous = {"event_id": str(team.event_id), "identity": identity}
+        components.team_measurements[measurement_id] = previous
+    return measurement, [EventLink(event_id=previous["event_id"], relation="measured",
+        evidence="participant reference to the same team measurement; no individual attribution")]
+
+
 async def _close_agent(ctx: AgentContext) -> None:
     if ctx.collector is not None:
         await _stop_collector(ctx.collector)
@@ -676,6 +755,7 @@ async def _stream_tasks(manifest: WorldManifest, manifest_path: pathlib.Path, bu
     task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
 
     def enqueue(task: HarborTask, source: str) -> None:
+        validate_research_tasks(manifest, [task])
         seen.add(task.path)
         bundle.record("task.loaded", task=task.name, provenance=task.provenance(), source=source,
                       allowed_channels=allowed_channels(task), **task_marks)
@@ -744,6 +824,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     rewards: dict[str, float | None] = {}
     if components.task_runtime is not None and hasattr(components.task_runtime, "prebuild"):
         tasks = [task for spec in manifest.tasks for task in _load_spec_tasks(spec, manifest_path)]
+        validate_research_tasks(manifest, tasks)
         prepared = await components.task_runtime.prebuild(tasks)
         bundle.record("task.environments_prepared", environments=prepared)
     # A fixed run label is shared by successive runs: keep only this run's gateway and services records.
@@ -890,6 +971,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     else:
         tasks = [task for t in manifest.tasks if t.path or t.dataset
                  for task in _load_spec_tasks(t, manifest_path)]
+        validate_research_tasks(manifest, tasks)
         if len({task.name for task in tasks}) != len(tasks):
             raise ValueError("rejected_unsupported: resolved task names must be unique within one run")
         task_marks = adaptation(mode=manifest.mode, memory=manifest.memory, budget=None)
@@ -982,6 +1064,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
     elif manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "pre_action":
         monitor_summary = components.intervention.summary()
         bundle.record("monitor.done", **monitor_summary)
+    await _finish_runtime(components, bundle)
     events = bundle.events()
     flags = detect(events, bundle.run_id)
     for flag in flags:
