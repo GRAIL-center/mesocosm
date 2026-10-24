@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="docs/native-multiagent.md">Start with three agents</a> ·
+  <a href="docs/execution.md">Run from your laptop</a> ·
   <a href="docs/experiments.md">Design experiments</a> ·
   <a href="docs/training.md">Train a policy</a> ·
   <a href="ARCHITECTURE.md">Architecture</a>
@@ -87,8 +88,9 @@ Collected configurations, model and harness records, tool events and verifier re
 ## Start with three agents
 
 The current stack combines **OpenCode** agent harnesses, **Harbor-format** tasks and **Docker**
-environments. The native setup guide uses **vLLM** for model serving. Run the control plane on a
-Linux Docker host with Python and `uv`; local model serving and policy training need a suitable GPU.
+environments. You can prepare experiments on a Mac or Linux laptop and submit them to a **Linux
+execution worker**. The worker owns the agents, task services, verification and cleanup; your laptop
+can disconnect and reconnect to inspect or stop the job. Model serving can run on a separate GPU host.
 
 ```bash
 git clone https://github.com/GRAIL-center/mesocosm.git
@@ -97,11 +99,12 @@ uv sync --locked --extra gateway
 uv run mesocosm --help
 ```
 
-This installs the control plane. Continue with the workflow you need:
+This installs Mesocosm. Continue with the workflow you need:
 
 1. **Launch your first world.** Follow the [three-agent setup guide](docs/native-multiagent.md) to
    prepare an external task, model server and private configuration. Start from the
-   [native world example](examples/world-native-three.yaml).
+   [native world example](examples/world-native-three.yaml). Use the [execution guide](docs/execution.md)
+   to submit a world from your laptop or operate the worker; direct execution on Linux remains available.
 2. **Compare conditions.** Follow the [experiment guide](docs/experiments.md) to define variants,
    run repetitions and inspect the resulting records.
 3. **Add policy updates.** Follow the [training guide](docs/training.md) to collect rollouts,
@@ -118,6 +121,7 @@ verification evidence and deployment limits, including the Colab path. The
 | Resource | Use it for |
 |---|---|
 | [Architecture](ARCHITECTURE.md) | Components, data flow and control boundaries |
+| [Execution guide](docs/execution.md) | Laptop client, Linux worker, job lifecycle and remote model serving |
 | [Operation contract](docs/operation-contract.md) | CLI and programmatic interfaces |
 | [Capability matrix](docs/capability-matrix.md) | What is implemented, verified and still limited |
 | [Design decisions](docs/adr/README.md) · [Milestones](docs/milestones.md) | Why the system works this way and what comes next |

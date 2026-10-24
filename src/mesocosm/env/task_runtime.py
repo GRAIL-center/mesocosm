@@ -707,16 +707,19 @@ class DockerTaskRuntime:
             raise TaskEnvironmentError("task main mounts require a separate verifier with explicit artifact inputs")
         workspace.mkdir(parents=True, exist_ok=True)
         platform_args = ["--platform", native.platform] if native.platform else []
+        ownership = ["--label", f"com.docker.compose.project={self.project}",
+                     "--label", "com.docker.compose.service=workspace-staging"]
         if not restored:
             if any(workspace.iterdir()):
                 raise TaskEnvironmentError(f"{agent.id}: native environment needs an empty initial workspace")
-            staging = (await self.command("docker", "create", *platform_args, "--network", "none",
+            staging = (await self.command("docker", "create", *platform_args, *ownership, "--network", "none",
                                           "--entrypoint", "/bin/sh", native.image, "-c", "true")).decode().strip()
             try:
                 await self.command("docker", "cp", f"{staging}:{native.workdir}/.", str(workspace))
             finally:
                 await self.command("docker", "rm", "-f", "-v", staging)
-        await self.command("docker", "run", "--rm", *platform_args, "--network", "none", "--entrypoint", "/bin/sh",
+        await self.command("docker", "run", "--rm", *platform_args, *ownership,
+                           "--network", "none", "--entrypoint", "/bin/sh",
                            "--workdir", native.workdir, "-v", f"{workspace}:{native.workdir}", native.image,
                            "-c", 'test -w . || { echo "Native user cannot write mounted workspace" >&2; exit 1; }')
         build_dir = self.state_dir / native.key / agent.id
@@ -890,7 +893,7 @@ class DockerTaskRuntime:
             network = self._task_network(agent_id) if group.stack is not None else "none"
             plan = await prepare_verifier(task, group.native, group.containers[agent_id], workspace, logs_dir,
                                           self.command, network=network, service_scope=self.task_services,
-                                          script=script)
+                                          script=script, project=self.project)
             self.verifier_cleanup.extend(plan.cleanup)
             metadata = {**self.receipt(group.containers[agent_id], group.native), **plan.metadata,
                         "task_services": self.task_services, "task_group": group.key,
@@ -1026,7 +1029,7 @@ class DockerTaskRuntime:
         _, container, native = active
         snapshot = f"mesocosm-task-verifier:{uuid.uuid4().hex}"
         name = f"verifier-{uuid.uuid4().hex}"
-        cleanup = [("docker", "rm", "-f", name), ("docker", "image", "rm", "-f", snapshot)]
+        cleanup = [("docker", "rm", "-f", "-v", name), ("docker", "image", "rm", "-f", snapshot)]
         logs_dir.mkdir(parents=True, exist_ok=True)
         # Logs are a dedicated verifier output directory, never a source tree. Keep the native user.
         logs_dir.chmod(0o777)
@@ -1043,6 +1046,8 @@ class DockerTaskRuntime:
             cmd = verifier_command(task, workspace=workspace, logs_dir=logs_dir, image=snapshot,
                                    workdir=native.workdir, container_name=name, script=script,
                                    network=self.verifier_network)
+            cmd[2:2] = ["--label", f"com.docker.compose.project={self.project}",
+                        "--label", f"com.docker.compose.service={name}"]
             for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy",
                         "all_proxy", "no_proxy", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENCODE_CONFIG",
                         "OPENCODE_CONFIG_DIR", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME"):

@@ -179,13 +179,15 @@ def _interpreter(script: pathlib.Path) -> list[str]:
 
 
 async def prepare_verifier(task: HarborTask, native: NativeImage, container_id: str, workspace: pathlib.Path,
-                           logs_dir: pathlib.Path, command: Command, *, network: str = "none",
+                           logs_dir: pathlib.Path, command: Command, *, project: str, network: str = "none",
                            service_scope: str = "isolated", script: str = "test.sh") -> VerifierPlan:
     env = verifier_environment(task)
     verifier = task.config.get("verifier") or {}
     artifacts = artifact_specs(task)
     if service_scope not in ("isolated", "shared"):
         raise TaskVerifierError("unknown task service scope")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project):
+        raise TaskVerifierError("invalid verifier project ownership")
     if service_scope == "shared" and any(not item.optional for item in artifacts):
         raise TaskVerifierError("shared-team verification requires service state only, without agent artifacts")
     if not re.fullmatch(r"[a-f0-9]{64}", container_id):
@@ -279,6 +281,8 @@ async def prepare_verifier(task: HarborTask, native: NativeImage, container_id: 
                   "--workdir", workdir, "--user", "0", "--entrypoint", "/bin/sh", *mounts,
                   *[item for key, value in sorted(variables.items()) for item in ("-e", f"{key}={value}")],
                   image_id, "-c", "while :; do sleep 3600; done"]
+        create[2:2] = ["--label", f"com.docker.compose.project={project}",
+                       "--label", f"com.docker.compose.service={name}"]
         await command(*create)
         await command("docker", "start", name)
         retained = logs_dir / "artifacts"

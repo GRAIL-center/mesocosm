@@ -14,6 +14,21 @@ This document describes the implemented structure and its boundaries. Consult th
 
 ## Execution and authority
 
+The experiment definition and execution location are separate. A Mac or Linux client packages a
+finite research world or condition experiment and submits it to an authenticated worker. The worker
+owns the whole world: gateway and harness startup, task containers and sidecars, original verification,
+record collection and cleanup. Accepted jobs continue after the client disconnects. Model inference
+can run on a separate host; the first execution backend is Docker on Linux. This boundary does not
+provide remote policy training or persistent streams. See the [execution guide](docs/execution.md)
+and [ADR-0051](docs/adr/0051-remote-world-execution.md).
+
+The worker runs beside a local Linux Docker daemon, with the host PID visibility required by native
+containment checks. It does not turn a remote Docker socket into a portable controller. A host-wide
+worker lease and a serial queue allow one managed world at a time because the current networks use
+fixed subnets. Direct, manually launched stacks remain the operator's responsibility. On worker
+restart, recorded unfinished ownership is cleaned before new execution; interrupted observations are
+not replayed. A cleanup failure closes admission and prevents another world from starting.
+
 Each agent has its own OpenCode server, session, gateway credential and workspace. The native task
 runtime builds from the task's declared Docker environment, adds the released harness, and preserves
 the task's user and working directory. It runs the original filesystem verifier in a separate snapshot.
@@ -29,7 +44,9 @@ The control plane, verifier results and run bundles remain outside agent write a
 verifies the selected topology before agents run. Colab's rootless adaptations have additional isolation
 and resource limits documented in the setup guide; a successful Colab run does not establish production
 isolation. Standard native execution requires inspected private PID containment before task turns;
-`containment: adapted` explicitly permits hosts where that cannot be established (ADR-0049).
+the older local `containment: adapted` path permits explicitly recorded adaptations (ADR-0049).
+Remote jobs always require verified containment, and native Compose service startup refuses shared
+PID namespaces even on the adapted local path (ADR-0050).
 
 The gateways are integration boundaries. Mesocosm configures released OpenCode, Harbor task formats,
 vLLM and NNsight through their supported interfaces and does not patch their internals.
@@ -42,6 +59,7 @@ vLLM and NNsight through their supported interfaces and does not patch their int
 | `core.experiment` | Prevalidate named condition patches, schedule repetitions, and retain every trial's outcome and missing measurements. |
 | `core.run` | Prepare environments, enforce run boundaries, drive concurrent agents, invoke original verifiers, collect evidence and run posthoc analysis. |
 | `core.rewards` | Synchronize comparison episodes and allocate incentives separately from original verifier scores. |
+| `execution` | Package declared inputs, authenticate remote jobs, persist lifecycle state, and own Docker startup, cancellation and recovery; share runtime composition with direct local commands. |
 | `gateway` | Authenticate identities, route chat requests, enforce model budgets, bind exact rollout identities and hold proposed tool actions for controller decisions. |
 | `env` | Docker topology, native task runtime, real shared services, web access policy and state inspection. |
 | `adapters.opencode`, `adapters.harbor` | Harness API and task/environment/verifier integration. |
@@ -58,7 +76,7 @@ the base manifest. Every variant is validated before the first trial starts; eac
 manifest and run label. `order_seed` controls scheduling only, not model sampling, task randomness or
 training.
 
-Trials run sequentially because the topology uses fixed subnet addresses. The CLI reconciles a fresh
+Trials run sequentially because the topology uses fixed subnet addresses. The execution layer reconciles a fresh
 stack and separate workspace directories for each trial. Trial failure is recorded and the remaining
 plan continues. If teardown fails, the prior environment may still exist: the experiment stops with
 `failed_cleanup`, retaining completed results and unrun trials. Bounded teardown verifies an empty

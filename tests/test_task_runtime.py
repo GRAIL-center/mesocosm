@@ -181,6 +181,10 @@ async def test_verifier_uses_private_native_rootfs_and_original_bash_without_age
     assert cmd[cmd.index("--entrypoint") + 1] == "/bin/bash"
     assert cmd[cmd.index("--workdir") + 1] == "/app/native-project"
     assert "HTTP_PROXY=" in cmd and "OPENAI_API_KEY=" in cmd
+    assert f"com.docker.compose.project={runtime.project}" in cmd
+    staging = [call for call in runtime.calls if call[:2] == ("docker", "create") or
+               (call[:2] == ("docker", "run") and "--name" not in call)]
+    assert staging and all(f"com.docker.compose.project={runtime.project}" in call for call in staging)
     assert any(c[:2] == ("docker", "commit") and c[2] == hashlib.sha256(b"agent-1").hexdigest() for c in runtime.calls)
     evidence = json.loads((logs / "environment.json").read_text())
     assert evidence["coverage"] == "filesystem_snapshot_only"
@@ -683,7 +687,8 @@ async def test_separate_verifier_receives_owned_internal_network_and_all_cleanup
     runtime.command = command
     reward = await runtime.verify(native, workspace, logs)
     assert reward.value == 1
-    assert prepared == [{"network": "native-world_sandbox", "service_scope": "isolated", "script": "test.sh"}]
+    assert prepared == [{"network": "native-world_sandbox", "service_scope": "isolated", "script": "test.sh",
+                         "project": "native-world"}]
     assert not runtime.verifier_cleanup
     assert json.loads((logs / "cleanup.json").read_text())["confirmed"] is True
     assert (logs / "task-services.log").exists()

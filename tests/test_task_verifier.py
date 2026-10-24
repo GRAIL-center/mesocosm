@@ -86,7 +86,8 @@ async def test_fresh_base_and_original_script_without_live_workspace_or_agent_ro
     (workspace / "undeclared.txt").write_text("must not transfer")
     docker = Docker()
     docker.sources["/app/report.json"] = report
-    plan = await prepare_verifier(original, native_image(), CONTAINER, workspace, tmp_path / "logs", docker)
+    plan = await prepare_verifier(original, native_image(), CONTAINER, workspace, tmp_path / "logs", docker,
+                                  project="owned-world")
     assert plan.command[:4] == ["docker", "exec", "--user", "1000"]
     assert not any(call[:2] == ("docker", "commit") for call in docker.calls)
     inspected = next(call for call in docker.calls if call[:3] == ("docker", "image", "inspect"))
@@ -94,6 +95,8 @@ async def test_fresh_base_and_original_script_without_live_workspace_or_agent_ro
     create = next(call for call in docker.calls if call[:2] == ("docker", "create"))
     assert plan.command[-2:] == ["/bin/bash", "/tests/test.sh"]
     assert IMAGE in create
+    assert "com.docker.compose.project=owned-world" in create
+    assert f"com.docker.compose.service={create[create.index('--name') + 1]}" in create
     assert f"{original.path / 'tests'}:/tests:ro" in create
     assert not any(str(workspace) in part for part in create)
     assert "--cpus" in create and create[create.index("--cpus") + 1] == "1"
@@ -115,7 +118,7 @@ async def test_fresh_base_preserves_original_compose_main_overrides_before_verif
     native.config = {"User": "2000:2000", "WorkingDir": "/app/native-project",
                      "Env": ["DATABASE_URL=postgres://db/application", "PRECEDENCE=compose"]}
     docker = Docker()
-    plan = await prepare_verifier(original, native, CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker)
+    plan = await prepare_verifier(original, native, CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker, project="owned-world")
     create = next(call for call in docker.calls if call[:2] == ("docker", "create"))
     assert plan.command[plan.command.index("--user") + 1] == "2000:2000"
     assert plan.command[plan.command.index("--workdir") + 1] == "/app/native-project"
@@ -133,7 +136,7 @@ async def test_fresh_base_rejects_original_main_harness_or_control_variables(tmp
     docker = Docker()
     with pytest.raises(TaskVerifierError, match="harness or controller credentials"):
         await prepare_verifier(separate_task(tmp_path), native, CONTAINER, tmp_path / "workspace",
-                               tmp_path / "logs", docker)
+                               tmp_path / "logs", docker, project="owned-world")
     assert not any(call[:2] == ("docker", "create") for call in docker.calls)
 
 
@@ -148,7 +151,7 @@ async def test_dedicated_verifier_definitions_take_precedence_and_keep_baked_tes
     docker = Docker()
     native = native_image()
     native.config = {"User": "different-main-user", "WorkingDir": "/different-main-cwd", "Env": ["MAIN_ONLY=1"]}
-    plan = await prepare_verifier(original, native, CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker)
+    plan = await prepare_verifier(original, native, CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker, project="owned-world")
     create = next(call for call in docker.calls if call[:2] == ("docker", "create"))
     assert plan.command[plan.command.index("--user") + 1] == "2000"
     assert "512m" in create and "2" == create[create.index("--cpus") + 1]
@@ -179,7 +182,7 @@ async def test_live_service_verifier_uses_internal_network_and_original_world_ex
     (logs / "world.json").write_text('{"original":"state"}')
     docker = Docker()
     plan = await prepare_verifier(original, native_image(), CONTAINER, tmp_path / "workspace", logs, docker,
-                                  network="world_sandbox-agent-1", service_scope="isolated")
+                                  network="world_sandbox-agent-1", service_scope="isolated", project="owned-world")
     create = next(call for call in docker.calls if call[:2] == ("docker", "create"))
     assert create[create.index("--network") + 1] == "world_sandbox-agent-1"
     assert f"{logs}/world.json:/logs/world.json:ro" in create
@@ -197,7 +200,7 @@ async def test_shared_service_verifier_does_not_mount_leaders_private_world_stat
     (logs / "world.json").write_text(private_state)
     docker = Docker()
     plan = await prepare_verifier(original, native_image(), CONTAINER, tmp_path / "workspace", logs, docker,
-                                  network="world_sandbox-agent-1", service_scope="shared")
+                                  network="world_sandbox-agent-1", service_scope="shared", project="owned-world")
     create = next(call for call in docker.calls if call[:2] == ("docker", "create"))
     assert not any("world.json" in argument for argument in create)
     assert (logs / "world.json").read_text() == private_state
@@ -211,7 +214,7 @@ async def test_verifier_cannot_gain_external_network(tmp_path, network, internal
     docker.internal = internal
     with pytest.raises(TaskVerifierError, match="network"):
         await prepare_verifier(separate_task(tmp_path), native_image(), CONTAINER, tmp_path / "workspace",
-                               tmp_path / "logs", docker, network=network)
+                               tmp_path / "logs", docker, network=network, project="owned-world")
     assert not any(call[:2] == ("docker", "create") for call in docker.calls)
 
 
@@ -242,7 +245,7 @@ async def test_rejected_symlink_is_never_uploaded_or_retained_and_verifier_is_cl
     docker = Docker()
     docker.sources["/app/output"] = link
     with pytest.raises(TaskVerifierError, match="symlink"):
-        await prepare_verifier(original, native_image(), CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker)
+        await prepare_verifier(original, native_image(), CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker, project="owned-world")
     assert docker.uploaded == {}
     assert not (tmp_path / "logs/artifacts/app/output").is_symlink()
     assert docker.calls[-1][:3] == ("docker", "rm", "-f")
@@ -269,7 +272,7 @@ async def test_shared_team_cannot_grade_one_agents_private_or_published_artifact
     docker = Docker()
     with pytest.raises(TaskVerifierError, match="service state only"):
         await prepare_verifier(original, native_image(), CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker,
-                               service_scope="shared")
+                               service_scope="shared", project="owned-world")
     assert docker.calls == []
     original.config["artifacts"] = []
     publish = tmp_path / "publish"
@@ -278,7 +281,7 @@ async def test_shared_team_cannot_grade_one_agents_private_or_published_artifact
     docker.sources["/logs/artifacts"] = publish
     with pytest.raises(TaskVerifierError, match="one agent's published artifacts"):
         await prepare_verifier(original, native_image(), CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker,
-                               service_scope="shared")
+                               service_scope="shared", project="owned-world")
 
 
 @pytest.mark.parametrize("environment", [{"gpus": 1}, {"storage_mb": 1024}, {"memory_mb": 0},
@@ -296,7 +299,7 @@ async def test_requested_verifier_resources_require_enforcement(tmp_path):
     docker.cgroups = "none"
     with pytest.raises(TaskVerifierError, match="cannot enforce"):
         await prepare_verifier(separate_task(tmp_path), native_image(), CONTAINER, tmp_path / "workspace",
-                               tmp_path / "logs", docker)
+                               tmp_path / "logs", docker, project="owned-world")
     assert not any(call[:2] == ("docker", "create") for call in docker.calls)
 
 
@@ -309,7 +312,7 @@ async def test_failed_artifact_upload_cleans_the_owned_verifier(tmp_path):
     docker.sources["/app/report"] = report
     docker.fail_upload = True
     with pytest.raises(RuntimeError, match="stopped during artifact upload"):
-        await prepare_verifier(original, native_image(), CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker)
+        await prepare_verifier(original, native_image(), CONTAINER, tmp_path / "workspace", tmp_path / "logs", docker, project="owned-world")
     assert docker.calls[-1][:3] == ("docker", "rm", "-f")
 
 
@@ -322,7 +325,7 @@ async def test_failed_preparation_cleanup_is_reported_and_retained(tmp_path):
 
     with pytest.raises(TaskVerifierError, match="cleanup is unverified"):
         await prepare_verifier(separate_task(tmp_path), native_image(), CONTAINER, tmp_path / "workspace",
-                               tmp_path / "logs", BrokenDocker())
+                               tmp_path / "logs", BrokenDocker(), project="owned-world")
     receipt = json.loads((tmp_path / "logs/preparation-cleanup.json").read_text())
     assert receipt["status"] == "unverified"
     assert receipt["cleanup_commands"][0][:3] == ["docker", "rm", "-f"]

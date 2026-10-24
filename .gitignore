@@ -26,6 +26,7 @@ spike/workspace/*/*
 # Local config and secrets
 .env
 *.local.json
+.mesocosm-execution/
 
 # OS / editors
 .DS_Store
