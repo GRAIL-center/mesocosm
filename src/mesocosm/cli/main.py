@@ -30,6 +30,7 @@ experiment_app = typer.Typer(no_args_is_help=True, help="Repeated comparisons of
 train_app = typer.Typer(no_args_is_help=True, help="On-policy weight updates from real multi-agent worlds")
 export_app = typer.Typer(no_args_is_help=True, help="Run bundles in formats other tools read")
 judge_app = typer.Typer(no_args_is_help=True, help="The judge's model components")
+audit_app = typer.Typer(no_args_is_help=True, help="Explicit evidence links and detached bundle anchors")
 app.add_typer(world_app, name="world")
 app.add_typer(env_app, name="env")
 app.add_typer(observe_app, name="observe")
@@ -43,6 +44,7 @@ app.add_typer(activations_app, name="activations")
 activations_app.add_typer(probe_app, name="probe")
 app.add_typer(judge_app, name="judge")
 app.add_typer(export_app, name="export")
+app.add_typer(audit_app, name="audit")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
 WORKSPACE_ROOT_OPT = typer.Option(pathlib.Path("spike/workspace"), "--workspace-root")
@@ -98,9 +100,80 @@ def capabilities(json_: bool = JSON_OPT) -> None:
             "status": "supported", "algorithm": "reinforce_lora", "command": "train run",
             "scope": "shared causal LM, >=3 agents, complete native comparison worlds; see docs/training.md"}},
         "monitor_timing": ["posthoc", "pre_action"],
-        "monitor_intervention": {"scope": "per-agent top-level OpenCode tool calls", "on_flag": ["deny", "terminate"]},
+        "monitor_intervention": {"scope": ["per_agent", "joint"], "boundary": "top-level OpenCode tool calls",
+                                 "on_flag": ["deny", "terminate"]},
+        "team_resources": ["model_requests", "completion_tokens", "model_concurrency", "service_requests"],
+        "internal_access": "services.access; isolate_agents required; shared mounts unsupported",
+        "containment": "required private PID inspection; adapted hosts remain explicitly unverified",
         "evidence": "docs/capability-matrix.md; automated tests are not live agent behavior evidence",
     }, json_)
+
+
+@audit_app.command("anchor")
+def audit_anchor(bundle: pathlib.Path, anchor: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Hash a quiescent bundle into a new anchor outside it; retain the anchor independently."""
+    from mesocosm.core.audit import write_anchor
+
+    try:
+        result = write_anchor(bundle, anchor).model_dump(mode="json")
+    except (OSError, ValueError) as exc:
+        _emit({"status": "failed_anchor", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_)
+
+
+@audit_app.command("verify")
+def audit_verify(bundle: pathlib.Path, anchor: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Compare the bundle with an explicitly supplied retained anchor."""
+    from mesocosm.core.audit import verify_anchor
+
+    try:
+        result = verify_anchor(bundle, anchor)
+    except (OSError, ValueError) as exc:
+        _emit({"status": "failed_verification", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_, ok=result["integrity"] == "verified")
+
+
+@audit_app.command("graph")
+def audit_graph(bundle: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Report exact links and missing coverage without inferring causality from timing."""
+    from mesocosm.core.audit import event_graph
+    from mesocosm.core.records import RunBundle
+
+    try:
+        result = event_graph(RunBundle.open(bundle).events())
+    except (OSError, ValueError) as exc:
+        _emit({"status": "invalid_bundle", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_)
+
+
+@app.command("evaluate")
+def evaluate_bundle(bundle: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Report independent task, incentive, reviewed-label, monitor and cost measurements."""
+    from mesocosm.core.evaluation import independent_evaluation
+
+    try:
+        result = independent_evaluation(bundle)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _emit({"status": "invalid_bundle", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_)
+
+
+@judge_app.command("review-assessment")
+def review_monitor_assessment(bundle: pathlib.Path, event_id: str, verdict: str, reviewer: str,
+                              note: str = "", json_: bool = JSON_OPT) -> None:
+    """Label an exact monitor assessment, including below-threshold decisions, for evaluation."""
+    from mesocosm.core.evaluation import review_assessment
+
+    try:
+        result = review_assessment(bundle, event_id, verdict, reviewer, note)
+    except (OSError, ValueError) as exc:
+        _emit({"status": "invalid_review", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_)
 
 
 @world_app.command("validate")
@@ -182,6 +255,7 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
     from mesocosm.env.egress import DockerEgressVerifier
     from mesocosm.env.services.client import ServicesAdmin
     from mesocosm.env.shared import DockerSharedDir
+    from mesocosm.env.stack import DockerStack
     from mesocosm.env.task_runtime import DockerTaskRuntime
     from mesocosm.gateway.client import GatewayAdmin
 
@@ -212,6 +286,7 @@ def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, works
         shared_files=DockerSharedDir(compose_file).list_files,
         monitor=_monitor_model(spec) if spec.judge.monitor.enabled else None,
         rollout=rollout,
+        workloads=DockerStack(compose_file),
     )
 
 
@@ -387,6 +462,8 @@ def experiment_run(experiment: pathlib.Path,
 
     try:
         spec = load_experiment(experiment)
+        if spec.baseline and task_runtime != "native":
+            raise ValueError("baseline requires --task-runtime native")
     except (ValueError, OSError) as exc:
         _emit({"status": "invalid_experiment", "error": str(exc)}, json_, ok=False)
         return
@@ -419,7 +496,8 @@ def experiment_run(experiment: pathlib.Path,
     except Exception as exc:
         _emit({"status": "failed_experiment", "error": str(exc), "out": str(out_dir)}, json_, ok=False)
         return
-    _emit(experiment_table(out_dir), json_, ok=not (result.get("lifecycle_errors") or result["failed"]
+    _emit(experiment_table(out_dir), json_, ok=not (result["status"] != "completed"
+                                                   or result.get("lifecycle_errors") or result["failed"]
                                                    or result["incomplete_records"]
                                                    or result["not_run"] or result["stopped"]))
 

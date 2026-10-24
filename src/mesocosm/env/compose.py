@@ -234,6 +234,9 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
                 "MESOCOSM_AGENT_KEYS": json.dumps(agent_keys(manifest, run_label)),
                 "MESOCOSM_UPSTREAM_KEY": manifest.gateway.upstream_key or manifest.gateway.api_key,
                 "MESOCOSM_UPSTREAMS": json.dumps(gateway_upstreams(manifest)),
+                "MESOCOSM_TEAM_RESOURCES": json.dumps({"requests": manifest.resources.model_requests,
+                    "completion_tokens": manifest.resources.completion_tokens,
+                    "concurrency": manifest.resources.model_concurrency}),
                 # a model's key is passed through from the environment `docker compose up` runs in, never written
                 **{m.api_key_env: f"${{{m.api_key_env}:?{m.api_key_env} is required by model {m.id} in the manifest}}"
                    for m in manifest.catalog().values() if m.api_key_env},
@@ -271,6 +274,9 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
             "networks": attach(3, sandboxes, aliases),
             "environment": {
                 "MESOCOSM_SERVICES_LOG": f"/runs/{run_label}/services.jsonl",
+                "MESOCOSM_SERVICE_LIMITS": json.dumps(manifest.resources.service_requests),
+                "MESOCOSM_ACCESS": json.dumps(manifest.services.access.model_dump()
+                                              if manifest.services.access is not None else None),
                 "MESOCOSM_AGENT_IPS": json.dumps(dict(sorted((ip, a) for a, ip in agent_ip.items()))),
                 "MESOCOSM_PERSONAS": json.dumps({a.id: a.username for a in manifest.agents}),
                 "MESOCOSM_CHANNELS": ",".join(c for c in channels if c == "pastebin"),
@@ -336,6 +342,7 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
         if manifest.internet.enabled:
             mounts.append(f"{web_root}/ca/ca.pem:{CA_PATH}:ro")
         services[agent.id] = {
+            "cap_drop": ["NET_RAW", "NET_ADMIN"],
             "build": {"context": spike, "dockerfile": "docker/Dockerfile.agent",
                       "args": {"OPENCODE_VERSION": opencode_version}},
             "networks": {network_of[agent.id]: {"ipv4_address": agent_ip[agent.id]}},

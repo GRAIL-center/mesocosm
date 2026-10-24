@@ -22,6 +22,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from mesocosm.core.chain import RunOne
 from mesocosm.core.config import absolutize_manifest, deep_merge
+from mesocosm.core.evaluation import (
+    InputDriftError,
+    independent_evaluation,
+    input_snapshot,
+    pin_task_paths,
+    verify_inputs,
+)
 from mesocosm.core.manifest import WorldManifest, validate_manifest
 from mesocosm.core.records import RunBundle
 from mesocosm.core.report import bundle_report
@@ -52,6 +59,8 @@ class Experiment(BaseModel):
     repetitions: int = Field(default=1, ge=1)
     order: Literal["listed", "randomized"] = "randomized"
     order_seed: int = Field(default=0, description="Scheduling seed only; does not seed models or task execution")
+    baseline: bool = Field(default=False,
+                           description="Require >=3 agents, materialized native tasks and model revisions")
 
     @model_validator(mode="after")
     def _unique(self) -> Experiment:
@@ -117,14 +126,21 @@ def experiment_manifests(experiment: Experiment, experiment_path: pathlib.Path,
                 manifest["name"] = label
                 manifest.setdefault("gateway", {})["run_label"] = label
                 absolutize_manifest(manifest, base_path.parent)
+                pin_task_paths(manifest, base_path.parent, required=experiment.baseline)
                 filename = f"trial-{index:04d}-{condition.name}-r{repetition}.yaml"
                 text = yaml.safe_dump(manifest, sort_keys=False)
                 check_path = pathlib.Path(temp) / filename
                 check_path.write_text(text, encoding="utf-8")
                 report = validate_manifest(check_path)
                 errors.extend(f"{condition.name} repetition {repetition}: {error}" for error in report.errors)
+                try:
+                    inputs = input_snapshot(check_path, baseline=experiment.baseline)
+                except (OSError, ValueError) as exc:
+                    errors.append(f"{condition.name} repetition {repetition}: {exc}")
+                    continue
                 trials.append({"index": index, "condition": condition.name, "repetition": repetition,
                                "manifest": str(out_dir / filename), "run_label": label, "digest": report.digest,
+                               "inputs": inputs, "input_integrity": "not_checked_at_execution",
                                "warnings": report.warnings,
                                "monitor_enabled": bool(((manifest.get("judge") or {}).get("monitor") or {})
                                                        .get("enabled")),
@@ -135,6 +151,8 @@ def experiment_manifests(experiment: Experiment, experiment_path: pathlib.Path,
     out_dir.mkdir(parents=True, exist_ok=False)
     for trial, text in zip(trials, rendered, strict=True):
         pathlib.Path(trial["manifest"]).write_text(text, encoding="utf-8")
+        pathlib.Path(trial["manifest"]).with_suffix(".inputs.json").write_text(
+            json.dumps(trial["inputs"], indent=1), encoding="utf-8")
     if experiment.order == "randomized":
         random.Random(experiment.order_seed).shuffle(trials)
     for order, trial in enumerate(trials, start=1):
@@ -154,6 +172,7 @@ def _facts(result: RunResult) -> dict[str, Any]:
         if not isinstance(summary, dict):
             raise ValueError("run summary must be a JSON object")
         report = bundle_report(bundle.root)
+        facts["independent_evaluation"] = independent_evaluation(bundle.root)
         metrics = ("model_calls", "prompt_tokens", "completion_tokens", "wallclock_seconds", "agent_hours")
         facts["recorded_metrics"] = {key: report[key] for key in metrics}
         facts.update(dict.fromkeys(metrics))
@@ -301,7 +320,16 @@ async def run_experiment(experiment: Experiment, experiment_path: pathlib.Path, 
         trial.update(status="running", started=time.time())
         _save(out_dir, result)
         try:
+            verify_inputs(pathlib.Path(trial["manifest"]), trial["inputs"])
+            trial["input_integrity"] = "verified_before"
             trial.update(_facts(await run_one(pathlib.Path(trial["manifest"]))))
+            verify_inputs(pathlib.Path(trial["manifest"]), trial["inputs"])
+            trial["input_integrity"] = "verified_before_and_after"
+        except InputDriftError as exc:
+            if trial["status"] == "running":
+                trial["status"] = "not_run"
+            trial.update(input_integrity="failed", input_error=str(exc))
+            result["status"] = "failed_input_drift"
         except StackCleanupError as exc:
             trial.update(status="not_run", error=str(exc), reason="previous_world_cleanup_failed")
             _cleanup_failure(result, exc, "before_trial")
@@ -316,7 +344,7 @@ async def run_experiment(experiment: Experiment, experiment_path: pathlib.Path, 
         with (out_dir / "runs.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(trial, ensure_ascii=False) + "\n")
         _save(out_dir, result)
-        if result["status"] == "failed_cleanup":
+        if result["status"] in ("failed_cleanup", "failed_input_drift"):
             break
     if result["status"] == "running":
         result["status"] = "completed"

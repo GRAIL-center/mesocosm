@@ -25,7 +25,8 @@ gateway provides configured internet access. Shared volumes and services are exp
 The control plane, verifier results and run bundles remain outside agent write access. The egress check
 verifies the selected topology before agents run. Colab's rootless adaptations have additional isolation
 and resource limits documented in the setup guide; a successful Colab run does not establish production
-isolation.
+isolation. Standard native execution requires inspected private PID containment before task turns;
+`containment: adapted` explicitly permits hosts where that cannot be established (ADR-0049).
 
 The gateways are integration boundaries. Mesocosm configures released OpenCode, Harbor task formats,
 vLLM and NNsight through their supported interfaces and does not patch their internals.
@@ -57,15 +58,19 @@ training.
 Trials run sequentially because the topology uses fixed subnet addresses. The CLI reconciles a fresh
 stack and separate workspace directories for each trial. Trial failure is recorded and the remaining
 plan continues. If teardown fails, the prior environment may still exist: the experiment stops with
-`failed_cleanup`, retaining completed results and unrun trials. Teardown is bounded; its client process
-cleanup does not establish that Docker removed the environment. The runner has no flag-triggered stopping or automatic replacement trials;
+`failed_cleanup`, retaining completed results and unrun trials. Bounded teardown verifies an empty
+project container inventory. Active stop requests and failures invoke owned-container termination
+with separate process-isolation evidence. The runner has no flag-triggered stopping or automatic replacement trials;
 these would select observations based on outcomes. Older `scenario` and `chain` interfaces remain for
 compatibility, with their distinct stopping and retry semantics.
 
 Conditions are enforced at their actual point of effect: token and request budgets at the gateway,
 shared-directory access through mounts, service permissions at the service, and memory at task
 boundaries. Only budgets currently support mid-run mutation through the condition-control API.
-Unsupported combinations fail explicitly instead of being approximated with task prose.
+Unsupported combinations fail explicitly instead of being approximated with task prose. Optional
+`services.access` grants enforce an internal access graph; team request/output/concurrency pools and
+service quotas apply at actual admission points. Shared mounts are refused with the access graph.
+See [research controls](docs/research-controls.md) for relay, restart and inference-compute limits.
 
 `memory: reset` clears the managed workspace and opens a new harness session; `carry` retains both
 within the run. Neither option describes a complete reset or serialization of harness internals.
@@ -103,13 +108,18 @@ evaluation and token-logprob consistency verification without another update. Or
 allocated incentives remain distinct. Context feedback stays disabled in this training profile. See
 the [training guide](docs/training.md) and [ADR-0045](docs/adr/0045-on-policy-world-training.md) for the
 estimator, supported profile and distinction between a real update and demonstrated learning benefit.
+Optional `evaluation_world` runs content-disjoint tasks before and after training without updates.
+Experiment inputs are fingerprinted and checked for drift; `baseline: true` requires a three-agent
+native task profile and declared model revisions, separate from verified serving identity.
 
 ## Observation and judgment
 
 A run bundle contains the manifest, normalized events, enforcement receipts, native gateway/harness
 records and verifier results. Model calls use `request_id`; other sources also carry run and agent
 identity where available. Some joins still use agent/task time windows; this is not a complete causal
-trace with exact action-token alignment.
+trace with exact action-token alignment. New events carry IDs and explicit identity/link fields;
+exact message/object versions link recorded exposures. Detached anchors verify preserved bytes against
+a separately retained reference, without asserting capture completeness or execution truth.
 
 Keep four outputs separate: original task outcomes, allocated incentives, monitor assessments and
 reviewed policy violations. Detectors produce candidates. A shared-store read, a high reward or a monitor
@@ -129,8 +139,9 @@ rubric; a temporary hold is not a completed intervention. Its prompt version and
 hash are recorded separately from the rubric hash ([ADR-0048](docs/adr/0048-prospective-monitor-assessment.md)).
 A threshold crossing denies the tool or terminates the session. Unknown assessments, exhausted
 budgets and transport failures deny and abort. This is a per-agent tool boundary, not a syscall monitor
-inside an allowed shell command. Nested agent sessions and joint live review are refused; adaptive
-monitor training remains unsupported. [ADR-0046](docs/adr/0046-before-tool-monitor-intervention.md)
+inside an allowed shell command. Joint live review can collect registered sessions and shared-service/web
+evidence, preserving the exact input and collection interval. Missing evidence fails closed. Nested
+agent sessions and adaptive monitor training remain unsupported. [ADR-0046](docs/adr/0046-before-tool-monitor-intervention.md)
 describes this boundary.
 
 Activation capture is opt-in. The gateway can retain token IDs when the upstream provides them;

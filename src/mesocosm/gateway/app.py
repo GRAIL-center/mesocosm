@@ -35,6 +35,7 @@ from starlette.background import BackgroundTask
 
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.gateway.actions import register_action_routes
+from mesocosm.gateway.resources import ResourceExhausted, TeamResources
 from mesocosm.gateway.rollout import register_rollout_routes, sampling_request
 from mesocosm.learning.config import PolicyIdentity
 
@@ -56,6 +57,7 @@ class Settings:
     upstream_key: str | None = None                        # the inference server's key; agents never hold it
     # model id -> {url, key_env, kind}: where requests for that model go (ADR-0029); other models go to `upstream`
     upstreams: dict[str, dict[str, Any]] = field(default_factory=dict)
+    team_resources: dict[str, int | None] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -70,6 +72,7 @@ class Settings:
             agent_keys=json.loads(os.environ.get("MESOCOSM_AGENT_KEYS", "{}") or "{}"),
             upstream_key=os.environ.get("MESOCOSM_UPSTREAM_KEY") or None,
             upstreams=json.loads(os.environ.get("MESOCOSM_UPSTREAMS", "{}") or "{}"),
+            team_resources=json.loads(os.environ.get("MESOCOSM_TEAM_RESOURCES", "{}") or "{}"),
         )
 
 
@@ -257,11 +260,36 @@ class Gateway:
         self.budgets: dict[str, dict[str, int]] = {k: dict(v) for k, v in settings.budgets.items()}
         self.usage: dict[str, dict[str, int]] = {}
         self.request_locks: dict[str, asyncio.Lock] = {}
+        self.team_resources: dict[str, TeamResources] = {}
         self.rollout_bindings: dict[tuple[str, str], dict[str, Any]] = {}
         self.missing_usage: set[str] = set()
         self.holds: dict[tuple[str, str | None], Hold] = {}
         self.stopped: dict[str, float] = {}
         self._log_file: TextIO | None = None
+        self._restore_team_resources()
+
+    def _restore_team_resources(self) -> None:
+        path = self.settings.log_dir / "gateway.jsonl"
+        if not path.is_file():
+            return
+        with path.open() as stream:
+            for line in stream:
+                record = json.loads(line)
+                if record.get("event") not in {"resource_admitted", "resource_released", "resource_close_unknown"}:
+                    continue
+                for key in ("requests", "completion_tokens", "active", "reserved_completion_tokens"):
+                    if type(record.get(key)) is not int or record[key] < 0:
+                        raise ValueError("invalid persisted team resource counters")
+                run = record.get("run")
+                if not isinstance(run, str):
+                    raise ValueError("persisted resource identity is missing")
+                self.team_resources[run] = TeamResources(
+                    requests=self.settings.team_resources.get("requests"),
+                    completion_tokens=self.settings.team_resources.get("completion_tokens"),
+                    concurrency=self.settings.team_resources.get("concurrency"),
+                    used_requests=record["requests"], used_completion_tokens=record["completion_tokens"],
+                    active=record["active"], reserved=record["reserved_completion_tokens"],
+                    unknown_usage=bool(record.get("unknown_usage")) or record["active"] > 0)
 
     def route(self, model: str | None) -> Route:
         """The upstream for a model id (ADR-0029): a configured one, else the default inference server."""
@@ -462,11 +490,14 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         return {"ok": True, "upstream": gw.settings.upstream, "return_token_ids": gw.settings.return_token_ids,
                 "upstreams": upstreams, "require_rollout_binding": gw.settings.require_rollout_binding,
                 "budget": gw.budgets, "agents": sorted(v["agent"] for v in gw.settings.agent_keys.values()),
+                "team_limits": gw.settings.team_resources,
                 **gw.control_state()}
 
     @app.get("/admin/usage")
     async def usage() -> dict[str, Any]:
-        return {"usage": gw.usage, "budget": gw.budgets}
+        return {"usage": gw.usage, "budget": gw.budgets,
+                "team": {run: pool.snapshot() for run, pool in gw.team_resources.items()},
+                "team_limits": gw.settings.team_resources}
 
     @app.post("/admin/budget")
     async def set_budget(req: BudgetRequest) -> dict[str, Any]:
@@ -551,9 +582,21 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
         lock = gw.request_locks.setdefault(agent, asyncio.Lock())
         lock_released = False
         streaming = False
+        pool: TeamResources | None = None
+        response_usage: dict[str, Any] | None = None
+        transport_closed = True
+        admitted = False
+        usage_recorded = False
 
         def release() -> None:
             nonlocal lock_released
+            if pool is not None and request_id in pool.leases:
+                if transport_closed:
+                    pool.release(request_id, response_usage)
+                else:
+                    pool.unknown_usage = True
+                gw.log({**base, "event": "resource_released" if transport_closed else "resource_close_unknown",
+                        "resource": "team_model", **pool.snapshot()})
             if lock is not None and not lock_released:
                 lock_released = True
                 lock.release()
@@ -615,9 +658,23 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                     body["stream_options"] = {**options, "include_usage": True}
                 if gw.settings.return_token_ids and route.kind == "vllm":     # only vLLM understands the field
                     body["return_token_ids"] = True
+                if identified_by == "key" and any(v is not None for v in gw.settings.team_resources.values()):
+                    pool = gw.team_resources.setdefault(run, TeamResources(
+                        requests=gw.settings.team_resources.get("requests"),
+                        completion_tokens=gw.settings.team_resources.get("completion_tokens"),
+                        concurrency=gw.settings.team_resources.get("concurrency")))
+                    try:
+                        pool.acquire(request_id, body)
+                    except ResourceExhausted as exc:
+                        gw.log({**base, "event": "resource_denied", "reason": str(exc), **pool.snapshot()})
+                        return refusal("budget", param=str(exc))
+                    except ValueError as exc:
+                        return invalid_request(str(exc))
+                    gw.log({**base, "event": "resource_admitted", "resource": "team_model", **pool.snapshot()})
                 body_bytes = json.dumps(body).encode("utf-8")
                 # No await between the quota check and admission: an upstream attempt consumes one request.
                 gw.usage_for(agent)["requests"] += 1
+                admitted = True
 
             headers = {k: v for k, v in request.headers.items()
                        if k.lower() not in HOP_BY_HOP and k.lower() not in ("authorization", "x-mesocosm-agent",
@@ -634,6 +691,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                                                       headers=headers, params=request.query_params)
             try:
                 upstream = await route.client.send(upstream_req, stream=True)
+                transport_closed = False
             except httpx.HTTPError as e:
                 gw.log({**base, "event": "upstream_error", "error": repr(e), "request": body})
                 return refusal("upstream")
@@ -644,6 +702,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                         content = await upstream.aread()
                     finally:
                         await upstream.aclose()
+                        transport_closed = True
                     if upstream.status_code != 200:
                         raise ValueError(f"upstream model listing status {upstream.status_code}")
                     public = public_model_list(content, bound_model)
@@ -662,7 +721,7 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 finalized = False
 
                 async def finish_stream():
-                    nonlocal finalized
+                    nonlocal finalized, response_usage, transport_closed, usage_recorded
                     if finalized:
                         return
                     finalized = True
@@ -670,14 +729,19 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                     try:
                         raw = b"".join(chunks).decode("utf-8", "replace")
                         parsed = parse_sse(raw) if upstream.status_code < 400 else {"raw": raw[:4000]}
+                        response_usage = parsed.get("usage")
                         gw.add_usage(agent, parsed.get("usage"))
+                        usage_recorded = True
                         gw.log({**base, "event": "chat_completion", "stream": True, "status": upstream.status_code,
                                 "latency_ms": round((time.time() - t0) * 1000), "request": body,
                                 "request_summary": request_summary(body), "response": parsed,
                                 "usage_total": gw.usage_for(agent)})
                     finally:
-                        release()
-                        await upstream.aclose()
+                        try:
+                            await upstream.aclose()
+                            transport_closed = True
+                        finally:
+                            release()
 
                 async def stream():
                     try:
@@ -691,8 +755,15 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                                          media_type=upstream.headers.get("content-type"),
                                          background=BackgroundTask(finish_stream))
 
-            content = await upstream.aread()
-            await upstream.aclose()
+            try:
+                content = await upstream.aread()
+            except httpx.HTTPError as exc:
+                gw.log({**base, "event": "upstream_error", "error": repr(exc), "status": upstream.status_code,
+                        "request": body, "response_complete": False})
+                return refusal("upstream")
+            finally:
+                await upstream.aclose()
+                transport_closed = True
             resp_headers.pop("content-encoding", None)  # httpx already decoded the body
             if is_chat:
                 assert body is not None
@@ -705,6 +776,8 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                 else:
                     parsed = {"raw": content[:2000].decode("utf-8", "replace")}
                 gw.add_usage(agent, data.get("usage") if isinstance(data, dict) else None)
+                usage_recorded = True
+                response_usage = data.get("usage") if isinstance(data, dict) else None
                 gw.log({**base, "event": "chat_completion", "stream": False, "status": upstream.status_code,
                         "latency_ms": round((time.time() - t0) * 1000), "request": body,
                         "request_summary": request_summary(body), "response": parsed,
@@ -713,6 +786,8 @@ def create_app(settings: Settings | None = None, transport: httpx.AsyncBaseTrans
                             media_type=upstream.headers.get("content-type"))
         finally:
             if not streaming:
+                if admitted and not usage_recorded:
+                    gw.add_usage(agent, None)
                 release()
 
     return app

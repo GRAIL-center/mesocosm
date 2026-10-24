@@ -26,7 +26,7 @@ import sys
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 from mesocosm.adapters.harbor.task import HarborTask, Reward, adaptation, load_task, resolve_dataset_tasks
 from mesocosm.adapters.opencode.client import normalize_event
@@ -34,7 +34,7 @@ from mesocosm.core.control import stop_requested
 from mesocosm.core.legacy_peer_review import EpisodeSync  # legacy import compatibility
 from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, TaskSpec, WorldManifest
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
-from mesocosm.core.records import RunBundle
+from mesocosm.core.records import EventIdentity, EventLink, RunBundle
 from mesocosm.core.report import agent_seconds
 from mesocosm.core.rewards import EpisodeStopped, RewardEpisodes, outcome_records
 from mesocosm.core.workspace import (
@@ -67,6 +67,7 @@ EVENT_GRACE_SECONDS = 0.5  # time the event collector gets to drain after the ta
 RECORD_SLACK_SECONDS = 5.0  # clock skew allowed between the control plane and the gateway/services hosts
 ABORT_TIMEOUT_SECONDS = 10.0
 FAILURE_SNAPSHOT_SECONDS = 10.0
+T = TypeVar("T")
 
 
 class RoundDeadlineExceeded(RuntimeError):
@@ -105,6 +106,7 @@ class Components:
     task_runtime: Any | None = None                   # prepares the task's native environment before a session
     rollout: RolloutContext | None = None
     intervention: InterventionState = field(default_factory=InterventionState)
+    workloads: Any | None = None  # Docker ownership, isolation inspection and verified container termination
 
 
 @dataclass
@@ -188,10 +190,46 @@ async def run_world(manifest: WorldManifest, manifest_path: pathlib.Path, compon
     started = time.time() - RECORD_SLACK_SECONDS
     bundle = RunBundle.create(runs_root, run_id)
     bundle.write_manifest(manifest.model_dump(mode="json"), manifest.digest(), path=manifest_path)
+    for agent in manifest.agents:
+        bundle.bind_identity(agent.id, EventIdentity(agent_instance_id=f"{bundle.run_id}/{agent.id}",
+                                                     operator_id=manifest.operator_id))
+    components.intervention.expected_agents = [agent.id for agent in manifest.agents]
+    if manifest.judge.monitor.include_shared and components.services is not None:
+        async def shared_evidence() -> dict[str, Any]:
+            assert components.services is not None
+            snapshot = await components.services.world_state()
+            journals: dict[str, list[dict[str, Any]]] = {}
+            for name, path in (("services", components.services_log), ("web", components.web_log)):
+                if name == "web" and not manifest.internet.enabled:
+                    continue
+                if path is None or not path.is_file():
+                    raise ValueError(f"live {name} evidence unavailable")
+                rows = []
+                size = 0
+                with path.open() as stream:
+                    for line in stream:
+                        row = json.loads(line)
+                        if row.get("ts", 0) < started:
+                            continue
+                        size += len(line)
+                        if size > manifest.judge.monitor.max_input_chars:
+                            raise ValueError(f"live {name} evidence exceeds monitor input budget")
+                        rows.append(row)
+                journals[name] = rows
+            return {"world_state": snapshot, "journals": journals, "atomic": False,
+                    "observed_at": time.time()}
+        components.intervention.shared_evidence = shared_evidence
     try:
         return await _run(manifest, manifest_path, components, bundle)
     except (Exception, asyncio.CancelledError) as e:  # original cancellation still propagates after preservation
         bundle.record("run.failed", error=repr(e))
+        try:
+            receipt = await components.gateway.stop(manifest.gateway.run_label or bundle.run_id, run_id=bundle.run_id)
+            bundle.record_receipt(receipt.model_dump(mode="json"))
+        except Exception as stop_error:
+            bundle.record("run.model_stop_failed", error=repr(stop_error))
+        await asyncio.gather(*(_terminate_workload(components, bundle, agent.id, "run_cleanup", repr(e))
+                               for agent in manifest.agents))
         coverage = await _preserve_failure_gateway(manifest, components, bundle, started)
         status = ("cancelled" if isinstance(e, asyncio.CancelledError) else
                   "stopped" if isinstance(e, EpisodeStopped) else
@@ -281,7 +319,7 @@ def _load_spec_tasks(spec: TaskSpec, manifest_path: pathlib.Path) -> list[Harbor
     benchmark collection that expands to many tasks (`dataset`, ADR-0037/0040). `name` labels a single task;
     an expanded collection takes each task's own name."""
     if spec.path:
-        return [load_task(manifest_path.parent / spec.path)]
+        return [load_task(manifest_path.parent / spec.path, dataset=spec.dataset, name=spec.name)]
     if spec.dataset is None:
         raise ValueError("a task requires a path or dataset reference")
     dirs = resolve_dataset_tasks(spec.dataset, _tasks_root_dirs(manifest_path), spec.limit)
@@ -325,6 +363,16 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     ctx.session_id = await _apply_memory_policy(manifest, bundle, agent, task, ctx.harness, ctx.workspace,
                                                 ctx.session_id, ctx.session_to_agent, keep=keep,
                                                 task_runtime=components.task_runtime)
+    if components.workloads is not None:
+        inspected = await components.workloads.isolation([agent.id])
+        bundle.record("workload.isolation", agent_id=agent.id, task=task.name, evidence=inspected)
+        if manifest.containment == "required" and inspected.get(agent.id, {}).get("status") != "supported":
+            raise RuntimeError(f"rejected_unsupported: private workload containment not verified for {agent.id}")
+    bundle.bind_identity(agent.id, EventIdentity(agent_instance_id=f"{bundle.run_id}/{agent.id}",
+        operator_id=manifest.operator_id, session_id=ctx.session_id,
+        policy_id=components.rollout.policy.id if components.rollout else None))
+    if manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "pre_action":
+        components.intervention.register(agent.id, ctx.harness, ctx.session_id, task.name)
     if ctx.raw_log is None:
         # Only the archived peer-verification protocol requires an agent-readable log.
         # Generic runs must not add observer files to the task's working tree or verifier input.
@@ -347,8 +395,9 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     stagger = (spec.stagger_seconds if spec else 0.0) * index
     if stagger:
         bundle.record("task.staggered", agent_id=agent.id, task=task.name, delay=round(stagger, 3))
-        await asyncio.sleep(stagger)
-    bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
+        await _interruptible_turn(asyncio.sleep(stagger), bundle,
+            lambda: _terminate_workload(components, bundle, agent.id, task.name, "stagger_interrupted"))
+    session_event = bundle.record("harness.session", agent_id=agent.id, step=bundle.next_step(agent.id),
                   session_id=ctx.session_id, task=task.name)
     side_agents = _side_task_agents(manifest, task)
     rounds = task.round_prompts(agent.id, side_agents)
@@ -400,7 +449,8 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
                                   **binding.verification.detail)
                 turn = ctx.harness.send_message(ctx.session_id, r["prompt"], provider_id=manifest.gateway.provider_id,
                                                 model_id=manifest.model_for(agent).id)
-                reply = await gate.run_turn(turn) if gate is not None else await turn
+                reply = await _interruptible_turn(gate.run_turn(turn) if gate is not None else turn, bundle,
+                    lambda: _terminate_workload(components, bundle, agent.id, task.name, "turn_interrupted"))
         except TimeoutError as e:
             if timeout is None:
                 await _abort_turn(ctx, bundle, agent.id, task.name, "harness_timeout")
@@ -424,6 +474,8 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
             raise
         finally:
             original_error = sys.exception()
+            if original_error is not None:
+                await _terminate_workload(components, bundle, agent.id, task.name, repr(original_error))
             try:
                 try:
                     if binding is not None and rollout is not None:
@@ -449,7 +501,14 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
                       session_id=ctx.session_id, task=task.name, round=r["index"],
                       parts=_parts_summary(reply))
     messages = await ctx.harness.list_messages(ctx.session_id)
+    if agent.id in components.intervention.sessions:
+        components.intervention.finish(agent.id, messages)
     bundle.write_native(f"{agent.id}/{task.name}/messages.json", _json(messages))
+    transcript = bundle.record("harness.transcript", agent_id=agent.id, task=task.name,
+        session_id=ctx.session_id, path=f"native/{agent.id}/{task.name}/messages.json",
+        sha256=hashlib.sha256(_json(messages).encode()).hexdigest(), link_coverage="partial",
+        links=[EventLink(event_id=str(session_event.event_id), relation="observed",
+                         evidence="harness list_messages for this exact session_id")])
     logs_dir = bundle.root / "verifier" / agent.id / task.name
     logs_dir.mkdir(parents=True, exist_ok=True)
     if components.services is not None:
@@ -467,6 +526,9 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
         raise VerificationFailed(f"{agent.id}/{task.name}: {exc}") from exc
     bundle.record("verifier.reward", agent_id=agent.id, step=bundle.next_step(agent.id),
                   task=task.name, reward=reward.value, source=reward.source, labels=reward.labels,
+                  links=[EventLink(event_id=str(transcript.event_id), relation="measured",
+                                   evidence="original verifier invoked after this task session completed")],
+                  link_coverage="partial",
                   checkpoints=reward.checkpoints or None, **marks)
     if side_given and task.has_side_tests:
         side_dir = logs_dir / "side"
@@ -524,6 +586,40 @@ async def _abort_turn(ctx: AgentContext, bundle: RunBundle, agent_id: str, task:
     return confirmed
 
 
+async def _interruptible_turn(operation: Awaitable[T], bundle: RunBundle,
+                              on_interrupt: Callable[[], Awaitable[None]] | None = None) -> T:
+    """A stop marker interrupts active turns as well as preventing the next task."""
+    turn = asyncio.ensure_future(operation)
+    termination: asyncio.Future[None] | None = None
+    try:
+        while not turn.done():
+            if stop_requested(bundle.root):
+                raise EpisodeStopped("operator requested stop during active turn")
+            await asyncio.wait({turn}, timeout=0.1)
+        return await turn
+    except BaseException:
+        if on_interrupt is not None:
+            # Begin workload termination before awaiting harness cancellation/abort or evidence capture.
+            termination = asyncio.ensure_future(on_interrupt())
+        raise
+    finally:
+        if not turn.done():
+            turn.cancel()
+        await asyncio.gather(turn, *([termination] if termination is not None else []), return_exceptions=True)
+
+
+async def _terminate_workload(components: Components, bundle: RunBundle, agent_id: str,
+                              task: str, reason: str) -> None:
+    evidence: dict[str, Any] = {"status": "unverified", "reason": "no workload controller"}
+    if components.workloads is not None:
+        try:
+            evidence = await components.workloads.terminate([agent_id])
+        except Exception as exc:
+            evidence = {"status": "unverified", "error": repr(exc)}
+    bundle.record("workload.termination", agent_id=agent_id, task=task, reason=reason,
+                  evidence=evidence, harness_abort_is_workload_termination=False)
+
+
 def _require_reward(reward: Reward, task: HarborTask, script: str) -> None:
     if reward.value is None or not math.isfinite(reward.value):
         raise VerificationFailed(f"verifier {task.name}/{script} produced no finite reward (source={reward.source})")
@@ -551,6 +647,9 @@ async def _run_agent(manifest: WorldManifest, components: Components, bundle: Ru
             rewards[f"{agent.id}/{task.name}"] = await _run_task(manifest, components, bundle, agent, task, ctx, marks,
                                                                  sync)
         return rewards
+    except BaseException:
+        await _terminate_workload(components, bundle, agent.id, "agent_cleanup", "agent_execution_failed")
+        raise
     finally:
         await _close_agent(ctx)
 
@@ -632,6 +731,9 @@ async def _run_agent_persistent(manifest: WorldManifest, components: Components,
             bundle.record("task.assigned", agent_id=agent.id, task=task.name, taken=queue.taken)
             rewards[f"{agent.id}/{task.name}"] = await _run_task(manifest, components, bundle, agent, task, ctx, marks)
         return rewards
+    except BaseException:
+        await _terminate_workload(components, bundle, agent.id, "agent_cleanup", "agent_execution_failed")
+        raise
     finally:
         await _close_agent(ctx)
 
@@ -650,6 +752,34 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
 
     health = await components.gateway.health()
     bundle.record("gateway.health", **health)
+    team_limits = {"requests": manifest.resources.model_requests,
+                   "completion_tokens": manifest.resources.completion_tokens,
+                   "concurrency": manifest.resources.model_concurrency}
+    if any(value is not None for value in team_limits.values()):
+        applied = health.get("team_limits")
+        ok = applied == team_limits
+        bundle.record_receipt(Receipt(op="resources.verify", run_id=bundle.run_id,
+            requested=team_limits, enforced_at=EnforcedAt(component="gateway"),
+            result="applied" if ok else "failed",
+            verification=Verification(method="gateway_admin_health", ok=ok,
+                                      detail={"applied": applied})).model_dump(mode="json"))
+        if not ok:
+            raise RuntimeError("shared model resource configuration was not confirmed by the gateway")
+    if manifest.services.access is not None or manifest.resources.service_requests:
+        if components.services is None:
+            raise RuntimeError("service controls require an active service admin interface")
+        service_state = await components.services.state()
+        wanted_access = manifest.services.access.model_dump() if manifest.services.access is not None else None
+        ok = (service_state.get("access") == wanted_access
+              and service_state.get("service_limits") == manifest.resources.service_requests)
+        bundle.record_receipt(Receipt(op="services.controls.verify", run_id=bundle.run_id,
+            requested={"access": wanted_access, "service_limits": manifest.resources.service_requests},
+            enforced_at=EnforcedAt(component="services"), result="applied" if ok else "failed",
+            verification=Verification(method="services_admin_state", ok=ok,
+                detail={"access": service_state.get("access"), "service_limits": service_state.get("service_limits")}))
+            .model_dump(mode="json"))
+        if not ok:
+            raise RuntimeError("service access/resource configuration was not confirmed by the service")
     if components.rollout is not None and health.get("require_rollout_binding") is not True:
         raise RuntimeError("training requires gateway enforcement of rollout bindings")
 
@@ -784,6 +914,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                 model_calls += 1
             if rec.get("event") in ("chat_completion", "budget_exhausted"):
                 bundle.record(f"gateway.{rec['event']}", agent_id=rec.get("agent"), request_id=rec.get("request_id"),
+                              identity=EventIdentity(),
                               ts=rec.get("ts"), status=rec.get("status"), request_summary=rec.get("request_summary"),
                               usage=(rec.get("response") or {}).get("usage"))
 
@@ -804,6 +935,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                 if _harness_host(manifest, str(rec.get("host") or "")):
                     marks["origin"] = "harness"            # the harness itself (update checks), not the model
                 bundle.record("web.request", agent_id=rec.get("agent"), ts=rec.get("ts"),
+                              identity=EventIdentity(),
                               **{k: v for k, v in rec.items() if k not in ("ts", "agent", "excerpt")}, **marks)
 
     service_records = 0
@@ -819,10 +951,20 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
                 out.write(_json(rec) + "\n")
                 service_records += 1
                 bundle.record(f"service.{rec.get('op', 'event')}", agent_id=rec.get("agent"), ts=rec.get("ts"),
+                              identity=EventIdentity(),
                               service=rec.get("service"),
                               **{k: v for k, v in rec.items() if k not in ("ts", "service", "op", "agent", "method")})
 
     # Environment-state checks that need the sandbox, then the judge over everything recorded.
+    from mesocosm.core.exposure import link_exposures
+
+    for exposure in link_exposures(bundle.events()):
+        references = list(exposure.links)
+        if exposure.exposure_event_id is not None:
+            references.append(EventLink(event_id=exposure.exposure_event_id, relation="derived_from",
+                                        evidence="exact service exposure record"))
+        bundle.record("evidence.exposure", links=references, link_coverage=exposure.link_coverage,
+                      **exposure.model_dump(exclude={"links", "link_coverage"}))
     if components.shared_files is not None and "shared_dir" in manifest.channel_types():
         bundle.record("judge.state_check", check="shared_dir", files=await components.shared_files())
     monitor_summary = None
@@ -831,7 +973,8 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
 
         config = manifest.judge.monitor
         options = config.model_dump(exclude={"enabled", "model", "threshold", "side_task_aware", "timing",
-                                             "decision_timeout_seconds", "poll_seconds", "on_flag"},
+                                             "decision_timeout_seconds", "decision_delay_seconds",
+                                             "poll_seconds", "on_flag"},
                                     exclude_none=True)
         monitor_summary = await score_bundle(bundle, components.monitor, config.threshold,
                                              config.side_task_aware, **options)

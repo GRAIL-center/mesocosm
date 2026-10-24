@@ -7,8 +7,8 @@ Layout under <runs_root>/<run_id>/:
     native/           raw harness/gateway artifacts, written once, never rewritten
     summary.json      written at the end
 
-Every event carries run_id, agent_id, step and (for model calls) request_id so that gateway
-records, harness events and verifier results join without heuristics.
+New events have stable IDs and explicit evidence links. Absent links or identity fields
+remain unknown; sharing a task, agent or time window does not establish causality.
 """
 
 from __future__ import annotations
@@ -18,14 +18,38 @@ import os
 import pathlib
 import secrets
 import time
-from typing import IO, Any
+from typing import IO, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def new_run_id() -> str:
     """Time-ordered, URL-safe id: run_<unix-ms>_<6 hex>."""
     return f"run_{int(time.time() * 1000):013d}_{secrets.token_hex(3)}"
+
+
+class EventIdentity(BaseModel):
+    """Separate execution identity from the display name and model alias.
+
+    Identifiers are supplied by their authoritative controller, never inferred from
+    a transcript. A null field means its identity was not recorded.
+    """
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    agent_instance_id: str | None = Field(default=None, min_length=1)
+    operator_id: str | None = Field(default=None, min_length=1)
+    session_id: str | None = Field(default=None, min_length=1)
+    policy_id: str | None = Field(default=None, min_length=1)
+
+
+class EventLink(BaseModel):
+    """A source-backed relation to another event, not an inferred causal edge."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    event_id: str = Field(min_length=1)
+    relation: Literal["responds_to", "observed", "derived_from", "authorized_by", "measured", "rewarded"]
+    evidence: str = Field(min_length=1)
+
+
+LinkCoverage = Literal["unknown", "partial", "complete"]
 
 
 class Event(BaseModel):
@@ -35,6 +59,11 @@ class Event(BaseModel):
     agent_id: str | None = None
     step: int | None = None
     request_id: str | None = None
+    # Legacy readers must not fabricate IDs each time an old bundle is opened.
+    event_id: str | None = None
+    identity: EventIdentity = Field(default_factory=EventIdentity)
+    links: list[EventLink] = Field(default_factory=list)
+    link_coverage: LinkCoverage = "unknown"
     data: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -43,6 +72,7 @@ class RunBundle:
         self.root = root
         self.run_id = run_id
         self._steps: dict[str, int] = {}
+        self._identities: dict[str, EventIdentity] = {}
 
     @classmethod
     def create(cls, runs_root: str | pathlib.Path, run_id: str | None = None) -> RunBundle:
@@ -80,12 +110,24 @@ class RunBundle:
         self._steps[agent_id] = self._steps.get(agent_id, 0) + 1
         return self._steps[agent_id]
 
+    def bind_identity(self, agent_id: str, identity: EventIdentity) -> None:
+        """Set known identity for subsequent writes through this writer only.
+
+        Historical imports must supply their original identity explicitly; current
+        session or policy bindings must never be used to attribute earlier records.
+        """
+        self._identities[agent_id] = identity
+
     def record(self, kind: str, *, agent_id: str | None = None, step: int | None = None,
-               request_id: str | None = None, ts: float | None = None, **data: Any) -> Event:
+               request_id: str | None = None, ts: float | None = None, identity: EventIdentity | None = None,
+               links: list[EventLink] | None = None, link_coverage: LinkCoverage = "unknown", **data: Any) -> Event:
         """Append one event. `ts` is for copies of records made elsewhere (gateway, services), so the
         event keeps the time the thing happened, not the time it was copied."""
         ev = Event(run_id=self.run_id, kind=kind, agent_id=agent_id, step=step,
-                   request_id=request_id, data=data, **({"ts": ts} if ts is not None else {}))
+                   request_id=request_id, event_id=f"evt_{secrets.token_hex(16)}",
+                   identity=identity or self._identities.get(agent_id or "") or EventIdentity(),
+                   links=links or [], link_coverage=link_coverage,
+                   data=data, **({"ts": ts} if ts is not None else {}))
         self._append("events.jsonl", ev.model_dump(mode="json"))
         return ev
 

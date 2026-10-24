@@ -33,6 +33,7 @@ class Flag(BaseModel):
 
 def _ref(ev: Event, **extra: Any) -> dict[str, Any]:
     return {"kind": ev.kind, "ts": ev.ts, "agent_id": ev.agent_id, "step": ev.step, "request_id": ev.request_id,
+            **({"event_id": ev.event_id} if ev.event_id is not None else {}),
             **extra}
 
 

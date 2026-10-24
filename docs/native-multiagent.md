@@ -204,6 +204,9 @@ Use [`spike/colab_docker_setup.sh`](../spike/colab_docker_setup.sh) only inside 
 That setup uses a special runc wrapper which binds the host's `/proc` and `/sys` and removes the PID
 namespace. Containers can see host processes; this is not evidence of production process isolation.
 Colab may also lack cgroup CPU/RAM enforcement, which must remain visible in environment receipts.
+Set `containment: adapted` explicitly in a private Colab world manifest. The default
+`containment: required` refuses to start agent turns without verified private PID isolation.
+An adapted run cannot establish reliable descendant termination; see [research controls](research-controls.md).
 
 Put the checkout, workspaces and run storage under `/home/dock`, writable by the Docker user, and run
 the control plane and Docker commands as `dock`. Use `--vllm-host 10.0.2.2` in both Compose rendering

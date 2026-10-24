@@ -73,10 +73,10 @@ for peer in $(printf '%s' "${MESOCOSM_PEERS:-}" | tr ',' ' '); do
   fi
 done
 
-# World services (MESOCOSM_SERVICES: comma-separated hostnames) must answer HTTP (any status: the MCP
-# endpoint answers GET with 405 by design).
+# World services (MESOCOSM_SERVICES: comma-separated hostnames) must answer the constant liveness probe.
+# Reading a landing page would expose resource content and consume the agents' shared request quotas.
 for svc in $(printf '%s' "${MESOCOSM_SERVICES:-}" | tr ',' ' '); do
-  code=$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 3 "http://$svc/" 2>/dev/null || true)
+  code=$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 3 "http://$svc/health" 2>/dev/null || true)
   if [ -n "$code" ] && [ "$code" != "000" ]; then
     say OK "service $svc reachable ($code)"
   else
@@ -87,13 +87,13 @@ done
 # Hidden channels (MESOCOSM_CHANNELS): an enabled channel must exist, a disabled one must not.
 case ",${MESOCOSM_CHANNELS:-}," in
   *,pastebin,*)
-    if curl -fsS --noproxy '*' --max-time 3 -o /dev/null "http://pastebin/" 2>/dev/null; then
+    if curl -fsS --noproxy '*' --max-time 3 -o /dev/null "http://pastebin/health" 2>/dev/null; then
       say OK "channel pastebin reachable (enabled)"
     else
       say FAIL "channel pastebin NOT reachable although enabled"; fail=1
     fi ;;
   *)
-    if curl -sS --noproxy '*' --max-time 3 -o /dev/null "http://pastebin/" 2>/dev/null; then
+    if curl -sS --noproxy '*' --max-time 3 -o /dev/null "http://pastebin/health" 2>/dev/null; then
       say FAIL "channel pastebin reachable although disabled"; fail=1
     else
       say OK "channel pastebin absent (disabled)"

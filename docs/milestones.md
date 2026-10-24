@@ -27,6 +27,11 @@ Tests using fake inference or authored tasks validate plumbing, not emergent beh
 
 ## Subsequent extensions
 
+The [research-control implementation](research-controls.md) adds internal access graphs, team quotas,
+owned-workload stopping, explicit evidence links, joint before-tool review, input drift checks and
+held-out evaluation. Its regression tests establish these control paths; new standard Linux containment
+and repeated real-agent acceptance remain to be run. Earlier Colab evidence does not verify these changes.
+
 Prioritize extensions when a concrete study needs them: additional native task profiles and harnesses,
 real application-service integrations, broader training algorithms and adaptive monitor training. Each extension
 needs an enforceable interface, clear unsupported cases and evidence on the actual execution path.

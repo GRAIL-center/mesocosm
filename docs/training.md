@@ -167,3 +167,13 @@ update after cancellation. Cancellation waits for an active GPU worker to releas
 waking inference. Numerical parity and supported load receipts establish policy consistency, not
 cryptographic inspection of GPU tensors. Report task success rates and performance changes separately;
 an optimizer step, monitor score or successful command alone is not evidence of improved agents.
+
+## Held-out evaluation
+
+An optional `evaluation_world: held-out-world.yaml` uses the same supported three-agent training profile
+with separate tasks. It executes before and after training through the real native runner, collects and
+verifies policy-bound rollouts, and never performs an optimizer update in either evaluation world.
+Task content overlap is rejected, and input/rubric configuration is checked for drift. Exact-content
+separation does not establish semantic novelty or exclude answer leakage through shared inputs or
+pretraining. `training.json` retains these evaluations separately from training episodes and never
+automatically declares a learning benefit. See [research controls](research-controls.md) for interpretation.

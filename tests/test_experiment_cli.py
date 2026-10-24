@@ -129,6 +129,44 @@ def test_cli_malformed_yaml_has_one_json_error_response(tmp_path):
     assert not (tmp_path / "out").exists()
 
 
+def test_cli_final_trial_input_drift_exits_nonzero_even_when_all_trial_counters_are_successful(tmp_path, monkeypatch):
+    experiment = write_experiment(tmp_path)
+    plan = yaml.safe_load(experiment.read_text())
+    plan["conditions"] = plan["conditions"][:1]
+    experiment.write_text(yaml.safe_dump(plan))
+    output = tmp_path / "out"
+
+    class FakeStack:
+        def __init__(self, compose_file):
+            self.cleanup_error = None
+
+        async def up(self):
+            pass
+
+        async def down(self):
+            pass
+
+    async def fake_runtime(manifest, compose_file, runs_root, *args, **kwargs):
+        bundle = RunBundle.create(runs_root)
+        bundle.record("run.start")
+        bundle.write_summary({"status": "ok", "model_calls": 0, "flags": {}, "events": 1, "agent_seconds": {}})
+        changed = yaml.safe_load(manifest.read_text())
+        changed["model"]["hf_repo"] = "changed/model"
+        manifest.write_text(yaml.safe_dump(changed))
+        return RunResult(bundle.run_id, bundle.root, "ok", {})
+
+    monkeypatch.setattr(stack, "DockerStack", FakeStack)
+    monkeypatch.setattr(main, "_run_manifest", fake_runtime)
+    code, report = invoke("experiment", "run", experiment, "--out", output,
+                          "--runs-root", tmp_path / "runs", "--workspace-root", tmp_path / "workspaces")
+    assert report["status"] == "failed_input_drift" and report["ok"] == 1
+    assert all(report[key] == 0 for key in ("failed", "not_run", "stopped", "incomplete_records"))
+    assert report["lifecycle_errors"] == []
+    assert code == 1, "input drift invalidates the experiment even after its last successful trial"
+    saved = json.loads((output / "experiment.json").read_text())
+    assert saved["trials"][0]["status"] == "ok" and saved["trials"][0]["input_integrity"] == "failed"
+
+
 @pytest.mark.parametrize("fails", [False, True])
 async def test_run_manifest_closes_all_control_clients_even_when_runtime_raises(tmp_path, monkeypatch, fails):
     write_experiment(tmp_path)

@@ -224,7 +224,8 @@ async def test_unreachable_gateway_is_a_recorded_failure(world, tmp_path):
     result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs2")
     assert result.status == "failed" and "Connect" in (result.error or "")
     bundle = RunBundle.open(result.bundle_path)
-    assert [e.kind for e in bundle.events()] == ["run.failed", "gateway.failure_snapshot"]
+    assert [e.kind for e in bundle.events()] == ["run.failed", "run.model_stop_failed",
+                                               "workload.termination", "gateway.failure_snapshot"]
     assert bundle.events()[-1].data["snapshot_complete"] is False
     assert json.loads((bundle.root / "summary.json").read_text())["model_calls"] is None
     assert json.loads((bundle.root / "summary.json").read_text())["status"] == "failed"

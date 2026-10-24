@@ -56,14 +56,16 @@ view of activity; the monitor provides decisions.
 
 | Condition | Examples | Research question |
 |---|---|---|
-| **Access & communication** | Shared files, repositories, service permissions and internet access | What changes when agents can exchange information? |
-| **Budgets & memory** | Model-request and token budgets; reset or retained sessions and workspaces | How do constraints and prior experience affect decisions? |
+| **Access & communication** | Directed messages, channel membership, repository/service grants and internet access | What changes when agents can exchange information? |
+| **Budgets & memory** | Individual and team request/token quotas, shared concurrency; reset or retained sessions | How do constraints and prior experience affect decisions? |
 | **Incentives** | Individual, team-mean or mixed rewards; original verifier or peer verdicts | How does the reward structure affect the work agents choose to do? |
 | **Monitoring** | Reviewer, rubric, evidence visibility; posthoc review or before-tool intervention | What can a monitor detect, and how does intervention affect the run? |
 
 Configure these controls in YAML. The [experiment guide](docs/experiments.md) explains the supported
 combinations and how to compare them. Original task outcomes, allocated rewards and monitor judgments
 remain separate, and failed or missing observations stay in the experiment record.
+The [research controls guide](docs/research-controls.md) covers access graphs, joint live review,
+verified stopping, repeated baselines and held-out evaluation.
 
 ## See the agents at work
 
