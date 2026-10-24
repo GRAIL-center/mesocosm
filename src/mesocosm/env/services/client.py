@@ -8,8 +8,11 @@ import httpx
 
 
 class ServicesAdmin:
-    def __init__(self, base_url: str, transport: httpx.AsyncBaseTransport | None = None):
-        self.client = httpx.AsyncClient(base_url=base_url, timeout=10.0, transport=transport)
+    def __init__(self, base_url: str, api_key: str, transport: httpx.AsyncBaseTransport | None = None):
+        if not api_key:
+            raise ValueError("services admin requires a nonempty control key")
+        self.client = httpx.AsyncClient(base_url=base_url, timeout=10.0, transport=transport,
+                                       headers={"Authorization": f"Bearer {api_key}"})
 
     async def state(self) -> dict[str, Any]:
         r = await self.client.get("/admin/state")

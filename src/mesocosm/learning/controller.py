@@ -13,6 +13,13 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from mesocosm.core.config import absolutize_manifest
+from mesocosm.core.evaluation import (
+    independent_evaluation,
+    input_snapshot,
+    pin_task_paths,
+    require_disjoint_tasks,
+    verify_inputs,
+)
 from mesocosm.core.manifest import WorldManifest, validate_manifest
 from mesocosm.learning.checkpoints import initial_policy, write_json
 from mesocosm.learning.config import PolicyIdentity, TrainingSpec
@@ -40,10 +47,16 @@ def training_world(spec: TrainingSpec, path: pathlib.Path) -> WorldManifest:
     if not isinstance(data, dict):
         raise ValueError("training world must be a YAML mapping")
     absolutize_manifest(data, base_path.parent)
+    pin_task_paths(data, base_path.parent)
     world = WorldManifest.model_validate(data)
     report = validate_manifest(base_path)
     if not report.ok:
         raise ValueError(f"invalid training world: {report.errors}")
+    if world.profile != "research":
+        raise ValueError("training requires profile: research")
+    if world.task_services == "shared":
+        raise ValueError("rejected_unsupported: shared-service team measurements are not yet integrated "
+                         "with policy-weight training; use isolated task services")
     if len(world.agents) < 3 or world.mode != "comparison" or world.memory != "reset":
         raise ValueError("rejected_unsupported: training requires >=3 agents, comparison mode and reset memory")
     if not world.rewards.enabled or world.learning.mode != "none":
@@ -58,7 +71,25 @@ def training_world(spec: TrainingSpec, path: pathlib.Path) -> WorldManifest:
         model = world.model_for(agent)
         if model.id != spec.initial_model or model.kind != "vllm" or model.upstream:
             raise ValueError("training agents must share initial_model on the default vLLM upstream")
+        if model.revision is not None and model.revision != spec.base_revision:
+            raise ValueError("declared world model revision differs from the verified training base revision")
     return world
+
+
+def _policy_world(world: WorldManifest, spec: TrainingSpec, policy: PolicyIdentity, label: str) -> WorldManifest:
+    data = world.model_dump(mode="json")
+    data["name"] = label
+    data["gateway"]["run_label"] = label
+    for model in [data["model"], *data["models"]]:
+        if model["id"] == spec.initial_model:
+            model["id"] = policy.model
+            model["revision"] = policy.base_revision
+            model["hf_repo"] = policy.base_model
+    for agent in data["agents"]:
+        agent["model"] = policy.model
+    if data["judge"]["monitor"]["model"] == spec.initial_model and policy.model != spec.initial_model:
+        data["models"].append(world.catalog()[spec.initial_model].model_dump(mode="json"))
+    return WorldManifest.model_validate(data)
 
 
 async def _finish_gpu_worker(function: Callable[..., Any], *args: Any,
@@ -93,11 +124,23 @@ async def run_training(spec: TrainingSpec, path: pathlib.Path, out: pathlib.Path
     from mesocosm.learning.training import reinforce_update, verify_rollout_policy
 
     world = training_world(spec, path)
+    world_path = (path.resolve().parent / spec.world).resolve()
+    training_inputs = input_snapshot(world_path)
+    evaluation_world = None
+    evaluation_inputs = None
+    evaluation_path = None
+    if spec.evaluation_world:
+        evaluation_path = (path.resolve().parent / spec.evaluation_world).resolve()
+        evaluation_world = training_world(spec.model_copy(update={"world": spec.evaluation_world}), path)
+        evaluation_inputs = input_snapshot(evaluation_path)
+        require_disjoint_tasks(training_inputs, evaluation_inputs)
     out = out.resolve()
     out.mkdir(parents=True, exist_ok=False)
     write_json(out / "training-spec.json", spec.model_dump(mode="json"))
     result: dict[str, Any] = {"status": "running", "algorithm": spec.algorithm,
                               "episodes": [], "updates": [], "serving": [], "errors": [],
+                              "evaluations": [], "training_inputs": training_inputs,
+                              "evaluation_inputs": evaluation_inputs,
                               "performance_improvement_demonstrated": False}
 
     def save() -> None:
@@ -115,26 +158,72 @@ async def run_training(spec: TrainingSpec, path: pathlib.Path, out: pathlib.Path
                               if spec.server_api_key_env else None)
     invocation = secrets.token_hex(6)
     save()
+
+    async def evaluate(phase: str, policy: PolicyIdentity) -> None:
+        if evaluation_world is None or evaluation_inputs is None or evaluation_path is None:
+            return
+        verify_inputs(evaluation_path, evaluation_inputs)
+        verify_inputs(world_path, training_inputs)
+        label = f"{spec.name[:20]}-{invocation}-eval-{phase}"
+        manifest = _policy_world(evaluation_world, spec, policy, label)
+        manifest_path = out / f"evaluation-{phase}.yaml"
+        manifest_path.write_text(yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False))
+        report = validate_manifest(manifest_path)
+        if not report.ok:
+            raise ValueError(f"invalid held-out evaluation world: {report.errors}")
+        record: dict[str, Any] = {"phase": phase, "episode_id": label, "status": "running",
+                                  "policy": policy.model_dump(mode="json"), "manifest": str(manifest_path),
+                                  "evaluation_only": True, "optimizer_steps": 0}
+        result["evaluations"].append(record)
+        save()
+        try:
+            run = await run_one(manifest_path, RolloutContext(policy, label))
+            record.update(run_id=run.run_id, bundle=str(run.bundle_path), status=run.status)
+            save()
+            if run.status != "ok":
+                raise RuntimeError(f"held-out evaluation incomplete: {run.status}: {run.error}")
+            verify_inputs(evaluation_path, evaluation_inputs)
+            verify_inputs(world_path, training_inputs)
+            record["measurements"] = independent_evaluation(run.bundle_path)
+            batch = collect_rollouts(run.bundle_path, policy, label)
+            write_json(out / f"evaluation-rollout-{phase}.json", batch.model_dump(mode="json"))
+            compute_error: BaseException | None = None
+            try:
+                result["serving"].append(await server.sleep())
+                save()
+                record["policy_verification"] = await _finish_gpu_worker(
+                    verify_rollout_policy, batch, policy, spec, on_error=record_error)
+            except BaseException as exc:
+                compute_error = exc
+                raise
+            finally:
+                try:
+                    result["serving"].append(await server.wake())
+                except BaseException as exc:
+                    record_error(exc, f"evaluation_{phase}_wake")
+                    if compute_error is None:
+                        raise
+            record["status"] = "ok"
+        except BaseException as exc:
+            record.update(status="cancelled" if isinstance(exc, asyncio.CancelledError) else "failed",
+                          error=f"{type(exc).__name__}: {exc}")
+            receipt = manifest_path.with_suffix(".result.json")
+            if receipt.is_file():
+                record["world_result"] = str(receipt)
+            raise
+        finally:
+            save()
+
     try:
         policy = await asyncio.to_thread(initial_policy, spec)
         result["initial_policy"] = policy.model_dump(mode="json")
         result["serving"].append(await server.verify(policy))
         save()
+        await evaluate("pre", policy)
         for index in range(1, spec.episodes + 1):
+            verify_inputs(world_path, training_inputs)
             label = f"{spec.name[:20]}-{invocation}-e{index:04d}"
-            data = world.model_dump(mode="json")
-            data["name"] = label
-            data["gateway"]["run_label"] = label
-            models = [data["model"], *data["models"]]
-            for model in models:
-                if model["id"] == spec.initial_model:
-                    model["id"] = policy.model
-            for agent in data["agents"]:
-                agent["model"] = policy.model
-            # Keep a monitor on the unchanged base model while updating the agent policy.
-            if data["judge"]["monitor"]["model"] == spec.initial_model and policy.model != spec.initial_model:
-                data["models"].append(world.catalog()[spec.initial_model].model_dump(mode="json"))
-            manifest = WorldManifest.model_validate(data)
+            manifest = _policy_world(world, spec, policy, label)
             manifest_path = out / f"episode-{index:04d}.yaml"
             manifest_path.write_text(yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False))
             report = validate_manifest(manifest_path)
@@ -159,6 +248,7 @@ async def run_training(spec: TrainingSpec, path: pathlib.Path, out: pathlib.Path
             save()
             if run.status != "ok":
                 raise RuntimeError(f"training episode incomplete: {run.status}: {run.error}")
+            verify_inputs(world_path, training_inputs)
             batch = collect_rollouts(run.bundle_path, policy, label)
             write_json(out / f"rollout-{index:04d}.json", batch.model_dump(mode="json"))
             episode["rollout"] = batch.statistics(spec.baseline)
@@ -194,12 +284,15 @@ async def run_training(spec: TrainingSpec, path: pathlib.Path, out: pathlib.Path
                         raise
             if update is not None:
                 if update["status"] != "updated":
+                    await evaluate("post", policy)
+                    result["final_policy"] = policy.model_dump(mode="json")
                     result["status"] = "no_update"
                     save()
                     return result
                 policy = PolicyIdentity.model_validate(update["next_policy"])
                 result["serving"].append(await server.load(policy))
                 save()
+        await evaluate("post", policy)
         result["final_policy"] = policy.model_dump(mode="json")
         result["status"] = "ok"
     except BaseException as exc:

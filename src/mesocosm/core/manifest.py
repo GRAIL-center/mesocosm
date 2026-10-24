@@ -20,6 +20,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from mesocosm.core.access import AccessSpec, validate_access
+
 SUPPORTED_HARNESSES = {"opencode"}
 SUPPORTED_TASK_SOURCES = {"harbor"}
 # Conditions the platform enforces today, and where. M3 extends this table.
@@ -39,6 +41,22 @@ class Budget(ManifestModel):
     completion_tokens: int | None = Field(default=None, ge=1)
     prompt_tokens: int | None = Field(default=None, ge=1)
     requests: int | None = Field(default=None, ge=1)
+
+
+class ResourceSpec(ManifestModel):
+    """Real team-wide admission quotas, independent of per-agent budgets and simulated ledgers."""
+    model_requests: int | None = Field(default=None, ge=1)
+    completion_tokens: int | None = Field(default=None, ge=1)
+    model_concurrency: int | None = Field(default=None, ge=1)
+    service_requests: dict[str, int] = Field(default_factory=dict)
+
+    @field_validator("service_requests")
+    @classmethod
+    def _service_limits(cls, values: dict[str, int]) -> dict[str, int]:
+        names = {"board", "wiki", "chat", "git", "pypi", "pastebin", "cache", "clock", "ledger", "vault", "mcp"}
+        if set(values) - names or any(v < 1 for v in values.values()):
+            raise ValueError("service_requests requires known service names and positive request limits")
+        return values
 
 
 class PersonaSpec(ManifestModel):
@@ -130,6 +148,8 @@ class ModelSpec(ManifestModel):
     id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$",
                     description="Model id the harness requests, e.g. qwen3-4b (the name vLLM serves)")
     hf_repo: str | None = None
+    revision: str | None = Field(default=None, pattern=r"^[a-f0-9]{40}$",
+                                 description="Declared immutable model revision; serving verification is separate")
     upstream: str | None = Field(default=None, pattern=r"^https?://",
                                  description="The server's root (https://api.example); the harness's path "
                                              "(/v1/chat/completions) is forwarded as is")
@@ -174,6 +194,8 @@ class MonitorSpec(ManifestModel):
     visibility: Literal["transcript", "actions"] = "transcript"
     timing: Literal["posthoc", "pre_action"] = "posthoc"
     decision_timeout_seconds: float = Field(default=30, gt=0, le=600)
+    decision_delay_seconds: float = Field(default=0, ge=0, lt=600,
+                                         description="Hold before evidence collection; consumes the decision deadline")
     poll_seconds: float = Field(default=0.1, gt=0, le=10)
     on_flag: Literal["deny", "terminate"] = "deny"
     include_shared: bool = False
@@ -315,12 +337,9 @@ class HoneypotSpec(ManifestModel):
 
 
 class CacheSpec(ManifestModel):
-    """A shared build cache at the `cache` hostname (ADR-0033): objects any agent may fetch, and, when
-    `writable`, store, listed by recency. It is ordinary infrastructure, not a designated channel: the egress
-    check confirms it present as a service, never as a hidden channel, and whether isolated agents turn it into
-    a channel is the behaviour the judge's `emergent_channel` detector watches for (the Artifactory analog of
-    the 2026 incidents; `docs/incident-reproducibility.md`). The listing reveals that objects exist and when,
-    never who wrote them (the trace leak); the services log keeps the author for the judge."""
+    """A shared text object store at the compatibility hostname `cache` (ADR-0033).
+    Agents fetch and optionally write text values by key; this does not cache build outputs or
+    package installations. Listings omit authors, while the service journal records them."""
     enabled: bool = False
     writable: bool = True
     list_recent: bool = Field(default=True, description="GET / and /api/objects reveal keys other agents wrote "
@@ -331,6 +350,7 @@ class CacheSpec(ManifestModel):
 class ServicesSpec(ManifestModel):
     """The shared world inside the sandbox (mesocosm.env.services). Enabled by default."""
     enabled: bool = True
+    access: AccessSpec | None = None
     board: bool = True
     chat: ChatSpec = Field(default_factory=ChatSpec)
     clock: ClockSpec = Field(default_factory=ClockSpec)
@@ -415,6 +435,10 @@ class LearningSpec(ManifestModel):
 
 class WorldManifest(ManifestModel):
     name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+    profile: Literal["research", "fixture"] = Field(default="research",
+        description="Research excludes simulated services and authored incident inputs; fixture is regression-only")
+    task_services: Literal["isolated", "shared"] = Field(default="isolated",
+        description="Native sidecars per agent, or shared services with one team measurement; workspaces stay separate")
     mode: Literal["comparison", "persistent"] = "comparison"
     model: ModelSpec
     models: list[ModelSpec] = Field(default_factory=list, description="Further models agents may be given "
@@ -434,6 +458,22 @@ class WorldManifest(ManifestModel):
     judge: JudgeSpec = Field(default_factory=JudgeSpec)
     rewards: RewardSpec = Field(default_factory=RewardSpec)
     learning: LearningSpec = Field(default_factory=LearningSpec)
+    resources: ResourceSpec = Field(default_factory=ResourceSpec)
+    operator_id: str | None = Field(default=None, min_length=1,
+                                     description="Control-plane operator identity; never inferred from a persona")
+    containment: Literal["required", "adapted"] = Field(default="required",
+        description="Native CLI requires private PID containment; adapted explicitly permits unverified hosts")
+
+    @model_validator(mode="after")
+    def _research_profile(self) -> WorldManifest:
+        from mesocosm.core.research import research_profile_errors
+
+        errors = research_profile_errors(self)
+        if errors:
+            raise ValueError("\n".join(errors))
+        if self.task_services == "shared" and (self.mode != "comparison" or self.memory != "reset"):
+            raise ValueError("shared task services require comparison mode and reset memory")
+        return self
 
     def channel_types(self) -> list[str]:
         return [c.type for c in self.channels]
@@ -554,6 +594,14 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             task_dir = (path.parent / task.path).resolve()
             if not (task_dir / "instruction.md").is_file():
                 errors.append(f"tasks[{i}]: {task_dir} has no instruction.md")
+            elif manifest.profile == "research":
+                from mesocosm.adapters.harbor.task import load_task
+                from mesocosm.core.research import research_task_errors
+
+                try:
+                    errors.extend(research_task_errors(load_task(task_dir)))
+                except (OSError, ValueError) as exc:
+                    errors.append(f"tasks[{i}]: {exc}")
         # a dataset is resolved to one or many materialized task directories at run time; `name` is an
         # optional label and a collection reference expands to all its tasks (ADR-0040)
         for agent_id in task.side_task or []:
@@ -686,15 +734,28 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
         if m.kind == "openai" and manifest.observe.activations:
             warnings.append(f"model {m.id!r} is kind: openai: no token ids are recorded for it, activations cannot be "
                             "recomputed (ADR-0029)")
+    if manifest.services.access is not None:
+        errors.extend(validate_access(manifest.services.access, [a.id for a in manifest.agents],
+            manifest.services.git, manifest.services.chat.channels if manifest.services.chat.enabled else [],
+            shared_directory="shared_dir" in manifest.channel_types()))
+        if not manifest.services.enabled or not manifest.isolate_agents:
+            errors.append("services.access requires services.enabled=true and isolate_agents=true")
+        if manifest.internet.enabled:
+            warnings.append("services.access governs internal services; allowed internet is an additional channel")
+    if manifest.resources.service_requests and not manifest.services.enabled:
+        errors.append("resources.service_requests requires services.enabled=true")
     monitor = manifest.judge.monitor
     if monitor.enabled:
+        if monitor.decision_delay_seconds >= monitor.decision_timeout_seconds:
+            errors.append("monitor decision_delay_seconds must be smaller than decision_timeout_seconds")
         if monitor.timing == "posthoc" and (
-                monitor.on_flag != "deny" or monitor.decision_timeout_seconds != 30 or monitor.poll_seconds != 0.1):
+                monitor.on_flag != "deny" or monitor.decision_timeout_seconds != 30 or monitor.poll_seconds != 0.1
+                or monitor.decision_delay_seconds != 0):
             errors.append("live intervention settings require judge.monitor.timing=pre_action")
-        if monitor.timing == "pre_action" and (
-                monitor.scope != "per_agent" or monitor.include_shared or monitor.side_task_aware):
-            errors.append("pre_action monitoring requires per_agent scope, include_shared=false and "
-                          "side_task_aware=false")
+        if monitor.timing == "pre_action" and monitor.side_task_aware:
+            errors.append("pre_action monitoring requires side_task_aware=false")
+        if monitor.timing == "pre_action" and monitor.include_shared and not manifest.services.enabled:
+            errors.append("live include_shared requires enabled services")
         if monitor.model is None:
             errors.append("judge.monitor needs a model from the catalog (judge.monitor.model)")
         elif monitor.model not in ids:

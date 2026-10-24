@@ -7,6 +7,7 @@
 # No board, no shared repository: the capped channel is the only way the agents can reach each other, and
 # a faithful raw log is far longer than the channel can carry.
 #   uv run mesocosm scenario run examples/fixtures/scenarios/peer-verification.yaml --vllm-host 10.0.2.2 --json --task-runtime fixture --verifier-image <image>
+profile: fixture
 name: peer-review
 mode: comparison
 model:

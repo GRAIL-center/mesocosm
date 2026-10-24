@@ -17,6 +17,7 @@ from mesocosm.core.manifest import load_manifest
 from mesocosm.core.records import RunBundle
 from mesocosm.core.run import RunResult
 from mesocosm.env import stack
+from mesocosm.execution import local
 
 
 def write_experiment(tmp_path, *, invalid=False):
@@ -90,7 +91,7 @@ def test_cli_runs_every_trial_and_keeps_custom_paths_fresh(tmp_path, monkeypatch
         return RunResult(bundle.run_id, bundle.root, status, {})
 
     monkeypatch.setattr(stack, "DockerStack", FakeStack)
-    monkeypatch.setattr(main, "_run_manifest", fake_runtime)
+    monkeypatch.setattr(local, "run_manifest", fake_runtime)
     code, report = invoke("experiment", "run", experiment, "--runs-root", runs,
                           "--workspace-root", workspaces, "--out", output)
     assert code == 1 and report["status"] == "completed"
@@ -129,6 +130,44 @@ def test_cli_malformed_yaml_has_one_json_error_response(tmp_path):
     assert not (tmp_path / "out").exists()
 
 
+def test_cli_final_trial_input_drift_exits_nonzero_even_when_all_trial_counters_are_successful(tmp_path, monkeypatch):
+    experiment = write_experiment(tmp_path)
+    plan = yaml.safe_load(experiment.read_text())
+    plan["conditions"] = plan["conditions"][:1]
+    experiment.write_text(yaml.safe_dump(plan))
+    output = tmp_path / "out"
+
+    class FakeStack:
+        def __init__(self, compose_file):
+            self.cleanup_error = None
+
+        async def up(self):
+            pass
+
+        async def down(self):
+            pass
+
+    async def fake_runtime(manifest, compose_file, runs_root, *args, **kwargs):
+        bundle = RunBundle.create(runs_root)
+        bundle.record("run.start")
+        bundle.write_summary({"status": "ok", "model_calls": 0, "flags": {}, "events": 1, "agent_seconds": {}})
+        changed = yaml.safe_load(manifest.read_text())
+        changed["model"]["hf_repo"] = "changed/model"
+        manifest.write_text(yaml.safe_dump(changed))
+        return RunResult(bundle.run_id, bundle.root, "ok", {})
+
+    monkeypatch.setattr(stack, "DockerStack", FakeStack)
+    monkeypatch.setattr(local, "run_manifest", fake_runtime)
+    code, report = invoke("experiment", "run", experiment, "--out", output,
+                          "--runs-root", tmp_path / "runs", "--workspace-root", tmp_path / "workspaces")
+    assert report["status"] == "failed_input_drift" and report["ok"] == 1
+    assert all(report[key] == 0 for key in ("failed", "not_run", "stopped", "incomplete_records"))
+    assert report["lifecycle_errors"] == []
+    assert code == 1, "input drift invalidates the experiment even after its last successful trial"
+    saved = json.loads((output / "experiment.json").read_text())
+    assert saved["trials"][0]["status"] == "ok" and saved["trials"][0]["input_integrity"] == "failed"
+
+
 @pytest.mark.parametrize("fails", [False, True])
 async def test_run_manifest_closes_all_control_clients_even_when_runtime_raises(tmp_path, monkeypatch, fails):
     write_experiment(tmp_path)
@@ -149,7 +188,7 @@ async def test_run_manifest_closes_all_control_clients_even_when_runtime_raises(
             raise RuntimeError("synthetic failure")
         return "completed"
 
-    monkeypatch.setattr(main, "_components", lambda *args, **kwargs: components)
+    monkeypatch.setattr(local, "build_components", lambda *args, **kwargs: components)
     monkeypatch.setattr(runtime, "run_world", run_world)
     args = (tmp_path / "world.yaml", tmp_path / "compose.yaml", tmp_path / "runs", tmp_path / "workspaces", None)
     if fails:
@@ -197,7 +236,7 @@ def test_cleanup_failure_preserves_completed_trials_and_stops_new_worlds(tmp_pat
         return RunResult(bundle.run_id, bundle.root, "ok", {})
 
     monkeypatch.setattr(stack, "DockerStack", FakeStack)
-    monkeypatch.setattr(main, "_run_manifest", fake_runtime)
+    monkeypatch.setattr(local, "run_manifest", fake_runtime)
     code, report = invoke("experiment", "run", experiment, "--out", output,
                           "--runs-root", tmp_path / "runs", "--workspace-root", tmp_path / "workspaces")
     completed = 1 if failure_phase == "transition" else 3
@@ -240,7 +279,7 @@ def test_cancelled_final_cleanup_is_persisted_without_swallowing_cancellation(tm
         return RunResult(bundle.run_id, bundle.root, "ok", {})
 
     monkeypatch.setattr(stack, "DockerStack", FakeStack)
-    monkeypatch.setattr(main, "_run_manifest", fake_runtime)
+    monkeypatch.setattr(local, "run_manifest", fake_runtime)
     with pytest.raises(asyncio.CancelledError):
         invoke("experiment", "run", experiment, "--out", output,
                "--runs-root", tmp_path / "runs", "--workspace-root", tmp_path / "workspaces")

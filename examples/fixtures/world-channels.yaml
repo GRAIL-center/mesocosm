@@ -8,6 +8,7 @@
 #   uv run mesocosm env compose examples/fixtures/world-channels.yaml --out /tmp/compose.yml --run-label world-channels [--vllm-host 10.0.2.2]
 #   docker compose -f /tmp/compose.yml up -d --build
 #   uv run mesocosm run examples/fixtures/world-channels.yaml --compose-file /tmp/compose.yml --json --task-runtime fixture --verifier-image <image>
+profile: fixture
 name: world-channels
 mode: comparison
 model:

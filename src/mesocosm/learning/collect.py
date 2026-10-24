@@ -154,12 +154,15 @@ def _collect_rollouts(bundle: RunBundle | str | pathlib.Path, expected_policy: P
     bound_requests: dict[str, list[str]] = defaultdict(list)
     requests: dict[tuple[str, str], list[ActionRequest]] = defaultdict(list)
     request_records: dict[str, dict[str, Any]] = {}
+    admissions: dict[str, tuple[str, dict[str, Any]]] = {}
+    unsettled: set[str] = set()
+    journaled = any(record.get("event") == "request_admitted" for record in native)
     for record in native:
         record_kind, record_agent = record.get("event"), record.get("agent")
         if record_kind in {"rollout_denied", "upstream_error", "budget_exhausted", "run_stopped", "hold_expired",
-                    "auth_denied", "endpoint_denied", "invalid_request"}:
+                    "auth_denied", "endpoint_denied", "invalid_request", "request_usage_unknown", "terminal_refusal"}:
             raise ValueError(f"invalid rollout: source gateway request failed ({record_kind})")
-        if record_kind not in {"rollout.bound", "rollout.unbound", "chat_completion"}:
+        if record_kind not in {"rollout.bound", "rollout.unbound", "request_admitted", "chat_completion"}:
             continue
         if not isinstance(record_agent, str) or record_agent not in agents:
             raise ValueError("invalid rollout: unknown agent in rollout records")
@@ -197,15 +200,32 @@ def _collect_rollouts(bundle: RunBundle | str | pathlib.Path, expected_policy: P
                          == (agent, run, episode_id, context["session_id"], bundle.run_id), "unbind identity mismatch")
                 _require(active.get(agent) == context, "unbind without its exact active binding")
                 del active[agent]
-        elif record_kind == "chat_completion":
+        else:
             context = record.get("rollout")
             if not isinstance(context, dict) or active.get(agent) != context:
                 raise ValueError("invalid rollout: request outside its exact active binding")
+            _require(record.get("missing_usage") is not True, "gateway token usage is unknown")
+            if record_kind == "request_admitted":
+                request_id = record.get("request_id")
+                if not isinstance(request_id, str) or not request_id:
+                    raise ValueError("invalid rollout: admission has no request ID")
+                _require(record.get("identified_by") == "key" and record.get("model_kind") == "vllm",
+                         "admission did not use its bound agent key and vLLM policy")
+                _require(request_id not in admissions and request_id not in request_records,
+                         "duplicate/replayed request admission")
+                admissions[request_id] = agent, context
+                unsettled.add(request_id)
+                continue
             action = _request(record, expected_policy)
             _require(action.request_id not in request_records, "duplicate/replayed request ID")
+            if journaled:
+                _require(action.request_id in unsettled and admissions.get(action.request_id) == (agent, context),
+                         "completion lacks its exact preceding admission")
+                unsettled.remove(action.request_id)
             request_records[action.request_id] = record
             requests[action.agent_id, action.task].append(action)
             bound_requests[context["binding_id"]].append(action.request_id)
+    _require(not unsettled, "gateway admissions have no completed settlement")
     _require(not active, "rollout bindings were not closed")
     _require(sum(event.kind in {"rollout.bound", "rollout.unbound"} for event in events) == 2 * len(bindings),
              "missing/extra binding source events")

@@ -150,7 +150,7 @@ def test_emergent_channel_flags_a_cross_agent_pickup_from_the_shared_cache():
     ]
     flags = detect(events, RUN)
     assert [(f.kind, f.agent_id) for f in flags] == [("emergent_channel", "agent-2")]
-    assert flags[0].summary == "picked up 1 object(s) another agent left in the shared cache (relay-r3)"
+    assert flags[0].summary == "picked up 1 object(s) another agent left in the shared object store (relay-r3)"
     assert flags[0].detector == "state_check" and flags[0].evidence[0]["kind"] == "service.read"
     # a task that declares the cache an allowed channel suppresses the flag
     allowed = [ev("task.loaded", 0.5, task="t", allowed_channels=["cache"])] + events[1:]

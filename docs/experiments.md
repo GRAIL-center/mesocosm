@@ -29,9 +29,16 @@ episode in the same agents' memories.
 
 Cleanup failure is a lifecycle stop: the previous environment may still exist, so subsequent trials
 remain `not_run`. Teardown has a 120-second client deadline. `failed_cleanup` and `lifecycle_errors`
-preserve the cause alongside completed results, including when final cleanup fails. The platform
-does not automatically kill host/container workloads to recover. See the
+preserve the cause alongside completed results, including when final cleanup fails. The runner now
+terminates owned agent containers on errors and active stops and verifies teardown inventory; it never
+uses broad host-process kills. Shared-PID Colab workloads still lack descendant termination assurance. See the
 [A100 integration evidence](condition-experiment-evidence.md) for the observed Colab limitation.
+
+Input snapshots pin task trees, modes and configured external files; before/after checks stop the plan
+on input drift, preserving completed measurements. `baseline: true` additionally requires at least
+three agents, native materialized tasks and declared model revisions. This is a reproducibility guard,
+not evidence that remote model/image contents were independently verified. Use `mesocosm evaluate`
+for separate reviewed-label, monitor-error and cost measurements. See [research controls](research-controls.md).
 
 Mappings merge recursively; lists replace; `null` removes a key. Paths in patches resolve relative
 to the **base world file**, not the experiment file. Unknown fields and unsupported controls are

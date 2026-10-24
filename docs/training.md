@@ -52,6 +52,10 @@ Generic peer-verdict rewards require `peer_review.protocol: ratings` and complet
 legacy peer-review scoring is rejected. Missing measurements never become zero. The original verifier
 results remain recorded independently of the incentive source and allocation.
 
+Training requires `profile: research` and `task_services: isolated`. The new shared-service runtime
+reports one team measurement, and its measurement identity is not yet integrated with the policy-weight
+rollout collector. That combination fails explicitly; context feedback remains separately available.
+
 ## Start an inference server that can accept updates
 
 Start the pinned model in the serving environment, using the same revision as the training spec.
@@ -167,3 +171,13 @@ update after cancellation. Cancellation waits for an active GPU worker to releas
 waking inference. Numerical parity and supported load receipts establish policy consistency, not
 cryptographic inspection of GPU tensors. Report task success rates and performance changes separately;
 an optimizer step, monitor score or successful command alone is not evidence of improved agents.
+
+## Held-out evaluation
+
+An optional `evaluation_world: held-out-world.yaml` uses the same supported three-agent training profile
+with separate tasks. It executes before and after training through the real native runner, collects and
+verifies policy-bound rollouts, and never performs an optimizer update in either evaluation world.
+Task content overlap is rejected, and input/rubric configuration is checked for drift. Exact-content
+separation does not establish semantic novelty or exclude answer leakage through shared inputs or
+pretraining. `training.json` retains these evaluations separately from training episodes and never
+automatically declares a learning benefit. See [research controls](research-controls.md) for interpretation.

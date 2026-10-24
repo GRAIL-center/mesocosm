@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from mesocosm.core.records import RunBundle, new_run_id
+from mesocosm.core.records import Event, EventIdentity, EventLink, RunBundle, new_run_id
 
 
 def test_run_id_is_time_ordered_and_unique():
@@ -47,3 +47,30 @@ def test_create_refuses_existing_dir(tmp_path):
     RunBundle.create(tmp_path, "run_x")
     with pytest.raises(FileExistsError):
         RunBundle.create(tmp_path, "run_x")
+
+
+def test_explicit_links_and_identity_preserve_receipt_join_data(tmp_path):
+    bundle = RunBundle.create(tmp_path, "run_ids")
+    identity = EventIdentity(agent_instance_id="instance-1", operator_id="operator-1")
+    bundle.bind_identity("agent-1", identity)
+    source = bundle.record("harness.session", agent_id="agent-1", session_id="session-1")
+    event = bundle.record("rollout.bound", agent_id="agent-1", event_id="receipt-1",
+                          identity=identity.model_copy(update={"session_id": "session-1", "policy_id": "digest-1"}),
+                          links=[EventLink(event_id=source.event_id, relation="derived_from", evidence="session binding")],
+                          link_coverage="partial")
+    assert event.data == {"event_id": "receipt-1"}
+    assert event.event_id != "receipt-1" and event.event_id != source.event_id
+    assert event.identity.session_id == "session-1"
+    assert event.identity.policy_id == "digest-1"
+    reread = RunBundle.open(bundle.root).events()
+    assert reread == [source, event]
+    assert source.identity.session_id is None  # Data fields are not silently promoted into identity.
+    assert reread[1].links[0].event_id == reread[0].event_id
+
+
+def test_legacy_events_have_stable_unknown_identity_and_links():
+    raw = '{"run_id": "old", "kind": "message", "ts": 1, "agent_id": "agent-1", "data": {}}'
+    first, second = Event.model_validate_json(raw), Event.model_validate_json(raw)
+    assert first == second
+    assert first.event_id is None and first.links == [] and first.link_coverage == "unknown"
+    assert first.identity == EventIdentity()

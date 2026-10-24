@@ -282,13 +282,15 @@ async def test_records_are_streamed_per_run_and_since(gw):
         await client.post("/v1/chat/completions", headers={"X-Mesocosm-Agent": agent, "X-Mesocosm-Run": run},
                           json={"model": "mesocosm-3b", "messages": [{"role": "user", "content": run}]})
     r1 = [rec async for rec in admin.records("r1")]
-    assert [r["run"] for r in r1] == ["r1", "r1"] and all(r["event"] == "chat_completion" for r in r1)
-    assert [rec["run"] async for rec in admin.records("r2")] == ["r2"]
+    assert [r["run"] for r in r1] == ["r1"] * 4
+    assert [r["event"] for r in r1] == ["request_admitted", "chat_completion"] * 2
+    assert r1[0]["request_id"] == r1[1]["request_id"] and r1[2]["request_id"] == r1[3]["request_id"]
+    assert [rec["run"] async for rec in admin.records("r2")] == ["r2"] * 2
     later = [rec async for rec in admin.records("r1", since=r1[-1]["ts"])]
-    assert later == [r1[-1]], "`since` keeps only this run's records when a label is reused"
+    assert later == r1[-2:], "`since` keeps only this run's admission and completion when a label is reused"
     assert [rec async for rec in admin.records("nope")] == []
     raw = await client.get("/admin/records", params={"run": "r1"}, headers={"Authorization": "Bearer mesocosm-local"})
-    assert raw.headers["content-type"].startswith("application/x-ndjson") and raw.text.count("\n") == 2
+    assert raw.headers["content-type"].startswith("application/x-ndjson") and raw.text.count("\n") == 4
 
 
 async def test_agents_are_identified_by_their_own_key_and_the_admin_api_does_not_exist_for_them(tmp_path):

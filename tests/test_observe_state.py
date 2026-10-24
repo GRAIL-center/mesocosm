@@ -142,6 +142,86 @@ def test_receipts_and_duplicate_gateway_copies_are_handled():
     assert obs.snapshot()["agents"][0]["requests"] == 1
 
 
+def test_accounting_records_do_not_hide_model_response_or_double_count_replayed_outcome():
+    obs = Observer()
+    obs.apply_bundle_event(ev("harness.session", 1.0, "agent-1", session_id="s", task="t"))
+    obs.apply_bundle_event(oc("session.status", 1.5, "s", "agent-1", status={"type": "busy"}))
+    base = {"ts": 2.0, "run": "lbl", "agent": "agent-1", "request_id": "model-call"}
+    admissions = [{**base, "event": "resource_admitted", "active": 1},
+                  {**base, "event": "request_admitted", "usage_total": {"requests": 1}}]
+    for record in admissions:
+        obs.apply_gateway_record(record)
+    assert obs.snapshot()["agents"][0]["requests"] == 0
+    assert obs.request_record("agent-1", "model-call") is None
+    completion = gateway_record(2.0, "agent-1", "model-call", 4, ("read",), completion=23, reasoning="Check the file.")
+    release = {**base, "event": "resource_released", "active": 0}
+    obs.apply_gateway_record(completion)
+    obs.apply_gateway_record(release)
+    # A later bundle copy of the complete journal must still count this request once.
+    for record in [*admissions, completion, release]:
+        obs.apply_gateway_record(record)
+    agent = obs.snapshot()["agents"][0]
+    assert agent["requests"] == 1 and agent["completion_tokens"] == 23
+    assert obs.facts.prompt_tokens["agent-1"] == 100
+    assert obs.request_record("agent-1", "model-call") == completion
+    projected = obs.session_details("s")["requests"][0]
+    assert projected["tool_calls"] == ["read"] and projected["reasoning_chars"] == len("Check the file.")
+
+
+def test_terminal_receipt_does_not_hide_budget_exhaustion():
+    obs = Observer()
+    obs.apply_bundle_event(ev("harness.session", 1.0, "agent-1", session_id="s", task="t"))
+    base = {"ts": 2.0, "run": "lbl", "agent": "agent-1", "request_id": "denied", "dimension": "requests"}
+    receipt = {**base, "event": "terminal_refusal", "sequence": 1, "reason": "quota_exhausted"}
+    denied = {**base, "event": "budget_exhausted", "request": {}}
+    obs.apply_gateway_record(receipt)
+    assert obs.snapshot()["agents"][0]["requests"] == 0
+    for record in [denied, receipt, denied]:
+        obs.apply_gateway_record(record)
+    agent = obs.snapshot()["agents"][0]
+    assert agent["requests"] == 1 and agent["status"] == "blocked"
+    assert obs.request_record("agent-1", "denied") == denied
+
+
+def test_unknown_accounting_does_not_replace_or_duplicate_transport_error():
+    obs = Observer()
+    obs.apply_bundle_event(ev("harness.session", 1.0, "agent-1", session_id="s", task="t"))
+    base = {"ts": 2.0, "run": "lbl", "agent": "agent-1", "request_id": "failed"}
+    failure = {**base, "event": "upstream_error", "error": "Connection lost"}
+    for record in [{**base, "event": "request_admitted"}, failure,
+                   {**base, "event": "request_usage_unknown", "missing_usage": True},
+                   {**base, "event": "resource_close_unknown"}, failure]:
+        obs.apply_gateway_record(record)
+    assert obs.agents["agent-1"].last_error == "Connection lost"
+    assert obs.snapshot()["agents"][0]["requests"] == 1
+    assert obs.request_record("agent-1", "failed") == failure
+
+
+def test_terminal_receipt_without_budget_event_surfaces_block_without_a_completed_request():
+    obs = Observer()
+    receipt = {"ts": 2.0, "run": "lbl", "agent": "agent-1", "request_id": "denied", "event": "terminal_refusal",
+               "dimension": "completion_tokens", "reason": "request_exceeds_remaining_budget", "sequence": 1}
+    obs.apply_gateway_record(receipt)
+    agent = obs.snapshot()["agents"][0]
+    assert agent["requests"] == 0 and agent["status"] == "blocked"
+    assert obs.agents["agent-1"].blocked == "completion_tokens"
+    assert obs.request_record("agent-1", "denied") is None
+
+
+def test_team_denial_followed_by_terminal_receipt_retains_outcome_and_shows_block():
+    obs = Observer()
+    base = {"ts": 2.0, "run": "lbl", "agent": "agent-1", "request_id": "denied"}
+    denial = {**base, "event": "resource_denied", "reason": "team_completion_tokens"}
+    receipt = {**base, "event": "terminal_refusal", "dimension": "team_completion_tokens",
+               "reason": "quota_exhausted", "sequence": 1}
+    for record in [denial, receipt, denial, receipt]:
+        obs.apply_gateway_record(record)
+    agent = obs.snapshot()["agents"][0]
+    assert agent["requests"] == 1 and agent["status"] == "blocked"
+    assert obs.agents["agent-1"].blocked == "team_completion_tokens"
+    assert obs.request_record("agent-1", "denied") == denial
+
+
 def test_memory_is_bounded():
     obs = Observer()
     obs.apply_bundle_event(ev("harness.session", 0.0, "a", session_id="s", task="t"))

@@ -52,3 +52,7 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0046](0046-before-tool-monitor-intervention.md) | Bounded live monitor decisions at the supported OpenCode before-tool hook, with session attribution and fail-closed single-use approvals | accepted |
 | [0047](0047-explicit-policy-precision.md) | Explicit policy compute dtype, precision-sensitive identity, and verified serving configuration before real-agent rollouts | accepted |
 | [0048](0048-prospective-monitor-assessment.md) | Explicit prospective assessment for before-tool decisions, unchanged posthoc semantics and complete prompt provenance | accepted |
+| [0049](0049-enforced-research-controls.md) | Workload stopping, access graphs, team resources, linked evidence, joint monitoring and held-out evaluation | accepted |
+| [0050](0050-native-service-worlds.md) | Native task sidecars, fresh separate verifiers, one shared team measurement, explicit research profiles and reference calibration | accepted |
+| [0051](0051-remote-world-execution.md) | Portable experiment inputs and a durable Linux worker that owns whole-world execution, cleanup and recovery | accepted |
+| [0052](0052-harness-turn-evidence-and-termination.md) | Complete harness-turn evidence, preserved context and explicit termination on actual quota refusals | accepted |

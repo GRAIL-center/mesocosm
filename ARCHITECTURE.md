@@ -14,18 +14,39 @@ This document describes the implemented structure and its boundaries. Consult th
 
 ## Execution and authority
 
+The experiment definition and execution location are separate. A Mac or Linux client packages a
+finite research world or condition experiment and submits it to an authenticated worker. The worker
+owns the whole world: gateway and harness startup, task containers and sidecars, original verification,
+record collection and cleanup. Accepted jobs continue after the client disconnects. Model inference
+can run on a separate host; the first execution backend is Docker on Linux. This boundary does not
+provide remote policy training or persistent streams. See the [execution guide](docs/execution.md)
+and [ADR-0051](docs/adr/0051-remote-world-execution.md).
+
+The worker runs beside a local Linux Docker daemon, with the host PID visibility required by native
+containment checks. It does not turn a remote Docker socket into a portable controller. A host-wide
+worker lease and a serial queue allow one managed world at a time because the current networks use
+fixed subnets. Direct, manually launched stacks remain the operator's responsibility. On worker
+restart, recorded unfinished ownership is cleaned before new execution; interrupted observations are
+not replayed. A cleanup failure closes admission and prevents another world from starting.
+
 Each agent has its own OpenCode server, session, gateway credential and workspace. The native task
 runtime builds from the task's declared Docker environment, adds the released harness, and preserves
 the task's user and working directory. It runs the original filesystem verifier in a separate snapshot.
-The current profile is Debian/Ubuntu, single-container filesystem tasks; task Compose stacks, task GPUs,
-separate verifier images and live-process verification are unsupported.
+The agent profile remains Debian/Ubuntu. A validated subset of original task Compose sidecars supports
+isolated or shared service state, with fresh separate verifiers for declared artifacts or live services.
+Shared mode keeps distinct agent workspaces and records one team measurement. Task GPUs, shared-main
+RPC and arbitrary agent-process restoration remain unsupported. This extension has command-level tests;
+new real-agent acceptance remains unverified ([research runtime](docs/research-runtime.md), ADR-0050).
 
 Agents use an internal Docker network. The model gateway connects them to inference; the optional web
 gateway provides configured internet access. Shared volumes and services are explicit affordances.
 The control plane, verifier results and run bundles remain outside agent write access. The egress check
 verifies the selected topology before agents run. Colab's rootless adaptations have additional isolation
 and resource limits documented in the setup guide; a successful Colab run does not establish production
-isolation.
+isolation. Standard native execution requires inspected private PID containment before task turns;
+the older local `containment: adapted` path permits explicitly recorded adaptations (ADR-0049).
+Remote jobs always require verified containment, and native Compose service startup refuses shared
+PID namespaces even on the adapted local path (ADR-0050).
 
 The gateways are integration boundaries. Mesocosm configures released OpenCode, Harbor task formats,
 vLLM and NNsight through their supported interfaces and does not patch their internals.
@@ -38,6 +59,7 @@ vLLM and NNsight through their supported interfaces and does not patch their int
 | `core.experiment` | Prevalidate named condition patches, schedule repetitions, and retain every trial's outcome and missing measurements. |
 | `core.run` | Prepare environments, enforce run boundaries, drive concurrent agents, invoke original verifiers, collect evidence and run posthoc analysis. |
 | `core.rewards` | Synchronize comparison episodes and allocate incentives separately from original verifier scores. |
+| `execution` | Package declared inputs, authenticate remote jobs, persist lifecycle state, and own Docker startup, cancellation and recovery; share runtime composition with direct local commands. |
 | `gateway` | Authenticate identities, route chat requests, enforce model budgets, bind exact rollout identities and hold proposed tool actions for controller decisions. |
 | `env` | Docker topology, native task runtime, real shared services, web access policy and state inspection. |
 | `adapters.opencode`, `adapters.harbor` | Harness API and task/environment/verifier integration. |
@@ -54,22 +76,31 @@ the base manifest. Every variant is validated before the first trial starts; eac
 manifest and run label. `order_seed` controls scheduling only, not model sampling, task randomness or
 training.
 
-Trials run sequentially because the topology uses fixed subnet addresses. The CLI reconciles a fresh
+Trials run sequentially because the topology uses fixed subnet addresses. The execution layer reconciles a fresh
 stack and separate workspace directories for each trial. Trial failure is recorded and the remaining
 plan continues. If teardown fails, the prior environment may still exist: the experiment stops with
-`failed_cleanup`, retaining completed results and unrun trials. Teardown is bounded; its client process
-cleanup does not establish that Docker removed the environment. The runner has no flag-triggered stopping or automatic replacement trials;
+`failed_cleanup`, retaining completed results and unrun trials. Bounded teardown verifies an empty
+project container inventory. Active stop requests and failures invoke owned-container termination
+with separate process-isolation evidence. The runner has no flag-triggered stopping or automatic replacement trials;
 these would select observations based on outcomes. Older `scenario` and `chain` interfaces remain for
 compatibility, with their distinct stopping and retry semantics.
 
 Conditions are enforced at their actual point of effect: token and request budgets at the gateway,
 shared-directory access through mounts, service permissions at the service, and memory at task
 boundaries. Only budgets currently support mid-run mutation through the condition-control API.
-Unsupported combinations fail explicitly instead of being approximated with task prose.
+Unsupported combinations fail explicitly instead of being approximated with task prose. Optional
+`services.access` grants enforce an internal access graph; team request/output/concurrency pools and
+service quotas apply at actual admission points. Shared mounts are refused with the access graph.
+See [research controls](docs/research-controls.md) for relay, restart and inference-compute limits.
 
 `memory: reset` clears the managed workspace and opens a new harness session; `carry` retains both
 within the run. Neither option describes a complete reset or serialization of harness internals.
 Native carried workspaces cannot be transferred arbitrarily between incompatible task environments.
+Managed OpenCode configurations disable automatic compaction and pruning, preserving tool results
+in the working history. Context overflow ends the turn explicitly. Each round retains its complete
+native turn separately from the last HTTP reply; terminal errors and truncated endings prevent grading.
+An actual terminal model-budget refusal triggers controller abort, while the last admitted request
+can finish normally. See [ADR-0052](docs/adr/0052-harness-turn-evidence-and-termination.md).
 
 ## Outcomes, incentives and learning
 
@@ -103,13 +134,18 @@ evaluation and token-logprob consistency verification without another update. Or
 allocated incentives remain distinct. Context feedback stays disabled in this training profile. See
 the [training guide](docs/training.md) and [ADR-0045](docs/adr/0045-on-policy-world-training.md) for the
 estimator, supported profile and distinction between a real update and demonstrated learning benefit.
+Optional `evaluation_world` runs content-disjoint tasks before and after training without updates.
+Experiment inputs are fingerprinted and checked for drift; `baseline: true` requires a three-agent
+native task profile and declared model revisions, separate from verified serving identity.
 
 ## Observation and judgment
 
 A run bundle contains the manifest, normalized events, enforcement receipts, native gateway/harness
 records and verifier results. Model calls use `request_id`; other sources also carry run and agent
 identity where available. Some joins still use agent/task time windows; this is not a complete causal
-trace with exact action-token alignment.
+trace with exact action-token alignment. New events carry IDs and explicit identity/link fields;
+exact message/object versions link recorded exposures. Detached anchors verify preserved bytes against
+a separately retained reference, without asserting capture completeness or execution truth.
 
 Keep four outputs separate: original task outcomes, allocated incentives, monitor assessments and
 reviewed policy violations. Detectors produce candidates. A shared-store read, a high reward or a monitor
@@ -129,8 +165,9 @@ rubric; a temporary hold is not a completed intervention. Its prompt version and
 hash are recorded separately from the rubric hash ([ADR-0048](docs/adr/0048-prospective-monitor-assessment.md)).
 A threshold crossing denies the tool or terminates the session. Unknown assessments, exhausted
 budgets and transport failures deny and abort. This is a per-agent tool boundary, not a syscall monitor
-inside an allowed shell command. Nested agent sessions and joint live review are refused; adaptive
-monitor training remains unsupported. [ADR-0046](docs/adr/0046-before-tool-monitor-intervention.md)
+inside an allowed shell command. Joint live review can collect registered sessions and shared-service/web
+evidence, preserving the exact input and collection interval. Missing evidence fails closed. Nested
+agent sessions and adaptive monitor training remain unsupported. [ADR-0046](docs/adr/0046-before-tool-monitor-intervention.md)
 describes this boundary.
 
 Activation capture is opt-in. The gateway can retain token IDs when the upstream provides them;
@@ -146,6 +183,9 @@ content requires explicit configuration and provenance; archived fixture histori
 The optional cache is a text object store, while clock, ledger and vault provide simulated time,
 balances and canned secrets. These facilities are not substitutes for an application's actual cache,
 compute allocation or credential authority.
+Research is the default execution profile and rejects simulated time/balances, canned secrets, service
+history seeds and authored task extensions. Regression fixtures explicitly opt into `profile: fixture`.
+Service admin routes require a control credential, and each harness has its own upstream server password.
 
 Persistent mode assigns tasks from a shared queue. Snapshots save declared workspace/service/shared-file
 state and queue metadata, verify file hashes on restore, and record lineage and missing coverage.

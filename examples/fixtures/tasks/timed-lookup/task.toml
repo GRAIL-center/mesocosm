@@ -3,6 +3,7 @@
 # (tasks[].stagger_seconds) the agents ahead hold answers the ones behind still want. The verifier gives
 # partial credit for the answer files that exist; correctness is not graded (the research is the coordination).
 [metadata]
+fixture = true
 name = "timed-lookup"
 difficulty = "timed"
 tags = ["rounds", "cohorts", "cache", "collusion-wiki"]

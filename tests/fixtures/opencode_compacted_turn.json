@@ -1,0 +1,221 @@
+{
+  "provenance": {
+    "source": "review-20261024-071058-474df3/agent-2-final-messages.json",
+    "source_sha256": "13f1a9f7573536ced66036ef2e1ba08720aa6a7898da283c2466c69164bc12d1",
+    "harness": "OpenCode 1.19.3",
+    "selected_message_indices": [
+      0,
+      6,
+      7,
+      8,
+      12,
+      13,
+      14,
+      15,
+      16
+    ],
+    "sanitization": "Retains message/part IDs, parent links, timestamps and compaction flags. All text replaced; reasoning, tool data and unrelated intermediate messages omitted. Structural regression data, not an experiment acceptance result."
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_16cbfdb39001ZouH4ePj9i0FwI",
+        "sessionID": "ses_e9340250fffeJ2CaWkd9F2SIB0",
+        "role": "user",
+        "time": {
+          "created": 1792825875257
+        },
+        "summary": {
+          "diffs": []
+        },
+        "agent": "build"
+      },
+      "parts": [
+        {
+          "id": "prt_16cbfdb41001lCY3GwcuiAENZM",
+          "type": "text",
+          "text": "Review the source."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_16cc3f0e8001coiiR7AEj27Cif",
+        "sessionID": "ses_e9340250fffeJ2CaWkd9F2SIB0",
+        "role": "user",
+        "time": {
+          "created": 1792826142952
+        },
+        "summary": {
+          "diffs": []
+        },
+        "agent": "build"
+      },
+      "parts": [
+        {
+          "id": "prt_16cc3f0ea001cqtwAGwZ0HGBGD",
+          "type": "compaction",
+          "auto": true,
+          "overflow": false
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_16cc3f103001IrHXKLhraYTkM4",
+        "sessionID": "ses_e9340250fffeJ2CaWkd9F2SIB0",
+        "role": "assistant",
+        "time": {
+          "created": 1792826142979,
+          "completed": 1792826186048
+        },
+        "parentID": "msg_16cc3f0e8001coiiR7AEj27Cif",
+        "mode": "compaction",
+        "agent": "compaction",
+        "summary": true,
+        "finish": "stop"
+      },
+      "parts": [
+        {
+          "id": "prt_16cc42629001QCtdw0RU9xVbtU",
+          "type": "text",
+          "text": "Internal first summary."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_16cc49943001RnFFHGYLGUnutB",
+        "sessionID": "ses_e9340250fffeJ2CaWkd9F2SIB0",
+        "role": "user",
+        "time": {
+          "created": 1792826186052
+        },
+        "summary": {
+          "diffs": []
+        },
+        "agent": "build"
+      },
+      "parts": [
+        {
+          "id": "prt_16cc49946001kzxrOF8L1kiyTz",
+          "type": "text",
+          "synthetic": true,
+          "text": "Automatic continuation."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_16cc95e4e001w6wMRWXDAcmLng",
+        "sessionID": "ses_e9340250fffeJ2CaWkd9F2SIB0",
+        "role": "assistant",
+        "time": {
+          "created": 1792826498638,
+          "completed": 1792826573541
+        },
+        "parentID": "msg_16cc49943001RnFFHGYLGUnutB",
+        "mode": "build",
+        "agent": "build",
+        "finish": "stop"
+      },
+      "parts": [
+        {
+          "id": "prt_16cca2b5d001h4laJXUDOPw1Ir",
+          "type": "text",
+          "text": "Detailed review report written before compaction."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_16cca82e80010CIKNaNay0viTw",
+        "sessionID": "ses_e9340250fffeJ2CaWkd9F2SIB0",
+        "role": "user",
+        "time": {
+          "created": 1792826573544
+        },
+        "summary": {
+          "diffs": []
+        },
+        "agent": "build"
+      },
+      "parts": [
+        {
+          "id": "prt_16cca82ea001l5GbvBoC7TIHLr",
+          "type": "compaction",
+          "auto": true,
+          "overflow": false,
+          "tail_start_id": "msg_16cc95e4e001w6wMRWXDAcmLng"
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_16cca82fb001iu3wUR951O2LcT",
+        "sessionID": "ses_e9340250fffeJ2CaWkd9F2SIB0",
+        "role": "assistant",
+        "time": {
+          "created": 1792826573563,
+          "completed": 1792826618115
+        },
+        "parentID": "msg_16cca82e80010CIKNaNay0viTw",
+        "mode": "compaction",
+        "agent": "compaction",
+        "summary": true,
+        "finish": "stop"
+      },
+      "parts": [
+        {
+          "id": "prt_16ccaac1c001ipqmVtNXnk18Fa",
+          "type": "text",
+          "text": "Internal second summary."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_16ccb3108001rUKgdRchQD9NOb",
+        "sessionID": "ses_e9340250fffeJ2CaWkd9F2SIB0",
+        "role": "user",
+        "time": {
+          "created": 1792826618120
+        },
+        "summary": {
+          "diffs": []
+        },
+        "agent": "build"
+      },
+      "parts": [
+        {
+          "id": "prt_16ccb3109001QCd2LzNiXADha7",
+          "type": "text",
+          "synthetic": true,
+          "text": "Automatic continuation."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_16ccb3113001bZ8GyFSU5SQvHo",
+        "sessionID": "ses_e9340250fffeJ2CaWkd9F2SIB0",
+        "role": "assistant",
+        "time": {
+          "created": 1792826618131,
+          "completed": 1792826624704
+        },
+        "parentID": "msg_16ccb3108001rUKgdRchQD9NOb",
+        "mode": "build",
+        "agent": "build",
+        "finish": "stop"
+      },
+      "parts": [
+        {
+          "id": "prt_16ccb42d3001aOUTBmvpF7q3zm",
+          "type": "text",
+          "text": "The report is delivered above."
+        }
+      ]
+    }
+  ]
+}

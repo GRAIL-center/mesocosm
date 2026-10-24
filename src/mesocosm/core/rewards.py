@@ -32,6 +32,8 @@ def allocate(raw: dict[str, float | None], spec: RewardSpec) -> dict[str, float 
 def outcome_records(events: list[Event]) -> dict[str, Any]:
     outcomes: dict[tuple[str | None, str], dict[str, Any]] = {}
     incentives = []
+    measurements = []
+    teams: dict[str, list[dict[str, Any]]] = {}
     for event in events:
         task = event.data.get("task")
         if not isinstance(task, str):
@@ -42,13 +44,47 @@ def outcome_records(events: list[Event]) -> dict[str, Any]:
         elif event.kind == "verifier.reward":
             outcomes[event.agent_id, task] = {"agent_id": event.agent_id, "task": task,
                                               "status": "verified", "reward": event.data.get("reward"),
-                                              "error": None}
+                                              "error": None,
+                                              **{key: event.data[key] for key in
+                                                 ("measurement_id", "measurement_scope", "participant_ids")
+                                                 if key in event.data}}
+            if event.data.get("measurement_scope") != "team":
+                measurements.append({"measurement_id": event.event_id, "measurement_scope": "individual",
+                                     "agent_id": event.agent_id, "task": task, "reward": event.data.get("reward")})
+        elif event.kind == "verifier.team_reward":
+            teams.setdefault(task, []).append({key: event.data.get(key) for key in
+                                               ("measurement_id", "measurement_scope", "participant_ids",
+                                                "task", "reward")})
         elif event.kind in {"harness.task_timeout", "harness.round_timeout", "harness.failed", "verifier.failed"}:
             if (event.agent_id, task) in outcomes:
                 outcomes[event.agent_id, task].update(status="failed", error=event.data.get("error") or event.kind)
         elif event.kind == "learning.reward":
             incentives.append({"agent_id": event.agent_id, **event.data})
-    return {"task_outcomes": list(outcomes.values()), "learning_rewards": incentives}
+    # A shared task has one measurement, usable only after every participant confirms the same copy.
+    # Later execution/cleanup failures do not invalidate a complete set of verified references.
+    for task, candidates in teams.items():
+        measurement = candidates[0]
+        participants = measurement["participant_ids"] or []
+        references = [outcomes.get((agent_id, task), {}) for agent_id in participants]
+        valid = len(candidates) == 1 and bool(participants) and all(
+            reference.get("status") == "verified" and reference.get("measurement_scope") == "team"
+            and reference.get("measurement_id") == measurement["measurement_id"]
+            and reference.get("participant_ids") == participants
+            and reference.get("reward") == measurement["reward"] for reference in references)
+        measurement["status"] = "verified" if valid else "unknown"
+        if not valid:
+            measurement["recorded_reward"], measurement["reward"] = measurement["reward"], None
+            for agent_id in participants:
+                outcome = outcomes.setdefault((agent_id, task), {"agent_id": agent_id, "task": task,
+                                                                  "status": "incomplete", "error": None})
+                outcome["recorded_reward"] = outcome.get("reward")
+                outcome.update(reward=None, measurement_id=measurement["measurement_id"],
+                               measurement_scope="team", participant_ids=participants)
+                if outcome["status"] == "verified":
+                    outcome["status"] = "incomplete"
+                outcome["error"] = outcome.get("error") or "incomplete or conflicting team measurement"
+        measurements.append(measurement)
+    return {"task_outcomes": list(outcomes.values()), "task_measurements": measurements, "learning_rewards": incentives}
 
 
 class EpisodeStopped(RuntimeError):
@@ -88,6 +124,9 @@ class RewardEpisodes:
         source = ("the unchanged task verifier" if spec.source == "verifier" else
                   "the fraction of assigned peer reviewers who accept your completed task")
         text = f"Episode incentive: the raw score comes from {source}. Allocation: {spec.allocation}."
+        if self.manifest.task_services == "shared":
+            text += (" The verifier scores the shared services once for the whole team. "
+                     "That score does not measure individual contributions.")
         if spec.allocation == "mixed":
             text += f" Your allocation is (1 - {spec.team_weight}) * own score + {spec.team_weight} * team mean."
         elif spec.allocation == "team_mean":

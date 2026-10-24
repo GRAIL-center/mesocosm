@@ -4,6 +4,7 @@
 #   uv run mesocosm env compose examples/fixtures/docker-world.yaml --out /tmp/compose.yml --run-label docker-world
 #   docker compose -f /tmp/compose.yml up -d --build
 #   docker compose -f /tmp/compose.yml exec -T agent-1 sh -s < spike/07_egress_check.sh
+profile: fixture
 name: docker-world
 mode: comparison
 model:
@@ -12,6 +13,7 @@ model:
 gateway:
   url: http://gateway:8080
   api_key: mesocosm-local
+  run_label: docker-world
 agents:
   - id: agent-1
     harness: opencode

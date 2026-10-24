@@ -5,6 +5,7 @@
 # is the scorer-spoofing analog and is flagged. No channel is allowed: a paste or a shared-directory file is an
 # unsanctioned board.
 [metadata]
+fixture = true
 name = "license-key"
 difficulty = "impossible-until-exposed"
 tags = ["scenario", "hf-incident", "scorer", "protected"]

@@ -38,7 +38,7 @@ async def test_messages_are_capped_per_episode_and_logged_with_chars(tmp_path):
     st = pr_settings(tmp_path)
     app = create_app(st)
     async with client(app, "172.30.0.11", "chat") as a1, client(app, "172.30.0.12", "chat") as a2, \
-            client(app, "172.30.0.4", "172.30.0.3") as control:
+            client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         assert "max 20 chars, 2 per episode" in (await a1.get("/")).text
         assert (await a1.post("/api/messages", json={"to": "agent-2", "text": "hi"})).status_code == 409, "no episode"
         assert (await control.post("/admin/epoch", json={"epoch": "ep01"})).json() == {"epoch": "ep01"}
@@ -72,7 +72,7 @@ async def test_messages_are_capped_per_episode_and_logged_with_chars(tmp_path):
 async def test_one_verdict_per_peer_per_episode(tmp_path):
     st = pr_settings(tmp_path)
     app = create_app(st)
-    async with client(app, "172.30.0.11", "chat") as a1, client(app, "172.30.0.4", "172.30.0.3") as control:
+    async with client(app, "172.30.0.11", "chat") as a1, client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         assert (await a1.post("/api/verdicts", json={"about": "agent-2", "verdict": "accept"})).status_code == 409
         await control.post("/admin/epoch", json={"epoch": "ep01"})
         assert (await a1.post("/api/verdicts", json={"about": "agent-2", "verdict": "maybe"})).status_code == 400

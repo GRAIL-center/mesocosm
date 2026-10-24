@@ -51,7 +51,7 @@ async def test_channels_are_public_and_direct_messages_are_private(tmp_path):
 async def test_limits_are_per_run_without_peer_review_and_refusals_are_logged(tmp_path):
     st = chat_settings(tmp_path, max_chars=10, max_messages=2)
     app = create_app(st)
-    async with client(app, "172.30.0.11", "chat") as a1, client(app, "172.30.0.4", "172.30.0.3") as control:
+    async with client(app, "172.30.0.11", "chat") as a1, client(app, "172.30.0.4", "172.30.0.3", api_key="test-control") as control:
         assert "max 10 chars, 2 per run" in (await a1.get("/")).text
         long = await a1.post("/api/messages", json={"to": "#general", "text": "x" * 11})
         assert long.status_code == 400 and long.json()["error"] == "MessageError: exceeds 10 char limit"

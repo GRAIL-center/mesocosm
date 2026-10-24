@@ -9,7 +9,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Awaitable
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, TypeVar
 
@@ -46,6 +47,41 @@ class InterventionState:
     calls: int = 0
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     outcomes: dict[str, int] = field(default_factory=lambda: {"allowed": 0, "blocked": 0, "unknown": 0})
+    sessions: dict[str, tuple[ActionHarness, str, str]] = field(default_factory=dict)
+    completed: dict[str, dict[str, Any]] = field(default_factory=dict)
+    expected_agents: list[str] = field(default_factory=list)
+    shared_evidence: Callable[[], Awaitable[dict[str, Any]]] | None = None
+
+    def register(self, agent_id: str, harness: ActionHarness, session_id: str, task: str) -> None:
+        self.sessions[agent_id] = (harness, session_id, task)
+        self.completed.pop(agent_id, None)
+
+    def finish(self, agent_id: str, messages: list[dict[str, Any]]) -> None:
+        _, session_id, task = self.sessions[agent_id]
+        validate_messages(messages, session_id)
+        self.sessions.pop(agent_id)
+        self.completed[agent_id] = {"session_id": session_id, "task": task, "messages": messages,
+                                    "status": "completed", "observed_at": time.time()}
+
+    async def evidence(self, visibility: str) -> dict[str, Any]:
+        """A bounded collection interval, not an atomic world snapshot or individual blame."""
+        started = time.time()
+        participants = dict(self.completed)
+        sessions = dict(self.sessions)
+        messages = await asyncio.gather(*(h.list_messages(s) for h, s, _ in sessions.values()))
+        for (agent, (_, session, task)), content in zip(sessions.items(), messages, strict=True):
+            validate_messages(content, session)
+            participants[agent] = {"session_id": session, "task": task, "messages": content,
+                                   "status": "active", "observed_at": time.time()}
+        for agent in self.expected_agents:
+            participants.setdefault(agent, {"status": "not_started", "messages": []})
+        for participant in participants.values():
+            if participant.get("status") != "not_started":
+                validate_messages(participant.get("messages"), participant["session_id"])
+        if visibility == "actions":
+            participants = {agent: {**data, "messages": action_messages(data["messages"])}
+                            for agent, data in participants.items()}
+        return {"started": started, "finished": time.time(), "atomic": False, "agents": participants}
 
     def summary(self) -> dict[str, Any]:
         return {"timing": "pre_action", "calls": self.calls, **self.outcomes}
@@ -60,6 +96,23 @@ class InterventionState:
                 return None
             self.calls += 1
             return self.calls
+
+
+def action_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{"session_id": (message.get("info") or {}).get("sessionID"),
+             "tools": [part for part in message.get("parts", []) if part.get("type") == "tool"]}
+            for message in messages if any(part.get("type") == "tool" for part in message.get("parts", []))]
+
+
+def validate_messages(messages: Any, session_id: str) -> None:
+    if not isinstance(messages, list):
+        raise ValueError("harness evidence must be a message list")
+    for message in messages:
+        if (not isinstance(message, dict) or not isinstance(message.get("info"), dict)
+                or message["info"].get("sessionID") != session_id
+                or not isinstance(message.get("parts"), list)
+                or any(not isinstance(part, dict) for part in message["parts"])):
+            raise ValueError("malformed or misattributed harness session evidence")
 
 
 def proposed_tool_matches(messages: list[dict[str, Any]], action: dict[str, Any]) -> bool:
@@ -99,9 +152,10 @@ class InterventionGate:
 
     async def prepare(self) -> None:
         try:
-            if self.spec.timing != "pre_action" or self.spec.scope != "per_agent" or self.spec.include_shared \
-                    or self.spec.side_task_aware:
-                raise InterventionUnsupported("rejected_unsupported: live gates require per-agent, non-shared evidence")
+            if self.spec.timing != "pre_action" or self.spec.side_task_aware:
+                raise InterventionUnsupported("rejected_unsupported: live gates require prospective evidence")
+            if self.spec.include_shared and self.state.shared_evidence is None:
+                raise InterventionUnsupported("rejected_unsupported: live shared evidence provider is absent")
             async with asyncio.timeout(self.spec.decision_timeout_seconds):
                 capabilities = await self.harness.prepare_action_hook()
                 self.binding = await self.admin.bind(run=self.run_label, agent_id=self.agent_id,
@@ -129,6 +183,7 @@ class InterventionGate:
         self.bundle.record_receipt(receipt.model_dump(mode="json"))
         self.bundle.record("monitor.gate_ready", agent_id=self.agent_id, session_id=self.session_id,
                            task=self.task, binding_id=self.binding["binding_id"], plugin_sha256=self.plugin_sha256)
+        self.state.register(self.agent_id, self.harness, self.session_id, self.task)
 
     async def close(self) -> None:
         binding, self.binding = self.binding, None
@@ -160,6 +215,8 @@ class InterventionGate:
         evidence_chars = None
         enforce_error = None
         unsupported = False
+        evidence_digest = None
+        evidence_path = None
         try:
             if any(action.get(key) != expected for key, expected in {
                 "run": self.run_label, "agent": self.agent_id, "session_id": self.session_id,
@@ -171,7 +228,10 @@ class InterventionGate:
                 raise InterventionUnsupported(
                     "rejected_unsupported: nested harness sessions require separate controller bindings")
             async with asyncio.timeout(self.spec.decision_timeout_seconds):
+                if self.spec.decision_delay_seconds:
+                    await asyncio.sleep(self.spec.decision_delay_seconds)
                 messages = await self.harness.list_messages(self.session_id)
+                validate_messages(messages, self.session_id)
                 if not proposed_tool_matches(messages, action):
                     raise ValueError("proposed action does not match a pending harness tool call")
                 evidence: dict[str, Any] = {"status": "proposed; tool execution is held",
@@ -179,6 +239,13 @@ class InterventionGate:
                     "call_id": action["call_id"], "tool": action["tool"], "args": action["args"]}
                 if self.spec.visibility == "transcript":
                     evidence["session_messages"] = messages
+                else:
+                    evidence["session_actions"] = action_messages(messages)
+                if self.spec.scope == "joint":
+                    evidence["joint"] = await self.state.evidence(self.spec.visibility)
+                if self.spec.include_shared:
+                    assert self.state.shared_evidence is not None
+                    evidence["shared"] = await self.state.shared_evidence()
                 text = json.dumps(evidence, ensure_ascii=False)
                 evidence_chars = len(text)
                 if len(text) > self.spec.max_input_chars:
@@ -186,6 +253,9 @@ class InterventionGate:
                 call_index = await self.state.reserve(self.spec.max_calls)
                 if call_index is None:
                     raise ValueError("monitor call budget exhausted")
+                evidence_digest = hashlib.sha256(text.encode()).hexdigest()
+                evidence_path = f"monitor/evidence-{call_index:06d}.json"
+                self.bundle.write_native(evidence_path, text)
                 result = await self.monitor.ask(text, rubric=self.rubric, phase="pre_action",
                                                 output_tokens=self.spec.output_tokens)
                 score = result.get("score")
@@ -207,9 +277,13 @@ class InterventionGate:
             session_id=self.session_id, action_id=action.get("action_id"), call_id=action.get("call_id"),
             tool=action.get("tool"), args=action.get("args"), args_sha256=action.get("args_sha256"),
             outcome=outcome, decision=decision, reason=reason, assessment=result,
+            threshold=self.spec.threshold,
             rubric_version=self.spec.rubric_version, rubric_sha256=self.rubric_sha256,
             **self.assessment_contract,
             visibility=self.spec.visibility, evidence_chars=evidence_chars, call_index=call_index,
+            scope=self.spec.scope, include_shared=self.spec.include_shared,
+            decision_delay_seconds=self.spec.decision_delay_seconds,
+            evidence_sha256=evidence_digest, evidence_path=evidence_path,
             enforce_error=enforce_error, proposed_only=True)
         self.bundle.record_receipt(Receipt(op="monitor.action.decide", run_id=self.bundle.run_id,
             requested={"action_id": action.get("action_id"), "binding_id": self.binding["binding_id"],

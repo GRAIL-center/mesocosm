@@ -111,6 +111,43 @@ def test_disabling_monitor_is_an_effective_condition_and_not_missing_monitoring(
     assert trials[0]["monitor_enabled"] is False
 
 
+async def test_task_drift_stops_remaining_trials_without_replacing_completed_outcome(tmp_path):
+    path = experiment_file(tmp_path, conditions=[{"name": "baseline"}], repetitions=3, order="listed")
+    calls = []
+
+    async def run_one(manifest):
+        calls.append(manifest)
+        bundle = RunBundle.create(tmp_path / "bundles")
+        bundle.record("run.start")
+        bundle.write_summary({"status": "ok"})
+        (tmp_path / "task/instruction.md").write_text("changed while the trial ran")
+        return RunResult(bundle.run_id, bundle.root, "ok", {})
+
+    result = await run_experiment(load_experiment(path), path, tmp_path / "out", run_one)
+    assert len(calls) == 1 and result["status"] == "failed_input_drift"
+    assert [trial["status"] for trial in result["trials"]] == ["ok", "not_run", "not_run"]
+    assert result["trials"][0]["input_integrity"] == "failed"
+    assert result["trials"][0]["bundle"]
+    assert len(list((tmp_path / "out").glob("*.inputs.json"))) == 3
+
+
+async def test_corrupted_generated_yaml_stops_remaining_trials_as_input_drift(tmp_path):
+    path = experiment_file(tmp_path, conditions=[{"name": "baseline"}], repetitions=2, order="listed")
+    calls = []
+
+    async def run_one(manifest):
+        calls.append(manifest)
+        bundle = RunBundle.create(tmp_path / "bundles")
+        bundle.record("run.start")
+        bundle.write_summary({"status": "ok"})
+        manifest.write_text("model: [unterminated")
+        return RunResult(bundle.run_id, bundle.root, "ok", {})
+
+    result = await run_experiment(load_experiment(path), path, tmp_path / "out", run_one)
+    assert len(calls) == 1 and result["status"] == "failed_input_drift"
+    assert [trial["status"] for trial in result["trials"]] == ["ok", "not_run"]
+
+
 class TrialResults:
     def __init__(self, root):
         self.root, self.calls = root, []

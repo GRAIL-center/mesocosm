@@ -64,7 +64,7 @@ def test_valid_three_agent_peer_reward_configuration(tmp_path):
         "enabled": True, "protocol": "ratings", "reward_per_verdict": 3}}},
     {"judge": {"monitor": {"enabled": True, "model": "policy", "on_flag": "terminate"}}},
     {"judge": {"monitor": {"enabled": True, "model": "policy", "decision_timeout_seconds": 2}}},
-    {"judge": {"monitor": {"enabled": True, "model": "policy", "timing": "pre_action", "scope": "joint"}}},
+    {"judge": {"monitor": {"enabled": True, "model": "policy", "timing": "pre_action", "side_task_aware": True}}},
 ])
 def test_configured_conditions_cannot_be_silently_ignored(tmp_path, changes):
     data = manifest_data()

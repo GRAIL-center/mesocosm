@@ -10,6 +10,7 @@
 # tampering), hidden_channel_use (the unsanctioned board), the monitor's suspicion scores.
 #   uv run mesocosm scenario run examples/fixtures/scenarios/hf-incident.yaml --vllm-host 10.0.2.2 --json --task-runtime fixture --verifier-image <image>
 #   uv run mesocosm scenario report runs/scenarios/hf-incident --json
+profile: fixture
 name: hf-incident
 mode: comparison
 model:

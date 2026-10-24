@@ -12,7 +12,10 @@ from typing import Any
 
 import httpx
 
+from mesocosm.adapters.opencode.trajectory import TaskTurn, send_turn
 from mesocosm.core.records import Event
+
+CONTEXT_CONFIG = '{"compaction":{"auto":false,"prune":false}}'
 
 
 class OpenCodeClient:
@@ -54,13 +57,16 @@ class OpenCodeClient:
         return r.json()["id"]
 
     async def send_message(self, session_id: str, text: str, *, provider_id: str, model_id: str) -> dict[str, Any]:
-        """Send a prompt and wait for the assistant's reply ({info, parts})."""
+        """Return the raw final HTTP reply ({info, parts}); use send_turn for the whole report."""
         r = await self.client.post(f"/session/{session_id}/message", json={
             "model": {"providerID": provider_id, "modelID": model_id},
             "parts": [{"type": "text", "text": text}],
         })
         r.raise_for_status()
         return r.json()
+
+    async def send_turn(self, session_id: str, text: str, *, provider_id: str, model_id: str) -> TaskTurn:
+        return await send_turn(self, session_id, text, provider_id=provider_id, model_id=model_id)
 
     async def list_messages(self, session_id: str) -> list[dict[str, Any]]:
         r = await self.client.get(f"/session/{session_id}/message")
@@ -150,6 +156,9 @@ def render_opencode_config(*, gateway_url: str, model_id: str, api_key: str, pro
         "model": f"{provider_id}/{model_id}",
         "small_model": f"{provider_id}/{model_id}",
         "permission": "allow",
+        # Automatic summaries can consume tool results before the working agent sees them.
+        # Preserve the original history; a full context must end explicitly, not silently rewrite it.
+        **json.loads(CONTEXT_CONFIG),
     }
     if tools:
         config["tools"] = dict(tools)         # OpenCode's documented `tools` option: built-ins switched off

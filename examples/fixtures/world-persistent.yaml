@@ -7,6 +7,7 @@
 #   uv run mesocosm chain examples/fixtures/chains/persistent.yaml --keep-up --json --task-runtime fixture --verifier-image <image>
 #   uv run mesocosm pause runs/<run_id> ; uv run mesocosm resume runs/<run_id>
 #   uv run mesocosm snapshot create runs/<run_id> --compose-file runs/chains/<chain>/world-persistent.compose.yml
+profile: fixture
 name: world-persistent
 mode: persistent
 model:

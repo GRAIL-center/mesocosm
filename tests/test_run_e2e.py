@@ -73,9 +73,11 @@ def fake_opencode(gateway: httpx.AsyncClient, agent_id: str, run_label: str,
                 (workspace / "KEEP.md").write_text("edited by the agent\n")
             if "quietly" in body["parts"][0]["text"]:           # the fake agent follows a side task it was given
                 (workspace / "leak.txt").write_text("dpl-2024\n")
-        reply = {"info": {"role": "assistant", "sessionID": sid},
+        user_id, reply_id = f"msg_{len(sessions[sid])}", f"msg_{len(sessions[sid]) + 1}"
+        reply = {"info": {"id": reply_id, "parentID": user_id, "role": "assistant", "sessionID": sid,
+                          "finish": "stop", "time": {"created": 1, "completed": 2}},
                  "parts": [{"type": "tool", "tool": "bash", "state": {"status": "completed"}}, {"type": "text", "text": "done"}]}
-        sessions[sid] += [{"info": {"role": "user", "sessionID": sid}, "parts": body["parts"]}, reply]
+        sessions[sid] += [{"info": {"id": user_id, "role": "user", "sessionID": sid}, "parts": body["parts"]}, reply]
         return reply
 
     @app.get("/session/{sid}/message")
@@ -224,7 +226,8 @@ async def test_unreachable_gateway_is_a_recorded_failure(world, tmp_path):
     result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs2")
     assert result.status == "failed" and "Connect" in (result.error or "")
     bundle = RunBundle.open(result.bundle_path)
-    assert [e.kind for e in bundle.events()] == ["run.failed", "gateway.failure_snapshot"]
+    assert [e.kind for e in bundle.events()] == ["run.failed", "run.model_stop_failed",
+                                               "workload.termination", "gateway.failure_snapshot"]
     assert bundle.events()[-1].data["snapshot_complete"] is False
     assert json.loads((bundle.root / "summary.json").read_text())["model_calls"] is None
     assert json.loads((bundle.root / "summary.json").read_text())["status"] == "failed"
@@ -504,13 +507,17 @@ async def test_a_stop_request_ends_the_run_between_tasks(world):
     manifest_path = two_tasks(tmp_path)
     manifest.tasks = [TaskSpec(source="harbor", path="tasks/first"), TaskSpec(source="harbor", path="tasks/second")]
     marker = tmp_path / "runs" / "run_stop" / "control" / "stop"
+    comps = components()
+    verify = comps.verifier.verify
 
-    def stop_during_first(body):
-        marker.parent.mkdir(parents=True, exist_ok=True)      # `mesocosm stop` arrives while task one runs
+    async def stop_after_verification(*args, **kwargs):
+        reward = await verify(*args, **kwargs)
+        marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("{}")
+        return reward
 
-    components.hooks["on_message"] = stop_during_first
-    result = await run_world(manifest, manifest_path, components(), tmp_path / "runs", run_id="run_stop")
+    comps.verifier.verify = stop_after_verification
+    result = await run_world(manifest, manifest_path, comps, tmp_path / "runs", run_id="run_stop")
     assert result.status == "stopped" and list(result.rewards) == ["agent-1/first"]
     bundle = RunBundle.open(result.bundle_path)
     stopped = next(e for e in bundle.events() if e.kind == "run.stopped")

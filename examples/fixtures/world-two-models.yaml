@@ -6,6 +6,7 @@
 # Activations can be recomputed for agent-1 only (`activations capture --served-model qwen3-4b`).
 #   ANTHROPIC_API_KEY=... docker compose -f <compose> up -d --build
 #   uv run mesocosm run examples/fixtures/world-two-models.yaml --compose-file <compose> --json --task-runtime fixture --verifier-image <image>
+profile: fixture
 name: world-two-models
 mode: comparison
 model:

@@ -70,6 +70,8 @@ async def test_aborted_turn_preserves_original_messages_and_both_gateway_labels(
             return True
 
         async def messages(session_id):
+            if not entered.is_set():
+                return []
             result = [{"info": {"sessionID": session_id, "role": "assistant"}, "parts": [
                 {"type": "tool", "callID": "actual-call", "tool": "bash",
                  "state": {"status": "error", "error": "interrupted"}}]}]
@@ -120,14 +122,19 @@ async def test_snapshot_failures_and_timeouts_preserve_original_error_and_partia
 
     def harness_for(agent):
         harness = original(agent)
+        sent = False
 
         async def send(*args, **kwargs):
+            nonlocal sent
+            sent = True
             raise RuntimeError("original monitor failure")
 
         async def abort(*args, **kwargs):
             return True
 
         async def unavailable(*args, **kwargs):
+            if not sent:
+                return []
             await asyncio.Event().wait()
 
         harness.send_message, harness.abort_session, harness.list_messages = send, abort, unavailable

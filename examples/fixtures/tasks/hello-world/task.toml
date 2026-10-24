@@ -1,6 +1,7 @@
 # Minimal task in the Harbor task layout (docs-mintlify/tasks/overview): instruction.md,
 # task.toml, environment/, tests/test.sh writing /logs/verifier/reward.txt.
 [metadata]
+fixture = true
 name = "hello-world"
 difficulty = "trivial"
 tags = ["smoke"]

@@ -12,6 +12,21 @@ from typing import TYPE_CHECKING
 
 import typer
 
+from mesocosm.execution.cli import execution_app
+from mesocosm.execution.local import (
+    build_components as _components,  # noqa: F401 - compatibility for programmatic callers
+)
+from mesocosm.execution.local import (
+    monitor_model as _monitor_model,  # noqa: F401 - compatibility for programmatic callers
+)
+from mesocosm.execution.local import (
+    run_manifest as _run_manifest,
+)
+from mesocosm.execution.local import (
+    stack_runner as _stack_runner,
+)
+from mesocosm.execution.worker_cli import worker_app
+
 if TYPE_CHECKING:
     from mesocosm.core.run import RunResult
     from mesocosm.learning.controller import RolloutContext
@@ -30,6 +45,7 @@ experiment_app = typer.Typer(no_args_is_help=True, help="Repeated comparisons of
 train_app = typer.Typer(no_args_is_help=True, help="On-policy weight updates from real multi-agent worlds")
 export_app = typer.Typer(no_args_is_help=True, help="Run bundles in formats other tools read")
 judge_app = typer.Typer(no_args_is_help=True, help="The judge's model components")
+audit_app = typer.Typer(no_args_is_help=True, help="Explicit evidence links and detached bundle anchors")
 app.add_typer(world_app, name="world")
 app.add_typer(env_app, name="env")
 app.add_typer(observe_app, name="observe")
@@ -43,6 +59,9 @@ app.add_typer(activations_app, name="activations")
 activations_app.add_typer(probe_app, name="probe")
 app.add_typer(judge_app, name="judge")
 app.add_typer(export_app, name="export")
+app.add_typer(audit_app, name="audit")
+app.add_typer(execution_app, name="execution")
+app.add_typer(worker_app, name="worker")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
 WORKSPACE_ROOT_OPT = typer.Option(pathlib.Path("spike/workspace"), "--workspace-root")
@@ -87,7 +106,10 @@ def capabilities(json_: bool = JSON_OPT) -> None:
     """List adapters and their verification status (see docs/capability-matrix.md)."""
     _emit({
         "harness_adapters": {"opencode": "native three-agent execution verified; see capability matrix limits"},
-        "task_adapters": {"harbor": "native single-container Debian/Ubuntu filesystem profile"},
+        "task_adapters": {"harbor": "Debian/Ubuntu agents; original Compose sidecars and separate verifiers",
+                          "native_service_acceptance": "unverified with real agents; see research runtime guide"},
+        "profiles": {"research": "default; rejects known fixture mechanisms", "fixture": "authored regression inputs"},
+        "task_services": {"isolated": "per-agent services", "shared": "one service group and one team measurement"},
         "experiments": {"conditions": "named patches", "repetitions": True, "outcome_dependent_stopping": False},
         "conditions": {"initial_budget": "agents[].budget at gateway", "memory": ["reset", "carry"],
                        "reward_source": ["verifier", "peer_verdict"],
@@ -96,11 +118,82 @@ def capabilities(json_: bool = JSON_OPT) -> None:
         "mid_run_conditions": ["budget"],
         "learning": {"supported": ["none", "in_context"], "weight_updating_rl": {
             "status": "supported", "algorithm": "reinforce_lora", "command": "train run",
-            "scope": "shared causal LM, >=3 agents, complete native comparison worlds; see docs/training.md"}},
+            "scope": "shared causal LM, >=3 agents, isolated task services; see docs/training.md"}},
         "monitor_timing": ["posthoc", "pre_action"],
-        "monitor_intervention": {"scope": "per-agent top-level OpenCode tool calls", "on_flag": ["deny", "terminate"]},
+        "monitor_intervention": {"scope": ["per_agent", "joint"], "boundary": "top-level OpenCode tool calls",
+                                 "on_flag": ["deny", "terminate"]},
+        "team_resources": ["model_requests", "completion_tokens", "model_concurrency", "service_requests"],
+        "internal_access": "services.access; isolate_agents required; shared mounts unsupported",
+        "containment": "required private PID inspection; adapted hosts remain explicitly unverified",
         "evidence": "docs/capability-matrix.md; automated tests are not live agent behavior evidence",
     }, json_)
+
+
+@audit_app.command("anchor")
+def audit_anchor(bundle: pathlib.Path, anchor: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Hash a quiescent bundle into a new anchor outside it; retain the anchor independently."""
+    from mesocosm.core.audit import write_anchor
+
+    try:
+        result = write_anchor(bundle, anchor).model_dump(mode="json")
+    except (OSError, ValueError) as exc:
+        _emit({"status": "failed_anchor", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_)
+
+
+@audit_app.command("verify")
+def audit_verify(bundle: pathlib.Path, anchor: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Compare the bundle with an explicitly supplied retained anchor."""
+    from mesocosm.core.audit import verify_anchor
+
+    try:
+        result = verify_anchor(bundle, anchor)
+    except (OSError, ValueError) as exc:
+        _emit({"status": "failed_verification", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_, ok=result["integrity"] == "verified")
+
+
+@audit_app.command("graph")
+def audit_graph(bundle: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Report exact links and missing coverage without inferring causality from timing."""
+    from mesocosm.core.audit import event_graph
+    from mesocosm.core.records import RunBundle
+
+    try:
+        result = event_graph(RunBundle.open(bundle).events())
+    except (OSError, ValueError) as exc:
+        _emit({"status": "invalid_bundle", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_)
+
+
+@app.command("evaluate")
+def evaluate_bundle(bundle: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Report independent task, incentive, reviewed-label, monitor and cost measurements."""
+    from mesocosm.core.evaluation import independent_evaluation
+
+    try:
+        result = independent_evaluation(bundle)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _emit({"status": "invalid_bundle", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_)
+
+
+@judge_app.command("review-assessment")
+def review_monitor_assessment(bundle: pathlib.Path, event_id: str, verdict: str, reviewer: str,
+                              note: str = "", json_: bool = JSON_OPT) -> None:
+    """Label an exact monitor assessment, including below-threshold decisions, for evaluation."""
+    from mesocosm.core.evaluation import review_assessment
+
+    try:
+        result = review_assessment(bundle, event_id, verdict, reviewer, note)
+    except (OSError, ValueError) as exc:
+        _emit({"status": "invalid_review", "error": str(exc)}, json_, ok=False)
+        return
+    _emit(result, json_)
 
 
 @world_app.command("validate")
@@ -114,7 +207,8 @@ def world_validate(manifest: pathlib.Path, json_: bool = JSON_OPT) -> None:
 
 @env_app.command("compose")
 def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "--out"),
-                run_label: str = typer.Option("spike-docker", "--run-label"),
+                run_label: str | None = typer.Option(None, "--run-label",
+                    help="Must match gateway.run_label; defaults to that value or spike-docker"),
                 vllm_port: int = typer.Option(8000, "--vllm-port"),
                 vllm_host: str = typer.Option("host.docker.internal", "--vllm-host",
                                               help="Inference host as seen from the gateway container "
@@ -125,6 +219,12 @@ def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "
     from mesocosm.env.compose import compose_yaml, write_agent_files
 
     spec = load_manifest(manifest)
+    expected_label = spec.gateway.run_label or "spike-docker"
+    if run_label is not None and run_label != expected_label:
+        _emit({"status": "invalid_configuration", "error": "--run-label must match gateway.run_label "
+               "(or spike-docker when unset); set it in the manifest before rendering"}, json_, ok=False)
+        return
+    run_label = expected_label
     text = compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=run_label,
                         vllm_port=vllm_port, vllm_host=vllm_host, manifest_dir=manifest.resolve().parent)
     if out:
@@ -169,123 +269,6 @@ def observe_serve(bundle: pathlib.Path,
            "summaries": f"model {summarizer_model}" if summarizer_url and summarizer_model else "rules"}, json_)
     serve(bundle, gateway_log, host, port, replay, summarizer_url, summarizer_model, summarizer_key, summary_lang,
           services_log, gpu_hour_cost)
-
-
-def _components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,
-                verifier_image: str | None, vllm_host: str = "host.docker.internal", vllm_port: int = 8000, *,
-                verifier_network: str = "none", allow_unenforced_storage: bool = False, task_runtime: str = "native",
-                rollout: RolloutContext | None = None):
-    """The real components for a manifest: OpenCode servers, the gateway, Docker checks, the world services."""
-    from mesocosm.adapters.opencode.client import OpenCodeClient
-    from mesocosm.core.run import Components, DockerVerifier
-    from mesocosm.env.compose import egress_env, service_address
-    from mesocosm.env.egress import DockerEgressVerifier
-    from mesocosm.env.services.client import ServicesAdmin
-    from mesocosm.env.shared import DockerSharedDir
-    from mesocosm.env.task_runtime import DockerTaskRuntime
-    from mesocosm.gateway.client import GatewayAdmin
-
-    egress = DockerEgressVerifier(compose_file, {a.id: egress_env(spec, a, vllm_host, vllm_port) for a in spec.agents})
-    if task_runtime not in ("native", "fixture"):
-        raise ValueError("--task-runtime must be native or fixture")
-    if task_runtime == "native" and verifier_image:
-        raise ValueError("native runtime verifies the task container; --verifier-image requires --task-runtime fixture")
-    if task_runtime == "native" and spec.gateway.api_key in (
-            "", "mesocosm-local", "sk-local", "local", "replace-with-a-fresh-random-control-key"):
-        raise ValueError("native runtime requires a non-default gateway control key")
-    if task_runtime == "fixture" and not verifier_image:
-        raise ValueError("fixture runtime requires an explicit --verifier-image")
-    native = DockerTaskRuntime(compose_file, runs_root / (spec.gateway.run_label or "spike-docker") / "runtime",
-                               verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
-                               egress=egress) if task_runtime == "native" else None
-    return Components(
-        harness_for=lambda a: OpenCodeClient(a.harness_url(), timeout=None),
-        gateway=GatewayAdmin(spec.gateway.url, api_key=spec.gateway.api_key),
-        egress=egress,
-        verifier=native or DockerVerifier(verifier_image),
-        task_runtime=native,
-        workspace_for=lambda a: workspace_root / a.id,
-        services_log=runs_root / (spec.gateway.run_label or "spike-docker") / "services.jsonl",
-        web_log=runs_root / (spec.gateway.run_label or "spike-docker") / "web" / "web.jsonl",
-        web_policy=runs_root / (spec.gateway.run_label or "spike-docker") / "web" / "policy.json",
-        services=ServicesAdmin(f"http://{service_address(spec, 'services')}") if spec.services.enabled else None,
-        shared_files=DockerSharedDir(compose_file).list_files,
-        monitor=_monitor_model(spec) if spec.judge.monitor.enabled else None,
-        rollout=rollout,
-    )
-
-
-def _monitor_model(spec):
-    """The monitor's model (ADR-0030): a catalog entry with its own upstream is called directly with the key
-    from this environment; the default model goes through the gateway under the monitor's own identity."""
-    import os
-
-    from mesocosm.judge.monitor import MonitorModel
-
-    model = spec.catalog()[spec.judge.monitor.model]
-    label = spec.gateway.run_label or "spike-docker"
-    if model.upstream:
-        return MonitorModel(model.upstream.rstrip("/") + "/v1", model.id,
-                            api_key=os.environ.get(model.api_key_env) if model.api_key_env else None, run_label=label)
-    return MonitorModel(spec.gateway.url.rstrip("/") + "/v1", model.id, api_key=spec.gateway.api_key, run_label=label)
-
-
-async def _run_manifest(manifest: pathlib.Path, compose_file: pathlib.Path, runs_root: pathlib.Path,
-                        workspace_root: pathlib.Path, verifier_image: str | None,
-                        vllm_host: str = "host.docker.internal", vllm_port: int = 8000, *,
-                        verifier_network: str = "none", allow_unenforced_storage: bool = False,
-                        task_runtime: str = "native", rollout: RolloutContext | None = None):
-    from mesocosm.core.manifest import load_manifest
-    from mesocosm.core.run import run_world
-
-    spec = load_manifest(manifest)
-    components = _components(spec, compose_file, runs_root, workspace_root, verifier_image, vllm_host, vllm_port,
-                             verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
-                             task_runtime=task_runtime, rollout=rollout)
-    try:
-        return await run_world(spec, manifest.resolve(), components, runs_root)
-    finally:
-        clients = [client for client in (components.gateway, components.services, components.monitor)
-                   if client is not None]
-        await asyncio.gather(*(client.aclose() for client in clients))
-
-
-def _stack_runner(compose_dir: pathlib.Path, runs_root: pathlib.Path, workspace_root: pathlib.Path,
-                  verifier_image: str | None, vllm_port: int, vllm_host: str, stacks: list, *,
-                  verifier_network: str = "none", allow_unenforced_storage: bool = False, task_runtime: str = "native",
-                  fresh_workspace: bool = False, rollout: RolloutContext | None = None):
-    """run_one for chains and scenarios: render the topology for the manifest (its run label names the log
-    directory), take the previous stack down, bring this one up, then run. Every run gets a fresh world."""
-    from mesocosm.core.manifest import load_manifest
-    from mesocosm.env.compose import compose_yaml, write_agent_files
-    from mesocosm.env.stack import DockerStack
-
-    async def run_one(manifest: pathlib.Path):
-        spec = load_manifest(manifest)
-        label = spec.gateway.run_label or "spike-docker"
-        trial_workspace = workspace_root / label if fresh_workspace else workspace_root
-        if fresh_workspace and trial_workspace.exists():
-            raise FileExistsError(f"trial workspace already exists: {trial_workspace}")
-        compose_dir.mkdir(parents=True, exist_ok=True)
-        compose_file = compose_dir / f"{manifest.stem}.compose.yml"
-        compose_file.write_text(compose_yaml(spec, repo_root=pathlib.Path.cwd(), run_label=label, vllm_port=vllm_port,
-                                             vllm_host=vllm_host, manifest_dir=manifest.resolve().parent,
-                                             runs_dir=str(runs_root.resolve()), workspace_root=trial_workspace,
-                                             require_rollout_binding=rollout is not None))
-        write_agent_files(spec, label, runs_root.resolve() / label / "agents",
-                          manifest_dir=manifest.resolve().parent, web_dir=runs_root.resolve() / label / "web")
-        (runs_root / label).mkdir(parents=True, exist_ok=True)
-        if stacks:
-            await stacks[-1].down()          # projects are named after the manifest and share the fixed subnets
-        stack = DockerStack(compose_file)
-        stacks.append(stack)
-        await stack.up()
-        return await _run_manifest(manifest, compose_file, runs_root, trial_workspace, verifier_image, vllm_host,
-                                   vllm_port, verifier_network=verifier_network,
-                                   allow_unenforced_storage=allow_unenforced_storage, task_runtime=task_runtime,
-                                   rollout=rollout)
-
-    return run_one
 
 
 @app.command()
@@ -387,6 +370,8 @@ def experiment_run(experiment: pathlib.Path,
 
     try:
         spec = load_experiment(experiment)
+        if spec.baseline and task_runtime != "native":
+            raise ValueError("baseline requires --task-runtime native")
     except (ValueError, OSError) as exc:
         _emit({"status": "invalid_experiment", "error": str(exc)}, json_, ok=False)
         return
@@ -419,7 +404,8 @@ def experiment_run(experiment: pathlib.Path,
     except Exception as exc:
         _emit({"status": "failed_experiment", "error": str(exc), "out": str(out_dir)}, json_, ok=False)
         return
-    _emit(experiment_table(out_dir), json_, ok=not (result.get("lifecycle_errors") or result["failed"]
+    _emit(experiment_table(out_dir), json_, ok=not (result["status"] != "completed"
+                                                   or result.get("lifecycle_errors") or result["failed"]
                                                    or result["incomplete_records"]
                                                    or result["not_run"] or result["stopped"]))
 
@@ -889,6 +875,36 @@ def flags_review(bundle: pathlib.Path, flag_id: str,
         _emit({"error": str(e)}, json_, ok=False)
         return
     _emit(record, json_)
+
+@app.command("diagnose")
+def diagnose(bundle: pathlib.Path, json_: bool = JSON_OPT) -> None:
+    """Separate model tool output, harness execution, refusals and original task scores."""
+    from mesocosm.core.diagnostics import diagnose_bundle
+
+    try:
+        result = diagnose_bundle(bundle)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        _emit({"status": "invalid_bundle", "error_type": type(exc).__name__}, json_, ok=False)
+        return
+    _emit(result, json_)
+
+
+@env_app.command("calibrate")
+def env_calibrate(task: pathlib.Path, out: pathlib.Path = typer.Option(..., "--out"),
+                  expected_score: float = typer.Option(1.0, "--expected-score",
+                                                       help="Expected reference score on the original task scale"),
+                  verifier_network: str = VERIFIER_NETWORK_OPT, json_: bool = JSON_OPT) -> None:
+    """Check the original verifier before/after the unchanged reference in fresh environments."""
+    from mesocosm.env.reference import calibrate_native
+
+    try:
+        result = asyncio.run(calibrate_native(task, out, expected_score=expected_score,
+                                              verifier_network=verifier_network))
+    except (OSError, ValueError, RuntimeError) as exc:
+        _emit({"status": "failed_calibration", "error_type": type(exc).__name__}, json_, ok=False)
+        return
+    _emit(result, json_, ok=result.get("status") == "completed" and result.get("matches_expected") is True)
+
 
 if __name__ == "__main__":
     app()

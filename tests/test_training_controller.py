@@ -123,6 +123,8 @@ async def test_complete_world_update_activation_next_world_and_final_verificatio
     for index, (_, world, context) in enumerate(worlds):
         expected = "base" if index == 0 else "updated"
         assert all(world.model_for(agent).id == expected for agent in world.agents)
+        assert all(world.model_for(agent).revision == context.policy.base_revision for agent in world.agents)
+        assert all(world.model_for(agent).hf_repo == context.policy.base_model for agent in world.agents)
         assert context.policy.model == expected and context.episode_id == world.gateway.run_label
         assert world.judge.monitor.model == "base" and "base" in world.catalog()
     assert worlds[1][1].catalog()["base"].hf_repo == "test/model"
@@ -219,7 +221,9 @@ async def test_cancelled_thread_finishes_and_releases_gpu_before_wake(tmp_path, 
 
 
 @pytest.mark.parametrize("change", [{"memory": "carry"}, {"learning": {"mode": "in_context"}},
-                                  {"rewards": {"enabled": False}}])
+                                  {"rewards": {"enabled": False}},
+                                  {"profile": "fixture"}, {"task_services": "shared"},
+                                  {"model": {"id": "base", "hf_repo": "test/model", "revision": "c" * 40}}])
 def test_unsupported_training_world_fails_before_server_or_output(tmp_path, monkeypatch, change):
     configured, path, out, _, calls, _ = setup(tmp_path, monkeypatch)
     world = yaml.safe_load((tmp_path / "world.yaml").read_text())

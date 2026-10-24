@@ -47,6 +47,8 @@ class TrainingSpec(TrainingModel):
 
     name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
     world: str = Field(min_length=1)
+    evaluation_world: str | None = Field(default=None, min_length=1,
+                                        description="Separate held-out tasks, evaluated before/after updates")
     episodes: int = Field(default=2, ge=2)
     algorithm: Literal["reinforce"] = "reinforce"
     base_model: str = Field(min_length=1)

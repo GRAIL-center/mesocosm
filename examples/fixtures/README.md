@@ -1,5 +1,9 @@
 # Legacy authored fixtures
 
+These manifests explicitly use `profile: fixture`; their task metadata also declares `fixture = true`.
+The default `profile: research` rejects these known authored mechanisms, including when a task is
+loaded through a dataset or persistent queue. Fixture runs are excluded from baseline and policy training.
+
 These files preserve earlier integration examples and incident-specific demonstrations for regression
 testing. **They are synthetic inputs, not records of prior agent behavior or evidence of spontaneous
 misalignment.** Start new research from [the real-environment configurations](../README.md).

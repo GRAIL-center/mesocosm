@@ -36,9 +36,13 @@ class FixtureHarness:
                                           "messages": [{"role": "user", "content": text}]})
         response.raise_for_status()
         message = response.json()["choices"][0]["message"]
-        reply = {"info": {"role": "assistant", "sessionID": session_id},
+        user_id = f"message-{len(self.sessions[session_id])}"
+        reply = {"info": {"id": user_id + "-reply", "parentID": user_id, "role": "assistant",
+                          "sessionID": session_id, "finish": "stop", "time": {"created": 1, "completed": 2}},
                  "parts": [{"type": "text", "text": message["content"]}]}
-        self.sessions[session_id].append(reply)
+        self.sessions[session_id].extend([
+            {"info": {"id": user_id, "role": "user", "sessionID": session_id},
+             "parts": [{"type": "text", "text": text}]}, reply])
         self.workspace.joinpath("hello.txt").write_text("Hello, team!\n")
         return reply
 
@@ -67,7 +71,8 @@ async def test_run_world_emits_collectable_three_agent_multi_task_native_bundle(
         if rounds > 1:
             task.joinpath("task.toml").write_text('[[rounds]]\nprompt="Begin the task."\n'
                                                 '[[rounds]]\nprompt="Finish the task."\n')
-    manifest = WorldManifest.model_validate({"name": "training-runtime", "model": {"id": "policy-0"},
+    manifest = WorldManifest.model_validate({"name": "training-runtime", "profile": "fixture",
+                "model": {"id": "policy-0"},
                 "agents": [{"id": f"agent-{i}"} for i in range(1, 4)],
                 "tasks": [{"path": "first"}, {"path": "second"}],
                 "gateway": {"url": "http://gateway", "run_label": "world"}, "rewards": {"enabled": True}})

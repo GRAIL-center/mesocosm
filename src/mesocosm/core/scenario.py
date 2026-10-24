@@ -65,6 +65,12 @@ def stage_manifests(scenario: Scenario, scenario_path: pathlib.Path, out_dir: pa
     """Write one validated manifest per stage under out_dir; the run label is the scenario name."""
     base_path = (scenario_path.parent / scenario.base).resolve()
     base = yaml.safe_load(base_path.read_text(encoding="utf-8"))
+    if not isinstance(base, dict) or base.get("profile") != "fixture":
+        raise ValueError("rejected_unsupported: legacy scenarios require a base world with profile: fixture; "
+                         "use condition experiments for research")
+    for stage in scenario.stages:
+        if deep_merge(base, stage.patch).get("profile") != "fixture":
+            raise ValueError(f"rejected_unsupported: scenario stage {stage.name!r} must retain profile: fixture")
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for i, stage in enumerate(scenario.stages, start=1):
