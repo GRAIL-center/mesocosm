@@ -256,6 +256,9 @@ def test_peft_qwen3_cpu_checkpoint_roundtrip_records_real_adapter_change(tmp_pat
     base = transformers.Qwen3ForCausalLM(config).to(getattr(torch, dtype))
     base_path = tmp_path / "base"
     base.save_pretrained(base_path, safe_serialization=True)
+    # Match production loading: .to(dtype) also rounds nonpersistent RoPE buffers.
+    base = transformers.Qwen3ForCausalLM.from_pretrained(
+        base_path, dtype=getattr(torch, dtype), attn_implementation="sdpa", local_files_only=True)
     configured = spec(dtype=dtype, lora_rank=2, lora_alpha=4, baseline=0.5, learning_rate=.01).model_copy(
         update={"base_model": str(base_path)})
     current = policy(dtype=dtype, base_model=str(base_path), base_sha256=checkpoint_sha256(base_path))
@@ -271,9 +274,15 @@ def test_peft_qwen3_cpu_checkpoint_roundtrip_records_real_adapter_change(tmp_pat
     assert updated.dtype == dtype
     assert updated.id != current.id and updated.adapter_sha256 == checkpoint_sha256(updated.adapter_path, adapter=True)
     loaded = peft.PeftModel.from_pretrained(transformers.Qwen3ForCausalLM.from_pretrained(
-                                               base_path, dtype=getattr(torch, dtype)),
+                                               base_path, dtype=getattr(torch, dtype),
+                                               attn_implementation="sdpa", local_files_only=True),
                                            updated.adapter_path, is_trainable=True)
     loaded.eval()
+    original_buffers, restored_buffers = dict(model.named_buffers()), dict(loaded.named_buffers())
+    assert original_buffers.keys() == restored_buffers.keys()
+    for name, buffer in original_buffers.items():
+        assert buffer.dtype == restored_buffers[name].dtype
+        assert torch.equal(buffer, restored_buffers[name])
     before = action_logprobs(model, rollout.trajectories[0].requests[0], torch)
     after = action_logprobs(loaded, rollout.trajectories[0].requests[0], torch)
     assert torch.allclose(before, after, atol=1e-6)
