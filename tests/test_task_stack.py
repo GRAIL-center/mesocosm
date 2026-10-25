@@ -186,6 +186,65 @@ def test_sidecars_cannot_add_routes_or_claim_agent_address(native, tmp_path, val
         prevalidate_compose(native, tmp_path)
 
 
+@pytest.mark.parametrize("scope", ["isolated", "shared"])
+def test_compose_5_6_1_empty_default_ipam_preserves_owned_networks(tmp_path, scope):
+    # Captured with Docker Compose 5.6.1 config on the published SWE-Gym task
+    # python__mypy-15131; only the absolute local build context is relocated.
+    (tmp_path / "Dockerfile").write_text("FROM debian:bookworm\nWORKDIR /app\n")
+    resolved = {
+        "name": "environment",
+        "networks": {"default": {"name": "environment_default", "ipam": {}}},
+        "services": {"main": {
+            "command": None, "entrypoint": None, "networks": {"default": None},
+            "platform": "linux/amd64", "build": {"context": str(tmp_path), "dockerfile": "Dockerfile"},
+        }},
+    }
+    original = copy.deepcopy(resolved)
+    prevalidate_compose(resolved, tmp_path)
+    stack = compile_(resolved, tmp_path, scope=scope)
+    assert resolved == original
+    assert stack.services == {} and stack.volumes == {}
+    assert len(stack.main_by_agent) == 3
+    for agent, main in stack.main_by_agent.items():
+        assert main["networks"] == {f"sandbox-{agent}": {"aliases": ["main"] if scope == "isolated" else []}}
+        assert main["platform"] == "linux/amd64"
+        assert main["build"]["context"] == str(tmp_path)
+        assert "ipam" not in main and "network_mode" not in main
+
+
+@pytest.mark.parametrize("ipam", [
+    None, [], "", False, {"driver": "default"}, {"config": []},
+    {"config": [{"subnet": "172.30.1.0/24", "gateway": "172.30.1.1"}]},
+    {"options": {"parent": "eth0"}},
+])
+def test_nonempty_or_malformed_ipam_is_rejected_before_and_after_resolution(native, tmp_path, ipam):
+    native["networks"] = {"default": {"ipam": ipam}}
+    with pytest.raises(TaskComposeError, match="ipam|IPAM"):
+        prevalidate_compose(native, tmp_path)
+    with pytest.raises(TaskComposeError, match="ipam|IPAM"):
+        compile_(native, tmp_path)
+
+
+@pytest.mark.parametrize("options", [
+    {"external": True}, {"driver": "bridge"}, {"driver": "macvlan"},
+    {"driver_opts": {"parent": "eth0"}},
+])
+def test_empty_ipam_does_not_allow_custom_network_topology(native, tmp_path, options):
+    native["networks"] = {"default": {"ipam": {}, **options}}
+    with pytest.raises(TaskComposeError, match="unsupported Compose fields"):
+        prevalidate_compose(native, tmp_path)
+    with pytest.raises(TaskComposeError, match="unsupported Compose fields"):
+        compile_(native, tmp_path)
+
+
+def test_empty_ipam_does_not_allow_extra_networks(native, tmp_path):
+    native["networks"] = {"default": {"ipam": {}}, "extra": {"ipam": {}}}
+    with pytest.raises(TaskComposeError, match="extra networks"):
+        prevalidate_compose(native, tmp_path)
+    with pytest.raises(TaskComposeError, match="extra networks"):
+        compile_(native, tmp_path)
+
+
 @pytest.mark.parametrize("name", ["gateway", "control", "proxy", "agent-1", "git"])
 def test_service_names_cannot_impersonate_controlled_dns(native, tmp_path, name):
     native["services"][name] = native["services"].pop("worker")

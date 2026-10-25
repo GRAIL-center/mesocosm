@@ -8,9 +8,10 @@ import pathlib
 import shutil
 
 import pytest
-from test_task_runtime import task
+from test_task_runtime import DockerCommands, task
 
-from mesocosm.env.task_runtime import NativeImage
+from mesocosm.env.task_runtime import NativeImage, TaskGroup
+from mesocosm.env.task_stack import compile_task_stack
 from mesocosm.env.task_verifier import (
     TaskVerifierError,
     _checked_tree,
@@ -74,6 +75,69 @@ def separate_task(tmp_path):
     native = task(tmp_path, {"environment": {"docker_image": "original/task", "cpus": 1},
                              "verifier": {"environment_mode": "separate"}})
     return native
+
+
+def measurement_group(tmp_path, *, sidecars, policy):
+    original = separate_task(tmp_path)
+    if policy == "verifier":
+        original.config["verifier"]["network_mode"] = "no-network"
+    elif policy == "environment":
+        original.config["verifier"]["environment"] = {"network_mode": "no-network"}
+    services = {"main": {"image": "original/task", "platform": "linux/amd64"}}
+    if sidecars:
+        services["database"] = {"image": "original/database"}
+    stack = compile_task_stack({"services": services}, environment_root=original.path / "environment",
+        world_name="native-world", task_key="measurement", agent_networks={"agent-1": "sandbox"},
+        scope="isolated", reserved_aliases={"agent-1"})
+    return original, TaskGroup("measurement", original, native_image(), stack, ["agent-1"],
+                               containers={"agent-1": CONTAINER})
+
+
+@pytest.mark.parametrize("sidecars,policy", [
+    (False, None), (False, "verifier"), (False, "environment"),
+    (True, None), (True, "verifier"), (True, "environment"),
+])
+async def test_runtime_measure_preserves_offline_policy_and_transfers_original_artifacts(
+        tmp_path, monkeypatch, sidecars, policy):
+    runtime = DockerCommands(tmp_path)
+    original, group = measurement_group(tmp_path, sidecars=sidecars, policy=policy)
+    original.config["artifacts"] = ["/app/result.txt"]
+    candidate = tmp_path / "result.txt"
+    candidate.write_text("unchanged candidate bytes")
+    docker = Docker()
+    docker.sources["/app/result.txt"] = candidate
+    logs = tmp_path / "logs"
+
+    async def command(*args, **kwargs):
+        if args[:2] == ("docker", "exec") and args[-1] == "/tests/test.sh":
+            (logs / "verifier/reward.txt").write_text("1\n")
+            return b"original verifier measurement"
+        return await docker(*args, **kwargs)
+
+    async def cleanup(_command):
+        pass  # Lifecycle cleanup has separate runtime tests; this exercises the real planner and transfer.
+
+    monkeypatch.setattr(runtime, "command", command)
+    monkeypatch.setattr(runtime, "_verifier_cleanup", cleanup)
+    reward = await runtime._measure(original, group, "agent-1", tmp_path / "workspace", logs, "test.sh")
+    expected = "native-world_sandbox" if sidecars and policy is None else "none"
+    create = next(call for call in docker.calls if call[:2] == ("docker", "create"))
+    assert create[create.index("--network") + 1] == expected
+    assert json.loads((logs / "environment.json").read_text())["network"] == expected
+    assert reward.value == 1
+    assert docker.uploaded == {"/app/result.txt": b"unchanged candidate bytes"}
+    assert (logs / "artifacts/app/result.txt").read_bytes() == candidate.read_bytes()
+
+
+@pytest.mark.parametrize("sidecars,policy", [(False, None), (True, "verifier"), (True, "environment")])
+async def test_runtime_measure_still_rejects_live_service_requirement_without_network(
+        tmp_path, sidecars, policy):
+    runtime = DockerCommands(tmp_path)
+    original, group = measurement_group(tmp_path, sidecars=sidecars, policy=policy)
+    original.config["verifier"]["requires_live_processes"] = True
+    with pytest.raises(TaskVerifierError, match="live service verification requires"):
+        await runtime._measure(original, group, "agent-1", tmp_path / "workspace", tmp_path / "logs", "test.sh")
+    assert runtime.calls == []
 
 
 async def test_fresh_base_and_original_script_without_live_workspace_or_agent_rootfs(tmp_path):

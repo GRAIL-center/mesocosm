@@ -81,6 +81,7 @@ def harness_dockerfile(base: str, version: str, user: str) -> str:
 
     OpenCode 1.19.3 waits for SDK installation when loading a local plugin. Prepare its official
     package/lock/node_modules in both custom and global config directories before network isolation.
+    Its search tools also need system ripgrep before the runtime loses download access.
     """
     account = shlex.quote((user or "root").split(":", 1)[0])
     return ("FROM node:22-bookworm-slim AS coding_harness\n"
@@ -90,8 +91,8 @@ def harness_dockerfile(base: str, version: str, user: str) -> str:
             f"FROM {base}\nUSER root\n"
             "RUN command -v apt-get >/dev/null || "
             "{ echo 'Native harness currently requires Debian/Ubuntu' >&2; exit 1; }; "
-            "apt-get update && apt-get install -y --no-install-recommends libstdc++6 curl ca-certificates "
-            "&& rm -rf /var/lib/apt/lists/*\n"
+            "apt-get update && apt-get install -y --no-install-recommends libstdc++6 curl ca-certificates ripgrep "
+            "&& command -v rg >/dev/null && rg --version && rm -rf /var/lib/apt/lists/*\n"
             "COPY --from=coding_harness /usr/local/bin/node /usr/local/bin/node\n"
             "COPY --from=coding_harness /opt/coding-harness /opt/coding-harness\n"
             "COPY --from=coding_harness /opt/harness-config /etc/opencode\n"
@@ -895,7 +896,11 @@ class DockerTaskRuntime:
         if separate:
             from mesocosm.env.task_verifier import prepare_verifier
 
-            network = self._task_network(agent_id) if group.stack is not None else "none"
+            environment = verifier.get("environment", task.config.get("environment")) or {}
+            offline = (verifier.get("network_mode") or environment.get("network_mode")) == "no-network"
+            # A main-only Compose declaration adds no live service for the verifier to reach.
+            network = (self._task_network(agent_id)
+                       if not offline and group.stack is not None and group.stack.services else "none")
             plan = await prepare_verifier(task, group.native, group.containers[agent_id], workspace, logs_dir,
                                           self.command, network=network, service_scope=self.task_services,
                                           script=script, project=self.project)

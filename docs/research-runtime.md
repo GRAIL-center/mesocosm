@@ -76,9 +76,11 @@ reserved `OPENCODE_*` and `MESOCOSM_*` variables in the original main environmen
 The verifier's environment settings select its CPU/memory limits. If those limits cannot be enforced,
 preparation fails. Unknown fields,
 GPU/storage requirements, verifier-specific Compose stacks and public/allowlisted verifier internet
-access are currently refused. A live-service verifier can connect to the runtime-selected internal
-task network; a declared `no-network` policy cannot be silently overridden. It runs while the task's
-sidecars remain available, after agent work is frozen by the runtime.
+access are currently refused. A verifier with task sidecars can connect to the runtime-selected internal
+task network. Setting `network_mode = "no-network"` under `[verifier]` or `[verifier.environment]`
+keeps it offline; a main-only Compose task also defaults to no network. A conflicting
+`requires_live_processes = true` declaration is rejected before verifier startup. Sidecars remain
+available during verification, after agent work is frozen by the runtime.
 
 See the original [Harbor separate-verifier specification](https://docs.harborframework.com/tasks/separate-verifier)
 for mode resolution and image precedence. Support here is an explicit subset of that interface.
@@ -136,6 +138,8 @@ Mesocosm reads the task's original `environment/docker-compose.yaml`, `docker-co
 `compose.yaml` or `compose.yml`; ambiguous definitions fail. It validates the supported subset before
 Docker interprets it. There is no generated application, replacement database or authored incident.
 The original `main` image/build is extended with the unchanged OpenCode harness as before.
+The harness layer installs and checks system `ripgrep` during the build so OpenCode's `glob` and
+`grep` tools work after network isolation, without downloading an executable during an agent turn.
 
 Choose the state boundary in the world manifest:
 
