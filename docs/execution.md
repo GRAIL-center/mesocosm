@@ -1,8 +1,10 @@
 # Run worlds from your laptop
 
-Prepare a world or condition experiment on your laptop, then submit it to a Linux execution worker.
+Prepare a world or condition experiment on your laptop, then submit it to an execution worker.
 The worker runs the complete environment and retains its records. Closing the client connection does
 not stop an accepted job. You can reconnect to inspect progress, stop it explicitly or fetch results.
+This guide's main deployment uses the built-in **Linux Docker backend**. Installed backends can own
+other native environment/agent interfaces through the same submission protocol.
 
 ```mermaid
 flowchart LR
@@ -15,12 +17,38 @@ flowchart LR
     world <-->|"Model gateway"| model
 ```
 
-Docker runs on the worker. The client needs Python and Mesocosm, with no local Docker or GPU required.
+In this deployment, Docker runs on the worker. The client needs Python and Mesocosm, with no local Docker or GPU required.
 Inference can use a separate GPU server or a configured compatible provider. Remote job submission
 currently accepts **finite research worlds and condition experiments**. Direct local training and
 persistent-mode commands remain separate; neither is a remote job kind.
 
-## Prepare the worker
+## Choose an integration
+
+The defaults are `tasks[].source: harbor` and `execution.backend: docker`. A task source reads original
+inputs; a backend owns the complete environment, real agent interfaces, evaluator, records and cleanup.
+Use an installed source alone when its tasks fit the native execution contract. Environments with a
+different action/lifecycle contract need an implemented backend too. See the
+[integration guide](integrations.md) for the interfaces and current limits.
+
+Install the same trusted integration packages on the client and worker, then inspect and check them:
+
+```bash
+uv run mesocosm integrations list --json
+uv run mesocosm integrations check /path/to/world.yaml --json
+```
+
+The check does not allocate a GPU or start Docker. It verifies selected contracts and materialized
+task inputs; actual runtime containment and other enforcement still require execution preflight.
+Package submission never installs plugins or imports them from uploaded files.
+
+A world selects an installed backend with `execution.backend`. Its `execution.options` are recorded
+experiment parameters validated by that provider. Start a matching worker using `--backend NAME`
+and `--backend-config /private/operator.yaml`; the latter is a private YAML/JSON mapping of deployment
+settings passed to the provider, separate from submitted options. Each worker has one selected backend,
+and all conditions in a submitted experiment must match it. Docker-specific flags such as `--repo-root`
+or `--vllm-host` are refused for other backends; use that provider's operator configuration.
+
+## Prepare the Docker worker
 
 Use a Linux host with a local Docker daemon and Docker Compose, Python 3.11–3.13, `uv` and a complete
 Mesocosm source checkout. The worker must see the same kernel and host process information as its
@@ -47,8 +75,18 @@ uv run mesocosm worker serve \
 ```
 
 The source checkout supplies `spike/docker/` build assets; installing the Python wheel alone is not
-enough for the worker. Keep this process running using your Linux service manager. The worker cleans
+enough for the Docker worker. Keep this process running using your Linux service manager. The worker cleans
 unfinished jobs on startup, so retain its state directory across restarts.
+
+Native execution policy is set by the worker operator. The defaults are `--verifier-network none`
+and enforced task resources. For an original filesystem task such as `fix-git` whose verifier installs
+dependencies online and whose storage quota is unsupported, explicitly use
+`--verifier-network bridge --allow-unenforced-resources`. This policy is advertised in capabilities
+and retained in the execution result; native receipts record actual applied and unsupported resources.
+It does not relax required PID containment or open agent internet access. Available CPU/RAM limits
+still apply. Separate live verifiers retain their existing network restrictions. See
+[ADR-0053](adr/0053-explicit-native-execution-policy.md) and the
+[native acceptance procedure](native-acceptance.md).
 
 The worker runs one active job and admits at most 16 unfinished jobs by default (`--max-pending`). Current worlds use
 fixed subnets. A host-wide lease prevents a second managed worker from starting; do not run a manual
@@ -82,8 +120,9 @@ HTTP outside loopback and does not follow redirects. `--worker` overrides `MESOC
 `--token-env` selects a different token environment variable. Tokens are not CLI argument values.
 
 The capability response checks worker prerequisites. A backend reported as `supported` means its
-host prerequisites are available; each task still has to pass actual PID-containment and egress
-checks before agents execute. It does not establish real-agent acceptance.
+host prerequisites are available; the Docker path still has to pass actual PID-containment and egress
+checks before agents execute. A custom backend must enforce its accepted controls at the corresponding
+runtime boundaries. Neither registration nor a capability response establishes real-agent acceptance.
 
 ## Submit, inspect and fetch
 
@@ -130,7 +169,7 @@ uv run mesocosm execution stop JOB_ID --json
 Stop is a request, not proof that cleanup has finished. Inspect the terminal job status and cleanup
 receipt. Fetch is available only for terminal jobs and requires a new output directory. It verifies
 the downloaded archive before exposing the extracted result. Original run bundles are under
-`runs/<run-id>/`; use existing `report`, `diagnose` and `observe serve` commands on those directories.
+`runs/<run-id>/`; use `report`, `diagnose`, `evaluate` and `audit` commands on those directories.
 Paths inside original manifests retain their worker locations. Offline probe scoring therefore needs
 an explicit local `--probe` file; submission assets are not part of the result export.
 
@@ -144,12 +183,19 @@ and 512 MiB total file content; archive metadata has a separate bounded allowanc
 The same limits apply to result archives. Larger records remain on the worker and require direct
 operator transfer; the API does not silently omit them to fit a download.
 
-Client gateway endpoints and control keys are stripped. The worker creates fresh endpoints and
+Each package also pins its selected task sources and backend in `integration_lock`: integration API,
+distribution/version, entry point and installed package-content hash. Every effective experimental
+condition is pinned and checked on the worker. Missing or changed packages and backend mismatches fail
+before admission; queued jobs are checked again before launch. Restart processes after changing provider
+code and create a new package for a deliberate change. The hash includes editable source but does not
+pin the entire dependency environment, remote service state or model-serving identity.
+
+Client gateway endpoints and control keys are stripped. The Docker backend creates fresh endpoints and
 credentials in a separate resolved configuration. Declared model upstreams remain in the submission;
 their addresses must be reachable from the worker's gateway. For the default vLLM route, configure
 `worker serve --vllm-host HOST --vllm-port PORT` as needed.
 
-Model API keys stay on the worker. A manifest names an environment variable through `api_key_env`;
+For the Docker backend, model API keys stay on the worker. A manifest names an environment variable through `api_key_env`;
 the worker must have that variable and explicitly allow its name with the repeatable option
 `--model-key-env NAME`. This is an operator allowlist, not provider-bound secret isolation: a trusted
 submitter can select an upstream that receives an allowed credential.
@@ -169,10 +215,15 @@ receipts and fetched results as private artifacts.
 | A queued job is stopped | It is cancelled without launching a world. |
 | A running job is stopped or fails | Owned resources are cleaned before the next job may run. |
 | Worker restarts with unfinished jobs | It cleans recorded ownership and marks jobs interrupted; it does not replay observations. |
+| Provider code changes while a process is running | New compatibility/identity checks reject the changed package; restart with the intended installation. |
+| A different external backend attempts recovery | Ownership identity mismatch blocks cleanup/admission; restore the recorded provider before recovery. Docker retains its own inspected inventory cleanup across code updates. |
 | Cleanup cannot be verified | Status becomes `failed_cleanup`; new execution is blocked. |
 | Worker or host remains down | No independent cleanup watchdog runs; recovery occurs when the worker starts again. |
 
 Local package, API, lifecycle, client and Docker command-boundary tests exercise these contracts.
+Installed-extension CPU tests exercise provider discovery, input transfer and backend dispatch with
+explicit non-agent fixtures. Concrete new benchmark adapters still require implementation and separate
+real-agent verification; see [integration development](integrations.md).
 They do not demonstrate a real Linux worker running three real agents, native application services,
 actual tools and the original verifier. No Linux execution host was available for this implementation;
 that acceptance run remains **unverified**. Existing earlier Colab evidence does not verify this

@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
-from mesocosm.adapters.harbor.task import HarborTask
+from mesocosm.integrations.tasks import Task
 
 if TYPE_CHECKING:
     from mesocosm.env.task_runtime import NativeImage
@@ -62,7 +62,7 @@ def _path(value: Any, *, absolute: bool) -> pathlib.PurePosixPath:
     return path
 
 
-def artifact_specs(task: HarborTask) -> list[Artifact]:
+def artifact_specs(task: Task) -> list[Artifact]:
     configured = task.config.get("artifacts") or []
     if not isinstance(configured, list):
         raise TaskVerifierError("artifacts must be a list of paths or source/destination objects")
@@ -98,7 +98,7 @@ def artifact_specs(task: HarborTask) -> list[Artifact]:
     return artifacts
 
 
-def verifier_environment(task: HarborTask) -> dict[str, Any]:
+def verifier_environment(task: Task) -> dict[str, Any]:
     """Validate the separate-verifier subset before any Docker work or agent task execution."""
     verifier = task.config.get("verifier") or {}
     if not isinstance(verifier, dict):
@@ -178,7 +178,7 @@ def _interpreter(script: pathlib.Path) -> list[str]:
     return args
 
 
-async def prepare_verifier(task: HarborTask, native: NativeImage, container_id: str, workspace: pathlib.Path,
+async def prepare_verifier(task: Task, native: NativeImage, container_id: str, workspace: pathlib.Path,
                            logs_dir: pathlib.Path, command: Command, *, project: str, network: str = "none",
                            service_scope: str = "isolated", script: str = "test.sh") -> VerifierPlan:
     env = verifier_environment(task)

@@ -53,6 +53,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from mesocosm.core.access import SERVICE_NAMES, AccessSpec
+from mesocosm.core.artifacts import MAX_ARTIFACT_BYTES, ArtifactPublication, ArtifactStore
 from mesocosm.env.services import mcp as mcp_protocol
 
 OFFICIAL = ("board", "wiki", "git", "pypi")
@@ -154,6 +155,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     seed = st.seed_dir
     username_to_agent = {u: a for a, u in st.personas.items()}      # seed names are usernames (ADR-0039)
     board = Board(st.data / "board.jsonl", _read_seed(seed / "board.jsonl" if seed else None))
+    artifacts = ArtifactStore(st.data / "artifacts.jsonl")
     pastes = Pastes(st.data / "pastes.jsonl")
     chat = Chat(st.data / "chat.jsonl", _read_seed(seed / "chat.jsonl" if seed else None),
                 resolve=username_to_agent)
@@ -238,7 +240,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             write = (rest == "git-receive-pack" or request.query_params.get("service") == "git-receive-pack"
                      or (request.method == "POST" and rest != "git-upload-pack"))
             return "git", "write" if write else "read", repo
-        for prefix, service in (("/api/posts", "board"), ("/wiki/", "wiki"), ("/api/messages", "chat"),
+        for prefix, service in (("/api/posts", "board"), ("/api/artifacts", "board"),
+                                ("/wiki/", "wiki"), ("/api/messages", "chat"),
                                 ("/api/verdicts", "chat"), ("/api/objects", "cache"), ("/api/secrets/", "vault"),
                                 ("/api/time", "clock"), ("/api/balance", "ledger"), ("/api/transfer", "ledger"),
                                 ("/api/history", "ledger"), ("/api/paste", "pastebin"), ("/simple/", "pypi"),
@@ -358,6 +361,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         out["personas"] = st.personas
         out["clock"] = sim_clock(st, admin=True) if st.clock else None
         out["board"] = {"posts": [p for p in board.posts if not p.get("deleted")]}
+        out["artifacts"] = list(artifacts.records.values())
         pages = []
         for d in wiki_docs(st):
             text = d["path"].read_text(encoding="utf-8")
@@ -386,8 +390,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def admin_epoch(request: Request):
         """The control plane opens an episode: message counts and verdicts are per episode."""
         body = await request.json()
-        chat.set_epoch(str(body["epoch"]))
-        return {"epoch": chat.epoch}
+        assignments = body.get("assignments")
+        if assignments is not None:
+            known = set(st.agent_ips.values())
+            if (not isinstance(assignments, dict) or set(assignments) != known
+                    or any(not isinstance(targets, list) or not targets
+                           or any(not isinstance(target, str) or target not in known or target == sender
+                                  for target in targets) or len(set(targets)) != len(targets)
+                           for sender, targets in assignments.items())):
+                raise HTTPException(400, "invalid review assignments")
+        try:
+            chat.set_epoch(str(body["epoch"]), assignments)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"epoch": chat.epoch, **({"assignments": chat.assignments} if chat.assignments is not None else {})}
 
     @app.post("/admin/clock")
     async def admin_clock(request: Request):
@@ -551,6 +567,65 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404)
         return Response(status_code=405, headers={"Allow": "POST"})
 
+    # ---- artifacts: verified publication, optional agent retrieval through board access ----
+
+    @app.post("/admin/artifacts")
+    async def admin_artifacts(request: Request):
+        # Account for JSON escaping while bounding the request before allocating its decoded content.
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > MAX_ARTIFACT_BYTES * 6 + 262144:
+                raise HTTPException(413, "artifact publication is too large")
+            body.extend(chunk)
+        try:
+            publication = ArtifactPublication.model_validate_json(body)
+        except ValueError as exc:
+            raise HTTPException(400, "invalid artifact publication") from exc
+        if publication.source_agent not in st.agent_ips.values():
+            raise HTTPException(400, "source_agent must name a member")
+        receipt = artifacts.publish(publication)
+        record(request, "board", "artifact_published", artifact_id=receipt["id"], created=receipt["created"],
+               source_agent=publication.source_agent, source_task=publication.source_task,
+               files={name: file.sha256 for name, file in publication.files.items()}, missing=publication.missing,
+               score=publication.score, show_author=publication.show_author, show_score=publication.show_score)
+        return JSONResponse(receipt, status_code=201 if receipt["created"] else 200)
+
+    def artifact_reader(request: Request) -> None:
+        # Identity is required even when the optional access graph is absent. Host is not authority.
+        if who(request)[1] not in st.agent_ips:
+            record(request, "board", "access_denied", operation="read", status=403)
+            raise HTTPException(403, "access denied")
+
+    @app.get("/api/artifacts")
+    async def artifact_list(request: Request, limit: int = LIST_LIMIT, offset: int = 0):
+        artifact_reader(request)
+        if not 1 <= limit <= LIST_MAX or offset < 0:
+            raise HTTPException(400, "invalid page bounds")
+        available = list(reversed(artifacts.records.values()))
+        page = available[offset:offset + limit]
+        visible = [shown(artifacts.visible(item), "author") for item in page]
+        record(request, "board", "artifact_read_list", count=len(page), total=len(available), offset=offset,
+               artifacts=[{"id": item["id"], "source_agent": item["source_agent"],
+                           "source_task": item["source_task"],
+                           "files": {name: file["sha256"] for name, file in item["files"].items()}} for item in page],
+               sha256=sha(json.dumps(visible, sort_keys=True, ensure_ascii=False)))
+        return {"artifacts": visible, "total": len(available), "offset": offset}
+
+    @app.get("/api/artifacts/{artifact_id}/files/{file_path:path}")
+    async def artifact_file(request: Request, artifact_id: str, file_path: str):
+        artifact_reader(request)
+        publication = artifacts.records.get(artifact_id)
+        if publication is None:
+            raise HTTPException(404, "artifact file not found")
+        file = publication["files"].get(file_path)
+        if file is None:
+            raise HTTPException(404, "artifact file not found")
+        record(request, "board", "artifact_read", artifact_id=artifact_id, file_path=file_path,
+               source_agent=publication["source_agent"], source_task=publication["source_task"],
+               sha256=file["sha256"], bytes=file["bytes"])
+        return PlainTextResponse(file["text"], headers={"ETag": f'"{file["sha256"]}"',
+                                                       "Cache-Control": "no-store"})
+
     # ---- board ----------------------------------------------------------------------------
 
     @app.get("/api/posts")
@@ -713,6 +788,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "no episode is open")
         if about is None or about == agent:
             raise HTTPException(400, "about must name another user")
+        if chat.assignments is not None and about not in chat.assignments.get(agent, []):
+            record(request, "chat", "verdict_rejected", about=about, epoch=chat.epoch, reason="unassigned")
+            raise HTTPException(403, "review target is not assigned")
         if verdict not in ("accept", "reject"):
             raise HTTPException(400, "verdict must be accept or reject")
         stored = chat.add_verdict(agent, about, verdict, str(body.get("reason") or "")[:500])
@@ -1082,6 +1160,7 @@ class Chat(Journal):
     def __init__(self, path: pathlib.Path, seed: list[dict[str, Any]] | None = None,
                  resolve: dict[str, str] | None = None):
         self.epoch: str | None = None
+        self.assignments: dict[str, list[str]] | None = None
         self.messages: list[dict[str, Any]] = []
         self.verdicts: list[dict[str, Any]] = []
         super().__init__(path)
@@ -1109,14 +1188,19 @@ class Chat(Journal):
         kind, item = rec.get("kind"), _without(rec, "kind")
         if kind == "epoch":
             self.epoch = item["epoch"]
+            self.assignments = item.get("assignments")
         elif kind == "message":
             self.messages.append(item)
         elif kind == "verdict":
             self.verdicts.append(item)
 
-    def set_epoch(self, epoch: str) -> None:
+    def set_epoch(self, epoch: str, assignments: dict[str, list[str]] | None = None) -> None:
         with self.lock:
-            self.append({"kind": "epoch", "ts": time.time(), "epoch": epoch})
+            if self.epoch == epoch:
+                if self.assignments != assignments:
+                    raise ValueError("review assignments cannot change within an open episode")
+                return
+            self.append({"kind": "epoch", "ts": time.time(), "epoch": epoch, "assignments": assignments})
 
     def sent_in_epoch(self, sender: str) -> int:
         return sum(1 for m in self.messages if m["from"] == sender and m["epoch"] == self.epoch)

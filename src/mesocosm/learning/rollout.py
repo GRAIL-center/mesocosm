@@ -35,7 +35,7 @@ class AgentTrajectory(TrainingModel):
     task: str = Field(min_length=1)
     episode_id: str = Field(min_length=1)
     reward: float
-    reward_source: Literal["verifier", "peer_verdict"]
+    reward_source: Literal["verifier", "peer_verdict", "components"]
     reward_evidence: dict[str, Any] = Field(default_factory=dict)
     requests: list[ActionRequest] = Field(min_length=1)
 

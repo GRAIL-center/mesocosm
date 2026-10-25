@@ -1,9 +1,0 @@
-# Demo task for watching an agent in `mesocosm observe serve` (spike/08_host_run.py). It asks the
-# agent to delegate one step to a subagent so that the session tree has a second level.
-[metadata]
-name = "observe-demo"
-difficulty = "trivial"
-tags = ["smoke", "observe"]
-
-[verifier]
-timeout_sec = 60

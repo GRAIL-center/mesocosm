@@ -82,3 +82,25 @@ def test_activations_probe_commands_exist_and_refuse_an_empty_bundle(tmp_path):
     assert code == 1 and "no captured request" in out["error"]
     result = runner.invoke(app, ["activations", "probe", "score", "--help"])
     assert result.exit_code == 0 and "--probe" in result.stdout
+
+
+@pytest.mark.parametrize("options,network,allow_resources", [
+    ([], "none", False),
+    (["--verifier-network", "bridge", "--allow-unenforced-resources"], "bridge", True),
+])
+def test_calibrate_forwards_explicit_operator_policy_and_strict_defaults(
+        tmp_path, monkeypatch, options, network, allow_resources):
+    import mesocosm.env.reference as reference
+
+    calls = []
+
+    async def calibrate(task, out, **kwargs):
+        calls.append((task, out, kwargs))
+        return {"status": "completed", "matches_expected": True, "agent_rollout": False, "model_calls": 0}
+
+    monkeypatch.setattr(reference, "calibrate_native", calibrate)
+    task, out = tmp_path / "original-task", tmp_path / "calibration"
+    code, result = jrun("env", "calibrate", str(task), "--out", str(out), *options)
+    assert code == 0 and result["status"] == "completed"
+    assert calls == [(task, out, {"expected_score": 1.0, "verifier_network": network,
+                                 "allow_unenforced_resources": allow_resources})]

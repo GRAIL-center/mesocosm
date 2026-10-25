@@ -16,13 +16,13 @@ This document describes the implemented structure and its boundaries. Consult th
 
 The experiment definition and execution location are separate. A Mac or Linux client packages a
 finite research world or condition experiment and submits it to an authenticated worker. The worker
-owns the whole world: gateway and harness startup, task containers and sidecars, original verification,
-record collection and cleanup. Accepted jobs continue after the client disconnects. Model inference
-can run on a separate host; the first execution backend is Docker on Linux. This boundary does not
+owns the whole world through its selected execution backend: agent and environment startup, original
+verification, record collection and cleanup. Accepted jobs continue after the client disconnects. Model inference
+can run on a separate host; the built-in execution backend is Docker on Linux. This boundary does not
 provide remote policy training or persistent streams. See the [execution guide](docs/execution.md)
 and [ADR-0051](docs/adr/0051-remote-world-execution.md).
 
-The worker runs beside a local Linux Docker daemon, with the host PID visibility required by native
+The Docker worker runs beside a local Linux Docker daemon, with the host PID visibility required by native
 containment checks. It does not turn a remote Docker socket into a portable controller. A host-wide
 worker lease and a serial queue allow one managed world at a time because the current networks use
 fixed subnets. Direct, manually launched stacks remain the operator's responsibility. On worker
@@ -48,8 +48,38 @@ the older local `containment: adapted` path permits explicitly recorded adaptati
 Remote jobs always require verified containment, and native Compose service startup refuses shared
 PID namespaces even on the adapted local path (ADR-0050).
 
-The gateways are integration boundaries. Mesocosm configures released OpenCode, Harbor task formats,
+The native gateways are integration boundaries. Mesocosm configures released OpenCode, Harbor task formats,
 vLLM and NNsight through their supported interfaces and does not patch their internals.
+
+## Integration contracts
+
+Task formats and whole-world execution are separate installed extension points. A task source resolves
+materialized inputs and loads original instructions, configuration and provenance. Its `execution_kind`
+identifies the environment/evaluation contract it needs. The built-in Docker backend accepts compatible
+Harbor execution inputs; a different task format can use that path without renaming itself `harbor`.
+
+A whole-world backend provides its actual agent interfaces, environment lifecycle, evaluator, enforced
+conditions and evidence collection. A browser/API environment can therefore preserve its native
+semantics. Registration does not turn it into an OpenCode adapter or implement any requested control.
+The provider must reject unsupported configurations before resource allocation. Generic worker
+submission, scheduling, stop requests, durable state and result transfer remain shared.
+
+Providers are trusted Python distributions registered through `mesocosm.task_sources` and
+`mesocosm.execution_backends` entry points. Uploaded task files never define import paths or trigger
+installation. `execution.backend` selects the provider; recorded `execution.options` are distinct from
+private worker deployment configuration. Every effective experiment condition must match the worker's
+selected backend.
+
+Portable inputs pin selected provider API, package version, entry point and code hash. The worker
+checks those locks before admission and again before execution; input snapshots detect integration
+drift. Already loaded code changes require process restart. Recovery uses persisted ownership without
+loading task sources, and an external backend must match its recorded owner identity. Code hashes do
+not pin dependencies, remote service state or sampling behavior.
+
+The extension contracts have CPU tests; benchmark acceptance still requires three real agents,
+actual actions, original evaluation and trajectory inspection. Native baseline acceptance and
+policy-weight training remain Docker/OpenCode paths. See the [integration guide](docs/integrations.md)
+and [ADR-0055](docs/adr/0055-installed-integration-contracts.md).
 
 ## Components
 
@@ -59,13 +89,15 @@ vLLM and NNsight through their supported interfaces and does not patch their int
 | `core.experiment` | Prevalidate named condition patches, schedule repetitions, and retain every trial's outcome and missing measurements. |
 | `core.run` | Prepare environments, enforce run boundaries, drive concurrent agents, invoke original verifiers, collect evidence and run posthoc analysis. |
 | `core.rewards` | Synchronize comparison episodes and allocate incentives separately from original verifier scores. |
+| `core.episode_controls`, `core.history`, `core.artifacts` | Measured reward terms, matching and work selection, bounded native-history projections and immutable publication of declared task outputs. |
 | `execution` | Package declared inputs, authenticate remote jobs, persist lifecycle state, and own Docker startup, cancellation and recovery; share runtime composition with direct local commands. |
+| `integrations` | Discover installed task sources and execution providers, validate selected contracts, pin their code identities and reject drift. |
 | `gateway` | Authenticate identities, route chat requests, enforce model budgets, bind exact rollout identities and hold proposed tool actions for controller decisions. |
 | `env` | Docker topology, native task runtime, real shared services, web access policy and state inspection. |
 | `adapters.opencode`, `adapters.harbor` | Harness API and task/environment/verifier integration. |
 | `judge` | Candidate flags, append-only review verdicts, posthoc assessments and pre-action tool decisions. |
 | `learning` | Validate original rollout/reward provenance, update LoRA weights with REINFORCE, activate immutable policy aliases and verify subsequent evaluation rollouts. |
-| `observe` | Live/replay views and optional activation recomputation and probes. |
+| `observe` | Optional activation recomputation and probes; run inspection uses CLI reports and original records. |
 | `export` | Inspect evaluation logs, with omitted record types declared. |
 
 ## Experiments and conditions
@@ -92,6 +124,11 @@ Unsupported combinations fail explicitly instead of being approximated with task
 `services.access` grants enforce an internal access graph; team request/output/concurrency pools and
 service quotas apply at actual admission points. Shared mounts are refused with the access graph.
 See [research controls](docs/research-controls.md) for relay, restart and inference-compute limits.
+The [variable manual](docs/experimental-variables.md), [paper notes](docs/research-literature.md) and
+[variable audit](docs/variable-audit.md) connect each treatment to its scientific rationale and limits.
+Nondefault controls on inactive components are rejected before execution, rather than silently
+becoming a baseline. Conditions are fixed at their declared enforcement points; only the existing
+gateway budget API supports mid-run mutation.
 
 `memory: reset` clears the managed workspace and opens a new harness session; `carry` retains both
 within the run. Neither option describes a complete reset or serialization of harness internals.
@@ -102,31 +139,58 @@ native turn separately from the last HTTP reply; terminal errors and truncated e
 An actual terminal model-budget refusal triggers controller abort, while the last admitted request
 can finish normally. See [ADR-0052](docs/adr/0052-harness-turn-evidence-and-termination.md).
 
+Optional `history.episodes` replays only the last k completed tasks into fresh reset sessions. The
+projection includes tool inputs/results, optionally assistant visible responses, with source identities
+and hashes. It excludes original prompts, hidden reasoning and generated summaries; prior replay
+blocks are not recursively copied from user prompts. Oversized, compacted or malformed evidence fails
+explicitly. This limits the delivered projection, not information retained by shared services or
+repeated in later agent-generated content. It does not serialize the entire agent process.
+
 ## Outcomes, incentives and learning
 
 The original verifier always measures task outcome independently of the incentive source. With
-`rewards.enabled`, comparison-mode agents complete the same task as a synchronized episode:
+`rewards.enabled`, comparison-mode participants complete the same task as a synchronized episode:
 
 - `source: verifier` uses those original task scores as raw incentives.
 - `source: peer_verdict` uses the fraction of assigned reviewers who accept the agent's work through
   the real chat verdict endpoint. Missing required reviews remain unmeasured.
+- `source: components` computes a weighted, scaled sum of original outcome, peer acceptance, review
+  accuracy and observed completed-model-call/token counts. Agent-specific weights are explicit.
+  Review accuracy is agreement with a configured threshold on the original score, not an alignment
+  label. Costs come from completed attributed requests, distinct from admitted-request budget quotas.
 - `allocation: individual` retains each raw score; `team_mean` assigns the team mean; `mixed` combines
   own score and team mean using `team_weight`. Missing team inputs do not become zero.
 
-Peer scoring uses `services.peer_review.protocol: ratings` with an `all` or `ring` topology. The
+Peer scoring uses `services.peer_review.protocol: ratings` with an `all`, `ring` or seeded `random_ring`
+topology. Assignments are recorded, installed at the real verdict endpoint and preserved on service
+restart. Random matching changes review relationships, not the agent population or task cohort. The
 paper-specific correctness-of-verdict protocol is isolated in `core.legacy_peer_review` and retained for
 legacy fixtures. Generic rewards are not supported in persistent queue mode.
 
 `learning.mode: none` records incentives without delivering outcome feedback. `in_context` attaches the
-previous episode's own reward feedback to the next task and records attachment and completed delivery.
-The last episode may have no subsequent task to receive feedback. Both modes keep model weights fixed;
+selected outcome fields after the configured episode delay and records attachment and completed delivery.
+The default selects own raw/allocated rewards for the next task; disclosing verifier scores or peer
+verdicts is a separate information treatment. Oversized feedback fails instead of being truncated.
+The last episodes may have no subsequent task to receive feedback. Both modes keep model weights fixed;
 context adaptation and weight updates must not be reported as the same mechanism.
+
+Optional reputation exposes original participant measurements from a bounded window of completed world
+episodes; no initial trust scores or invented histories are inserted. Work assignment is independent:
+the default runs all agents on every task, while selective policies first measure every agent once,
+then dispatch smaller cohorts in finite round-robin or measured-performance waves. Unselected agents
+do not execute the task and have no fabricated outcome. Selective dispatch requires individual rewards
+and isolated services and cannot combine with peer review or policy training. Selection changes work
+opportunities and can amplify noisy early scores; it is not an optimizer.
 
 `mesocosm train run` adds an outer policy-training loop around fresh native worlds. It requires at least
 three agents sharing one pinned causal LM, reset memory, measured rewards and complete comparison
 episodes. Each model call is bound to its policy, agent, task, round and harness session before sampling.
 The collector cross-checks original gateway tokens, logprobs, verifier artifacts, reward allocation and
 controller receipts. Missing or inconsistent evidence stops training.
+Compositional incentives are recomputed from original verifier files, native verdict writes and exact
+policy-bound model requests. New metric/assignment provenance uses a v2 rule marker; original scalar
+records retain their earlier interpretation. Bounded history, selective assignment and artifact
+publication are explicitly unsupported in policy training until their rollout contracts are integrated.
 
 One REINFORCE optimizer step updates LoRA weights from each complete batch. The controller hashes the
 saved checkpoint, activates a fresh vLLM alias and uses it in the next world. The final world performs
@@ -186,6 +250,14 @@ compute allocation or credential authority.
 Research is the default execution profile and rejects simulated time/balances, canned secrets, service
 history seeds and authored task extensions. Regression fixtures explicitly opt into `profile: fixture`.
 Service admin routes require a control credential, and each harness has its own upstream server password.
+
+Optional artifact exchange publishes immutable copies of declared UTF-8 task outputs through the board
+service. Native capture requires quiesced task execution before the original verifier; publication
+then uses either completed measured attempts or an original-score threshold. Readers choose whether
+to fetch the bytes, with board access permissions and exact content/version records. Publication,
+listing and file reads are separate evidence; a read does not prove adoption. Author/score metadata
+can be hidden, but content is not thereby anonymous. Shared-service artifact exchange and pre-verifier
+publication remain unsupported. See [ADR-0056](docs/adr/0056-measured-interaction-conditions.md).
 
 Persistent mode assigns tasks from a shared queue. Snapshots save declared workspace/service/shared-file
 state and queue metadata, verify file hashes on restore, and record lineage and missing coverage.

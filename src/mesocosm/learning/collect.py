@@ -10,7 +10,8 @@ from collections import defaultdict
 from typing import Any
 
 from mesocosm.adapters.harbor.task import read_reward
-from mesocosm.core.manifest import WorldManifest, reviewers
+from mesocosm.core.episode_controls import component_rewards, episode_metrics, review_assignment
+from mesocosm.core.manifest import WorldManifest
 from mesocosm.core.records import Event, RunBundle
 from mesocosm.core.rewards import allocate, outcome_records
 from mesocosm.gateway.rollout import SAMPLING, BindRollout, UnbindRollout, sampling_request
@@ -18,6 +19,7 @@ from mesocosm.learning.config import PolicyIdentity
 from mesocosm.learning.rollout import ActionRequest, AgentTrajectory, RolloutBatch
 
 REWARD_RULE_VERSION = "mesocosm.reward-allocation.v1"
+COMPONENT_REWARD_RULE_VERSION = "mesocosm.reward-allocation.v2"
 
 
 def _require(condition: bool, message: str) -> None:
@@ -82,6 +84,37 @@ def _request(record: dict[str, Any], policy: PolicyIdentity) -> ActionRequest:
     return action
 
 
+def _peer_verdicts(bundle: RunBundle, events: list[Event], evidence: dict[str, Any],
+                   agents: list[str], task: str) -> list[dict[str, Any]]:
+    """Recover metric inputs from native service writes, independently of reward events."""
+    verdicts = evidence.get("peer_verdicts")
+    if not isinstance(verdicts, list) or not all(isinstance(verdict, dict) for verdict in verdicts):
+        raise ValueError("invalid rollout: peer reward requires recorded verdict evidence")
+    peer_events = [event for event in events if event.kind == "service.verdict"
+                   and event.data.get("epoch") == task and event.data.get("service") == "chat"]
+    source_verdicts = [record for record in _records(bundle.root / "native/services/services.jsonl")
+                       if record.get("service") == "chat" and record.get("op") == "verdict"
+                       and record.get("epoch") == task]
+    observed = {(event.agent_id, event.data.get("about")): event.data.get("verdict") for event in peer_events}
+    native_peers = {(record.get("agent"), record.get("about")): record for record in source_verdicts}
+    _require(len(observed) == len(peer_events) == len(native_peers) == len(source_verdicts)
+             and set(observed) == set(native_peers), "duplicate/missing peer verdict source records")
+    for event in peer_events:
+        source = native_peers[event.agent_id, event.data.get("about")]
+        data = {key: value for key, value in source.items() if key not in {"ts", "op", "agent", "method"}}
+        _require(event.data == data, "normalized peer verdict differs from native source")
+    given = {(verdict["from"], verdict["about"]): verdict["verdict"] for verdict in verdicts}
+    _require(len(given) == len(verdicts) and given == observed, "peer rewards differ from source verdicts")
+    _require(all(sender in agents and about in agents and sender != about for sender, about in given),
+             "peer verdict has an unknown identity")
+    _require(all(value in {"accept", "reject"} for value in given.values()), "invalid peer verdict value")
+    _require(all(verdict.get("epoch") == task for verdict in verdicts), "peer verdict belongs to another task")
+    # Only these fields determine the measured incentives. Narrative reason text is
+    # not authenticated beyond the native service journal's truncated summary.
+    return [{"from": sender, "about": about, "verdict": verdict, "epoch": task}
+            for (sender, about), verdict in observed.items()]
+
+
 def collect_rollouts(bundle: RunBundle | str | pathlib.Path, expected_policy: PolicyIdentity,
                      episode_id: str) -> RolloutBatch:
     """Accept only complete, closed, on-policy native records and independently recorded source rewards.
@@ -102,6 +135,10 @@ def _collect_rollouts(bundle: RunBundle | str | pathlib.Path, expected_policy: P
     manifest = WorldManifest.model_validate(envelope["manifest"])
     _require(envelope.get("digest") == manifest.digest(), "manifest digest mismatch")
     _require(manifest.mode == "comparison" and manifest.rewards.enabled, "training needs complete rewarded comparisons")
+    _require(manifest.memory == "reset" and manifest.history.episodes == 0,
+             "training requires reset sessions without episode history replay")
+    _require(manifest.task_assignment.policy == "all", "training requires the complete configured agent cohort")
+    _require(not manifest.artifacts.enabled, "training does not support artifact publication")
     agents = [agent.id for agent in manifest.agents]
     _require(len(set(agents)) >= 3, "training requires at least three configured agents")
     _require(all(manifest.model_for(agent).id == expected_policy.model for agent in manifest.agents),
@@ -120,6 +157,7 @@ def _collect_rollouts(bundle: RunBundle | str | pathlib.Path, expected_policy: P
     _require(bool(loaded) and len(set(loaded)) == len(loaded), "missing/duplicate source task declarations")
     _require(all(event.data.get("source") == "manifest" for event in loaded_events), "non-manifest training task")
     declared: set[str] = set()
+    declared_order: list[str] = []
     for spec in manifest.tasks:
         if spec.path is not None:
             _require(bool(envelope.get("path")), "relative task identity requires its manifest path")
@@ -133,7 +171,9 @@ def _collect_rollouts(bundle: RunBundle | str | pathlib.Path, expected_policy: P
             _require(bool(matches) and (spec.limit is None or len(matches) <= spec.limit),
                      "declared dataset missing or exceeds its configured limit")
         declared.update(event.data["task"] for event in matches)
+        declared_order.extend(event.data["task"] for event in matches)
     _require(declared == set(loaded), "source includes an undeclared task")
+    _require(declared_order == loaded, "source task order differs from manifest task order")
     expected = {(agent, task) for agent in agents for task in loaded}
     for kind in ("harness.session", "verifier.reward", "learning.reward"):
         cells = [(event.agent_id, event.data.get("task")) for event in events if event.kind == kind]
@@ -259,8 +299,9 @@ def _collect_rollouts(bundle: RunBundle | str | pathlib.Path, expected_policy: P
     verified = {(agent, task): _one(events, "verifier.reward", agent, task) for agent, task in expected}
     _require(summary.get("rewards") == {f"{agent}/{task}": event.data.get("reward")
                                         for (agent, task), event in verified.items()}, "task reward summary mismatch")
-    for task in loaded:
-        verifier = {agent: _finite(verified[agent, task].data.get("reward"), "verifier reward") for agent in agents}
+    for task_index, task in enumerate(loaded):
+        verifier: dict[str, float | None] = {
+            agent: _finite(verified[agent, task].data.get("reward"), "verifier reward") for agent in agents}
         verifier_artifacts = {}
         for agent in agents:
             logs_dir = bundle.root / "verifier" / agent / task
@@ -277,33 +318,42 @@ def _collect_rollouts(bundle: RunBundle | str | pathlib.Path, expected_policy: P
         evidence = reward_events[agents[0]].data.get("evidence") or {}
         _require(evidence.get("verifier_rewards") == verifier, "reward verifier evidence differs from source")
         raw: dict[str, float | None] = dict(verifier)
-        if manifest.rewards.source == "peer_verdict":
-            topology = manifest.services.peer_review.topology
+        peer = manifest.services.peer_review
+        assignment = review_assignment(agents, peer.topology, peer.matching_seed, task_index) if peer.enabled else {}
+        has_metrics = manifest.rewards.source == "components" or "metrics" in evidence or "usage" in evidence
+        has_peers = (manifest.rewards.source == "peer_verdict" or "peer_verdicts" in evidence
+                     or (has_metrics and peer.enabled))
+        verdicts: list[dict[str, Any]] = []
+        if has_peers:
+            topology = peer.topology
+            _require(peer.enabled, "peer reward evidence requires enabled peer review")
             _require(evidence.get("topology") == topology, "peer reward topology mismatch")
-            verdicts = evidence.get("peer_verdicts") or []
-            peer_events = [event for event in events if event.kind == "service.verdict"
-                           and event.data.get("epoch") == task and event.data.get("service") == "chat"]
-            source_verdicts = [record for record in _records(bundle.root / "native/services/services.jsonl")
-                               if record.get("service") == "chat" and record.get("op") == "verdict"
-                               and record.get("epoch") == task]
-            observed = {(event.agent_id, event.data.get("about")): event.data.get("verdict") for event in peer_events}
-            native_peers = {(record.get("agent"), record.get("about")): record for record in source_verdicts}
-            _require(len(observed) == len(peer_events) == len(native_peers) == len(source_verdicts)
-                     and set(observed) == set(native_peers), "duplicate/missing peer verdict source records")
-            for event in peer_events:
-                source = native_peers[event.agent_id, event.data.get("about")]
-                data = {key: value for key, value in source.items() if key not in {"ts", "op", "agent", "method"}}
-                _require(event.data == data, "normalized peer verdict differs from native source")
+            verdicts = _peer_verdicts(bundle, events, evidence, agents, task)
+            if topology == "random_ring" or manifest.rewards.source == "components":
+                _require(all(verdict["about"] in assignment[verdict["from"]] for verdict in verdicts),
+                         "native verdict was accepted outside its enforced review assignment")
+        if "assignment" in evidence or (peer.enabled and (manifest.rewards.source == "components"
+                                                          or peer.topology == "random_ring")):
+            _require(evidence.get("assignment") == assignment, "peer assignment differs from configured task order")
+        if manifest.rewards.source == "peer_verdict":
             given = {(verdict["from"], verdict["about"]): verdict["verdict"] for verdict in verdicts}
-            _require(len(given) == len(verdicts) and given == observed, "peer rewards differ from source verdicts")
-            _require(all(sender in agents and about in agents and sender != about for sender, about in given),
-                     "peer verdict has an unknown identity")
-            assignment = reviewers(agents, topology)
             for agent in agents:
                 ratings = [given.get((judge, agent)) for judge in agents if agent in assignment[judge]]
                 _require(bool(ratings) and all(value in {"accept", "reject"} for value in ratings),
                          "peer reward lacks required verdicts")
                 raw[agent] = sum(value == "accept" for value in ratings) / len(ratings)
+        if has_metrics:
+            usage: dict[str, dict[str, Any]] = {}
+            if manifest.rewards.source == "components" or "usage" in evidence:
+                usage = {agent: {"model_requests": len(requests[agent, task]),
+                                 "completion_tokens": sum(len(action.token_ids) for action in requests[agent, task]),
+                                 "request_ids": sorted(action.request_id for action in requests[agent, task])}
+                         for agent in agents}
+                _require(evidence.get("usage") == usage, "reward usage differs from exact bound native requests")
+            metrics = episode_metrics(verifier, verdicts, assignment, usage, manifest.rewards.success_threshold)
+            _require(evidence.get("metrics") == metrics, "reward metrics differ from independently measured sources")
+            if manifest.rewards.source == "components":
+                raw = component_rewards(manifest.rewards.terms, metrics)
         allocated = allocate(raw, manifest.rewards)
         for agent in agents:
             event = reward_events[agent]
@@ -312,7 +362,8 @@ def _collect_rollouts(bundle: RunBundle | str | pathlib.Path, expected_policy: P
                      and data.get("allocation") == manifest.rewards.allocation
                      and data.get("raw_reward") == raw[agent] and data.get("allocated_reward") == allocated[agent]
                      and data.get("evidence") == evidence, "allocated reward does not reproduce its source rule")
-            provenance = {"reward_rule_version": REWARD_RULE_VERSION, "reward_spec": manifest.rewards.model_dump(),
+            version = COMPONENT_REWARD_RULE_VERSION if has_metrics or "assignment" in evidence else REWARD_RULE_VERSION
+            provenance = {"reward_rule_version": version, "reward_spec": manifest.rewards.model_dump(),
                           "source_run_id": bundle.run_id, "manifest_digest": envelope["digest"],
                           "source_event": event.model_dump(mode="json"),
                           "source_event_sha256": _digest(event.model_dump()),

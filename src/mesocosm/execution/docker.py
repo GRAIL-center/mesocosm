@@ -132,16 +132,29 @@ class DockerBackend:
     """One managed world at a time; the worker holds the host-wide scheduling lock."""
 
     def __init__(self, repo_root: pathlib.Path, vllm_host: str = "host.docker.internal", vllm_port: int = 8000,
-                 model_key_envs: tuple[str, ...] = ()):
+                 model_key_envs: tuple[str, ...] = (), *, verifier_network: str = "none",
+                 allow_unenforced_resources: bool = False):
+        if verifier_network not in ("none", "bridge"):
+            raise ValueError("verifier network must be none or bridge; sandbox networks are forbidden")
         self.repo_root = repo_root.resolve()
         self.vllm_host = vllm_host
         self.vllm_port = vllm_port
         self.model_key_envs = frozenset(model_key_envs)
+        self.verifier_network = verifier_network
+        self.allow_unenforced_resources = allow_unenforced_resources
+
+    @property
+    def operator_policy(self) -> dict[str, Any]:
+        return {"verifier_network": self.verifier_network,
+                "allow_unenforced_resources": self.allow_unenforced_resources}
 
     async def capabilities(self) -> dict[str, Any]:
         """Check deployment prerequisites; per-task PID and egress proofs still gate execution."""
+        from mesocosm.integrations.registry import backend_identity
+
         common = {"backend": "docker", "kinds": ["world", "experiment"], "minimum_agents": 3,
-                  "concurrent_jobs": 1, "containment": "verified_before_task_execution"}
+                  "concurrent_jobs": 1, "containment": "verified_before_task_execution",
+                  "operator_policy": self.operator_policy, "integration": backend_identity("docker")}
         reason = None
         if sys.platform != "linux" or not pathlib.Path("/proc/self/ns/pid").exists():
             reason = "worker_requires_linux_procfs"
@@ -174,6 +187,9 @@ class DockerBackend:
         data = copy.deepcopy(raw)
         absolutize_manifest(data, base)
         spec = WorldManifest.model_validate(data)
+        from mesocosm.integrations.registry import validate_integrations
+
+        validate_integrations(spec, base=base, require_backend="docker")
         if spec.profile != "research" or spec.mode != "comparison" or spec.containment != "required":
             raise ValueError("rejected_unsupported: worker requires research comparison with required containment")
         if len(spec.agents) < 3:
@@ -239,10 +255,12 @@ class DockerBackend:
             raise FileExistsError("job already has Docker ownership; recover it instead of rerunning")
         job.mkdir(parents=True, exist_ok=True, mode=0o700)
         token = "worker-" + secrets.token_hex(8)
-        inventory: dict[str, Any] = {"version": 1, "token": token, "worlds": []}
+        inventory: dict[str, Any] = {"version": 1, "token": token, "worlds": [],
+                                     "operator_policy": self.operator_policy}
         _json(job / INVENTORY, inventory)
         result: dict[str, Any] = {"status": "failed", "kind": kind, "bundles": [],
-                                  "cleanup": {"status": "complete", "worlds": []}}
+                                  "cleanup": {"status": "complete", "worlds": []},
+                                  "operator_policy": self.operator_policy}
 
         async def run_one(manifest: pathlib.Path) -> RunResult:
             if result["cleanup"]["status"] == "failed":
@@ -267,7 +285,8 @@ class DockerBackend:
                 record["status"] = "running"
                 _json(job / INVENTORY, inventory)
                 run = await local.run_manifest(manifest, compose, job / "runs", workspace, None,
-                    self.vllm_host, self.vllm_port)
+                    self.vllm_host, self.vllm_port, verifier_network=self.verifier_network,
+                    allow_unenforced_storage=self.allow_unenforced_resources)
                 result["bundles"].append(str(run.bundle_path))
             except BaseException as exc:
                 error = exc
@@ -354,4 +373,5 @@ class DockerBackend:
             _json(path, inventory)
         if errors:
             raise StackCleanupError(str(path), "; ".join(errors))
-        return {"status": "complete", "worlds": inventory["worlds"]}
+        return {"status": "complete", "worlds": inventory["worlds"],
+                "operator_policy": inventory.get("operator_policy")}

@@ -49,7 +49,7 @@ def package(tmp_path, *, patch=None, experiment=False):
 def boundaries(monkeypatch):
     calls = []
     state = {"up_error": None, "down_error": None, "run_error": None, "release": None,
-             "entered": None, "cleanup_entered": None, "cleanup_release": None}
+             "entered": None, "cleanup_entered": None, "cleanup_release": None, "run_options": []}
 
     class Stack:
         def __init__(self, compose_file):
@@ -80,6 +80,7 @@ def boundaries(monkeypatch):
     async def run(manifest, compose_file, runs_root, workspace, *args, **kwargs):
         spec = load_manifest(manifest)
         calls.append(("run", spec))
+        state["run_options"].append(kwargs)
         if state["entered"]:
             state["entered"].set()
             await state["release"].wait()
@@ -135,12 +136,50 @@ async def test_experiment_uses_each_condition_and_cleans_each_world(tmp_path, bo
     assert (job / "experiment/experiment.json").is_file()
 
 
+@pytest.mark.parametrize("experiment", [False, True])
+@pytest.mark.parametrize("options", [{}, {"verifier_network": "bridge", "allow_unenforced_resources": True}])
+async def test_operator_policy_is_recorded_and_forwarded_to_every_world(tmp_path, boundaries, experiment, options):
+    calls, state = boundaries
+    job, inputs, entrypoint = package(tmp_path, experiment=experiment)
+    original = {str(path.relative_to(inputs)): path.read_bytes() for path in inputs.rglob("*") if path.is_file()}
+    result = await docker.DockerBackend(REPO, **options).execute(
+        job, inputs, "experiment" if experiment else "world", entrypoint)
+    expected = {"verifier_network": "none", "allow_unenforced_resources": False, **options}
+    assert result["status"] == "ok"
+    assert result["operator_policy"] == expected
+    assert json.loads((job / "execution-result.json").read_text())["operator_policy"] == expected
+    assert json.loads((job / docker.INVENTORY).read_text())["operator_policy"] == expected
+    assert state["run_options"] == [{"verifier_network": expected["verifier_network"],
+                                    "allow_unenforced_storage": expected["allow_unenforced_resources"]}] * (
+                                        2 if experiment else 1)
+    for kind, spec in calls:
+        if kind == "run":
+            assert spec.containment == "required" and len(spec.agents) == 3
+    assert original == {str(path.relative_to(inputs)): path.read_bytes() for path in inputs.rglob("*") if path.is_file()}
+
+
+@pytest.mark.parametrize("options", [{}, {"verifier_network": "bridge", "allow_unenforced_resources": True}])
+async def test_operator_policy_visible_even_when_worker_prerequisites_are_unavailable(monkeypatch, options):
+    monkeypatch.setattr(docker.shutil, "which", lambda name: None)
+    result = await docker.DockerBackend(REPO, **options).capabilities()
+    assert result["status"] == "unavailable"
+    assert result["operator_policy"] == {"verifier_network": "none", "allow_unenforced_resources": False, **options}
+
+
+@pytest.mark.parametrize("network", ["host", "sandbox", ""])
+def test_operator_policy_rejects_unsupported_verifier_network(network):
+    with pytest.raises(ValueError, match="verifier network must be none or bridge"):
+        docker.DockerBackend(REPO, verifier_network=network)
+
+
+@pytest.mark.parametrize("allow_unenforced_resources", [False, True])
 @pytest.mark.parametrize("patch", [{"profile": "fixture"}, {"containment": "adapted"},
                                    {"agents": [{"id": "one"}]}, {"mode": "persistent"}])
-async def test_unsupported_world_rejected_before_docker(tmp_path, boundaries, patch):
+async def test_unsupported_world_rejected_before_docker(tmp_path, boundaries, patch, allow_unenforced_resources):
     calls, _ = boundaries
     job, inputs, entrypoint = package(tmp_path, patch=patch)
-    result = await docker.DockerBackend(REPO).execute(job, inputs, "world", entrypoint)
+    result = await docker.DockerBackend(REPO, allow_unenforced_resources=allow_unenforced_resources).execute(
+        job, inputs, "world", entrypoint)
     assert result["status"] == "failed"
     assert "rejected_unsupported" in result["error"]
     assert calls == []
@@ -216,12 +255,14 @@ async def test_cleanup_failure_keeps_completed_trial_but_prevents_the_next_world
 async def test_existing_job_cannot_be_reexecuted_and_recovery_never_runs_agents(tmp_path, boundaries):
     calls, _ = boundaries
     job, inputs, entrypoint = package(tmp_path)
-    backend = docker.DockerBackend(REPO)
+    backend = docker.DockerBackend(REPO, verifier_network="bridge", allow_unenforced_resources=True)
     await backend.execute(job, inputs, "world", entrypoint)
     calls.clear()
     with pytest.raises(FileExistsError, match="recover"):
         await backend.execute(job, inputs, "world", entrypoint)
-    assert (await backend.recover(job))["status"] == "complete"
+    recovered = await docker.DockerBackend(REPO).recover(job)
+    assert recovered["status"] == "complete"
+    assert recovered["operator_policy"] == {"verifier_network": "bridge", "allow_unenforced_resources": True}
     assert [kind for kind, _ in calls if kind != "docker"] == ["down"]
 
 

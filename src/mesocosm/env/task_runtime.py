@@ -19,13 +19,15 @@ import shutil
 import stat
 import tempfile
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import yaml
 
-from mesocosm.adapters.harbor.task import HarborTask, Reward, read_reward
+from mesocosm.adapters.harbor.task import read_reward
 from mesocosm.adapters.opencode.client import CONTEXT_CONFIG
+from mesocosm.core.artifacts import ArtifactSpec, capture_artifacts
 from mesocosm.core.manifest import AgentSpec
 from mesocosm.env.egress import DockerEgressVerifier
 from mesocosm.env.lifecycle import CONTAINER_ID, container_evidence, isolation_evidence
@@ -36,13 +38,14 @@ from mesocosm.env.task_stack import (
     find_compose_file,
     prevalidate_compose,
 )
+from mesocosm.integrations.tasks import Reward, Task
 
 
 class TaskEnvironmentError(RuntimeError):
     """A native task environment could not be built, started or verified."""
 
 
-def environment_source(task: HarborTask) -> tuple[str | None, pathlib.Path]:
+def environment_source(task: Task) -> tuple[str | None, pathlib.Path]:
     """Select the task's declared image or Dockerfile; never substitute a generic environment."""
     root = task.path / "environment"
     try:
@@ -60,7 +63,7 @@ def environment_source(task: HarborTask) -> tuple[str | None, pathlib.Path]:
     return None, root
 
 
-def environment_key(task: HarborTask, opencode_version: str) -> str:
+def environment_key(task: Task, opencode_version: str) -> str:
     image, root = environment_source(task)
     identity = {"image": image, "version": opencode_version, "environment": task.config.get("environment") or {}}
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode())
@@ -133,7 +136,7 @@ class NativeImage:
 @dataclass
 class TaskGroup:
     key: str
-    task: HarborTask
+    task: Task
     native: NativeImage
     stack: TaskStack | None
     expected: list[str]
@@ -225,7 +228,7 @@ class DockerTaskRuntime:
                                        + (out + err).decode("utf-8", "replace")[-4000:])
         return out + err if include_stderr else out
 
-    async def native_image(self, task: HarborTask) -> NativeImage:
+    async def native_image(self, task: Task) -> NativeImage:
         env = task.config.get("environment") or {}
         supported = {"docker_image", "build_timeout_sec", "cpus", "memory_mb", "memory", "storage_mb", "storage",
                      "gpus", "gpu_types", "allow_internet", "mcp_servers", "env"}
@@ -344,7 +347,7 @@ class DockerTaskRuntime:
             self.images[key] = native
             return native
 
-    async def prebuild(self, tasks: list[HarborTask]) -> list[dict[str, Any]]:
+    async def prebuild(self, tasks: list[Task]) -> list[dict[str, Any]]:
         """Build declared environments before the run's exposure clock starts."""
         prepared = []
         for task in tasks:
@@ -352,7 +355,7 @@ class DockerTaskRuntime:
             prepared.append({"task": task.name, **self.receipt("", native), "adaptations": self.adaptations(task)})
         return prepared
 
-    def _compile(self, task: HarborTask, compose: dict[str, Any], key: str,
+    def _compile(self, task: Task, compose: dict[str, Any], key: str,
                  participants: list[str] | None = None) -> TaskStack:
         selected = participants or self.agent_ids
         networks = {}
@@ -383,7 +386,7 @@ class DockerTaskRuntime:
         temporary.write_text(yaml.safe_dump(self.rendered, sort_keys=False))
         temporary.replace(self.runtime_file)
 
-    def _new_group(self, agent: AgentSpec, task: HarborTask, native: NativeImage, workspace: pathlib.Path) -> TaskGroup:
+    def _new_group(self, agent: AgentSpec, task: Task, native: NativeImage, workspace: pathlib.Path) -> TaskGroup:
         identity = hashlib.sha256((str(task.path.resolve()) + "\0" + native.key).encode()).hexdigest()[:24]
         counter_key = (agent.id, identity)
         episode = self.episodes.get(counter_key, 0) + 1
@@ -665,13 +668,13 @@ class DockerTaskRuntime:
         self.task_containment[key] = proof
         return copy.deepcopy(proof)
 
-    async def prepare(self, agent: AgentSpec, task: HarborTask, workspace: pathlib.Path, *, reset: bool,
+    async def prepare(self, agent: AgentSpec, task: Task, workspace: pathlib.Path, *, reset: bool,
                       restored: bool = False) -> dict[str, Any]:
         await self.native_image(task)
         async with self.runtime_lock:
             return await self._prepare(agent, task, workspace, reset=reset, restored=restored)
 
-    async def _prepare(self, agent: AgentSpec, task: HarborTask, workspace: pathlib.Path, *, reset: bool,
+    async def _prepare(self, agent: AgentSpec, task: Task, workspace: pathlib.Path, *, reset: bool,
                       restored: bool = False) -> dict[str, Any]:
         native = await self.native_image(task)
         workspace = workspace.resolve()
@@ -832,7 +835,7 @@ class DockerTaskRuntime:
                 "workdir": native.workdir, "user": native.config.get("User") or "root",
                 "environment_key": native.key, "verifier_network": self.verifier_network}
 
-    def adaptations(self, task: HarborTask) -> list[str]:
+    def adaptations(self, task: Task) -> list[str]:
         env = task.config.get("environment") or {}
         reasons = ["native_image_with_opencode", "workspace_bind_mount"]
         if env.get("storage_mb") or env.get("storage"):
@@ -845,7 +848,7 @@ class DockerTaskRuntime:
             reasons.append("cpu_memory_limits_unenforced")
         return reasons
 
-    def applied_resources(self, task: HarborTask) -> dict[str, Any]:
+    def applied_resources(self, task: Task) -> dict[str, Any]:
         return resource_options(task) if self.limits_available else {}
 
     def _task_network(self, agent_id: str) -> str:
@@ -885,7 +888,7 @@ class DockerTaskRuntime:
                     raise TaskEnvironmentError("shared verification cannot consume any agent's published artifacts")
                 group.publications[agent_id] = "empty"
 
-    async def _measure(self, task: HarborTask, group: TaskGroup, agent_id: str, workspace: pathlib.Path,
+    async def _measure(self, task: Task, group: TaskGroup, agent_id: str, workspace: pathlib.Path,
                        logs_dir: pathlib.Path, script: str) -> Reward:
         verifier = task.config.get("verifier") or {}
         separate = verifier.get("environment") is not None or verifier.get("environment_mode") == "separate"
@@ -933,8 +936,50 @@ class DockerTaskRuntime:
             return reward
         return await self._verify_snapshot(task, workspace, logs_dir, script)
 
-    async def verify(self, task: HarborTask, workspace: pathlib.Path, logs_dir: pathlib.Path,
+    async def verify(self, task: Task, workspace: pathlib.Path, logs_dir: pathlib.Path,
                      script: str = "test.sh") -> Reward:
+        return await self._verify(task, workspace, logs_dir, script)
+
+    async def verify_with_artifacts(self, task: Task, workspace: pathlib.Path, logs_dir: pathlib.Path,
+                                    spec: ArtifactSpec, *, on_capture: Callable[[dict[str, Any]], None]) -> Reward:
+        """Capture acknowledged quiescent inputs before the unchanged original verifier starts."""
+        if self.task_services == "shared":
+            raise TaskEnvironmentError("rejected_unsupported: artifact exchange requires isolated verification")
+        workspace = workspace.resolve()
+        active = self.active.get(str(workspace))
+        if active is None:
+            raise TaskEnvironmentError(f"{task.name}: no native task environment was prepared")
+        agent_id, container_id, native = active
+        group = self.groups[self.workspace_groups[str(workspace)]]
+        sources = [pathlib.PurePosixPath(native.workdir) / name for name in spec.paths]
+        main = group.stack.main_by_agent[agent_id] if group.stack is not None else {}
+        for mount in main.get("volumes") or []:
+            target = pathlib.PurePosixPath(mount["target"])
+            if any(source.is_relative_to(target) or target.is_relative_to(source) for source in sources):
+                raise TaskEnvironmentError("rejected_unsupported: artifact exchange paths overlap task child mounts")
+        verifier = task.config.get("verifier") or {}
+        if verifier.get("environment") is not None or verifier.get("environment_mode") == "separate":
+            from mesocosm.env.task_verifier import artifact_specs
+
+            inputs = [pathlib.PurePosixPath(item.source) for item in artifact_specs(task)]
+            if any(not any(source.is_relative_to(original) for original in inputs) for source in sources):
+                raise TaskEnvironmentError("rejected_unsupported: artifact exchange paths must be "
+                                           "original verifier inputs")
+
+        def capture() -> None:
+            snapshot = capture_artifacts(workspace, spec)
+            snapshot["capture_evidence"] = {
+                "boundary": "quiesced_before_original_verifier", "task": task.name, "agent_id": agent_id,
+                "container_id": container_id, "quiesced_containers": dict(group.containers),
+                "workspace": str(workspace), "native_workdir": native.workdir,
+                "measurement_scope": "original_task_not_individual_file",
+            }
+            on_capture(snapshot)
+
+        return await self._verify(task, workspace, logs_dir, "test.sh", before_measure=capture)
+
+    async def _verify(self, task: Task, workspace: pathlib.Path, logs_dir: pathlib.Path,
+                      script: str, *, before_measure: Callable[[], None] | None = None) -> Reward:
         workspace = workspace.resolve()
         active = self.active.get(str(workspace))
         if active is None:
@@ -944,6 +989,8 @@ class DockerTaskRuntime:
         if self.task_services != "shared":
             try:
                 await self._quiesce(group)
+                if before_measure is not None:
+                    before_measure()
                 return await self._measure(task, group, agent_id, workspace, logs_dir, script)
             finally:
                 await self._capture_service_logs(group, logs_dir)
@@ -1021,7 +1068,7 @@ class DockerTaskRuntime:
                 group.future.exception()
             # Owned task resources remain registered for finish() even if grading or cleanup fails.
 
-    async def _verify_snapshot(self, task: HarborTask, workspace: pathlib.Path, logs_dir: pathlib.Path,
+    async def _verify_snapshot(self, task: Task, workspace: pathlib.Path, logs_dir: pathlib.Path,
                      script: str = "test.sh") -> Reward:
         from mesocosm.adapters.harbor.task import verifier_command
 
@@ -1085,7 +1132,7 @@ class DockerTaskRuntime:
                 raise TaskEnvironmentError("verifier cleanup failed: " + "; ".join(cleanup_errors))
 
 
-def resource_options(task: HarborTask) -> dict[str, Any]:
+def resource_options(task: Task) -> dict[str, Any]:
     env = task.config.get("environment") or {}
     out: dict[str, Any] = {}
     if env.get("cpus") is not None:

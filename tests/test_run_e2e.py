@@ -166,7 +166,10 @@ async def test_vertical_slice_produces_a_joinable_bundle(world):
 
     bundle = RunBundle.open(result.bundle_path)
     kinds = [e.kind for e in bundle.events()]
-    assert kinds[:3] == ["gateway.health", "isolation.check", "conditions.set"]
+    assert kinds[:4] == ["integrations.resolved", "gateway.health", "isolation.check", "conditions.set"]
+    plugins = bundle.events()[0].data["plugins"]
+    assert set(plugins) == {"task_source:harbor", "execution_backend:docker"}
+    assert all(len(plugin["code_sha256"]) == 64 for plugin in plugins.values())
     assert "task.loaded" in kinds and "harness.session" in kinds and "harness.reply" in kinds
     assert "verifier.reward" in kinds and "gateway.usage" in kinds
     assert not (tmp_path / "ws" / "agent-1" / "raw_log.jsonl").exists()
@@ -226,7 +229,7 @@ async def test_unreachable_gateway_is_a_recorded_failure(world, tmp_path):
     result = await run_world(manifest, MANIFEST, comps, tmp_path / "runs2")
     assert result.status == "failed" and "Connect" in (result.error or "")
     bundle = RunBundle.open(result.bundle_path)
-    assert [e.kind for e in bundle.events()] == ["run.failed", "run.model_stop_failed",
+    assert [e.kind for e in bundle.events()] == ["integrations.resolved", "run.failed", "run.model_stop_failed",
                                                "workload.termination", "gateway.failure_snapshot"]
     assert bundle.events()[-1].data["snapshot_complete"] is False
     assert json.loads((bundle.root / "summary.json").read_text())["model_calls"] is None
@@ -239,7 +242,7 @@ async def test_failed_isolation_aborts_before_any_agent_runs(world):
     assert result.status == "failed_isolation"
     bundle = RunBundle.open(result.bundle_path)
     kinds = [e.kind for e in bundle.events()]
-    assert kinds == ["gateway.health", "isolation.check", "run.aborted"]
+    assert kinds == ["integrations.resolved", "gateway.health", "isolation.check", "run.aborted"]
     assert not (bundle.root / "native" / "agent-1").exists()
     assert json.loads((bundle.root / "summary.json").read_text())["status"] == "failed_isolation"
 
@@ -421,7 +424,7 @@ async def test_exposure_condition_is_verified_against_the_services(world):
     assert comps.services.started == anchored and abs(anchored - receipt["enforced_at"]["wallclock"]) < 5, \
         "the schedule counts from the run start, which the run manager set on the services"
     clock_set = [e for e in bundle.events() if e.kind == "services.clock_set"]
-    assert len(clock_set) == 1 and clock_set[0].data["started"] == anchored, "the observer reads the anchor here"
+    assert len(clock_set) == 1 and clock_set[0].data["started"] == anchored, "run records retain the schedule anchor"
 
     comps = components()
     comps.services = FakeServices({})                      # the services run with no schedule: contradiction

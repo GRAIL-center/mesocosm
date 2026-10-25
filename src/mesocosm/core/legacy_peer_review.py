@@ -4,9 +4,9 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from mesocosm.adapters.harbor.task import HarborTask
 from mesocosm.core.manifest import WorldManifest, reviewers
 from mesocosm.core.records import RunBundle
+from mesocosm.integrations.tasks import Task
 
 if TYPE_CHECKING:
     from mesocosm.core.run import Components
@@ -35,7 +35,7 @@ class EpisodeSync:
         self.index: dict[str, int] = {}
         self.lock = asyncio.Lock()
 
-    async def open(self, task: HarborTask) -> None:
+    async def open(self, task: Task) -> None:
         async with self.lock:
             if task.name in self.opened:
                 return
@@ -46,7 +46,7 @@ class EpisodeSync:
                 await self.components.services.set_epoch(task.name)
             self.bundle.record("episode.opened", task=task.name, episode=self.index[task.name])
 
-    async def finish(self, agent_id: str, task: HarborTask, reward: float | None) -> None:
+    async def finish(self, agent_id: str, task: Task, reward: float | None) -> None:
         async with self.lock:
             arrivals = self.arrivals.setdefault(task.name, {})
             arrivals[agent_id] = reward
@@ -58,7 +58,7 @@ class EpisodeSync:
         except TimeoutError:
             self.bundle.record("episode.timeout", task=task.name, agent_id=agent_id)
 
-    async def _score(self, task: HarborTask, arrivals: dict[str, float | None]) -> None:
+    async def _score(self, task: Task, arrivals: dict[str, float | None]) -> None:
         verdicts = await self.components.services.verdicts(task.name) if self.components.services else []
         given = {(v["from"], v["about"]): v["verdict"] for v in verdicts}
         correct = {a: (r is not None and r >= 1.0) for a, r in arrivals.items()}

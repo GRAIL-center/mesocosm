@@ -54,7 +54,7 @@ class RatingsService:
         self.ratings = ratings
         self.epochs = []
 
-    async def set_epoch(self, task):
+    async def set_epoch(self, task, *, assignments=None):
         self.epochs.append(task)
 
     async def verdicts(self, task):

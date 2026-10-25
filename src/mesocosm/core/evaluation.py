@@ -13,12 +13,13 @@ from typing import Any
 
 import yaml
 
-from mesocosm.adapters.harbor.task import load_task, resolve_dataset_tasks
 from mesocosm.core.manifest import WorldManifest
 from mesocosm.core.records import Event, RunBundle
 from mesocosm.core.research import validate_research_tasks
 from mesocosm.core.rewards import outcome_records
 from mesocosm.env.task_runtime import environment_source
+from mesocosm.integrations.registry import get_task_source, integration_snapshot, validate_integration_lock
+from mesocosm.integrations.tasks import load_task, resolve_task_paths
 
 
 def _digest(value: Any) -> str:
@@ -34,13 +35,14 @@ def pin_task_paths(data: dict[str, Any], base: pathlib.Path, *, required: bool =
             tasks.append(spec)
             continue
         try:
-            resolved = resolve_dataset_tasks(spec["dataset"], [*roots, base], spec.get("limit"))
+            resolved = resolve_task_paths(spec.get("source", "harbor"), spec["dataset"],
+                                          roots=[*roots, base], limit=spec.get("limit"))
         except FileNotFoundError:
             if required:
                 raise
             tasks.append(spec)
             continue
-        tasks.extend({**spec, "path": str(path), "name": spec.get("name") if len(resolved) == 1 else path.name}
+        tasks.extend({**spec, "path": str(path), "name": spec.get("name") if len(resolved) == 1 else None}
                      for path in resolved)
     data["tasks"] = tasks
 
@@ -64,19 +66,20 @@ def _path_fingerprint(path: pathlib.Path) -> dict[str, Any]:
     return {"path": str(path.resolve()), "tree_sha256": _digest(files), "files": files}
 
 
-def task_fingerprint(path: pathlib.Path) -> dict[str, Any]:
+def task_fingerprint(path: pathlib.Path, *, source: str = "harbor", dataset: str | None = None,
+                     name: str | None = None) -> dict[str, Any]:
     """Hash the complete task/build/verifier tree, independent of its directory name."""
-    task = load_task(path)
-    fingerprint = _path_fingerprint(path)
-    files = fingerprint["files"]
-    execution_files = {name: digest for name, digest in files.items()
-                       if name in ("tests", "environment") or name.startswith(("tests/", "environment/"))}
-    return {**fingerprint,
-            "execution_sha256": _digest(execution_files) if "tests/test.sh" in files else None,
-            "instruction_sha256": task.provenance()["instruction_sha256"],
-            "environment": task.config.get("environment") or {},
-            "verifier": task.config.get("verifier") or {},
-            "originality_verified": False, "image_resolution_verified": False}
+    task = load_task(source, path, dataset=dataset, name=name)
+    details = get_task_source(source).fingerprint(task)
+    if not isinstance(details, dict) or any(not isinstance(key, str) for key in details):
+        raise ValueError(f"task source {source!r} fingerprint() must return a JSON object")
+    try:
+        json.dumps(details, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"task source {source!r} fingerprint() must return a JSON object") from exc
+    # Source-specific execution metadata cannot override the independently hashed input tree.
+    return {"execution_sha256": None, **details, **_path_fingerprint(path), "source": source,
+            "instruction_sha256": hashlib.sha256(task.instruction.encode("utf-8")).hexdigest()}
 
 
 def _external_inputs(world: WorldManifest, base: pathlib.Path) -> list[dict[str, Any]]:
@@ -94,10 +97,14 @@ def input_snapshot(manifest_path: pathlib.Path, *, baseline: bool = False) -> di
     raw = manifest_path.read_bytes()
     data = yaml.safe_load(raw)
     world = WorldManifest.model_validate(data)
+    validate_integration_lock(world)
+    integrations = integration_snapshot(world)
     if baseline and world.profile != "research":
         raise ValueError("baseline requires profile: research")
     if baseline and (len(world.agents) < 3 or world.stream.dir or not world.tasks):
         raise ValueError("rejected_unsupported: baseline requires >=3 agents and a fixed task collection")
+    if baseline and world.execution.backend != "docker":
+        raise ValueError("rejected_unsupported: baseline acceptance currently requires the Docker execution backend")
     pin_task_paths(data, manifest_path.parent, required=baseline)
     tasks, unresolved = [], []
     for spec in data["tasks"]:
@@ -105,25 +112,32 @@ def input_snapshot(manifest_path: pathlib.Path, *, baseline: bool = False) -> di
             unresolved.append(spec)
             continue
         path = (manifest_path.parent / spec["path"]).resolve()
-        task = load_task(path)
+        source = spec.get("source", "harbor")
+        task = load_task(source, path, dataset=spec.get("dataset"), name=spec.get("name"))
         validate_research_tasks(world, [task])
         if baseline:
+            if task.execution_kind != "harbor":
+                raise ValueError("rejected_unsupported: baseline requires a native Harbor-compatible task environment")
             environment_source(task)
             if not task.has_tests:
                 raise ValueError("baseline requires the task's original tests/test.sh verifier")
             if any((path / name).exists() for name in ("side_task.md", "agents", "instances", "protected")):
                 raise ValueError("baseline refuses appended side tasks and planted fixture content")
-        tasks.append({"dataset": spec.get("dataset"), **task_fingerprint(path)})
+        tasks.append({"dataset": spec.get("dataset"), **task_fingerprint(
+            path, source=source, dataset=spec.get("dataset"), name=spec.get("name"))})
     models = {world.model_for(agent).id: world.model_for(agent).model_dump(mode="json") for agent in world.agents}
     if baseline and any(not model.get("revision") or model["kind"] != "vllm" for model in models.values()):
         raise ValueError("baseline requires declared immutable revisions on local vLLM models; "
                          "remote serving identity cannot be pinned by an alias")
     return {"schema_version": "mesocosm.inputs.v1", "manifest_sha256": hashlib.sha256(raw).hexdigest(),
-            "manifest_digest": world.digest(), "tasks": tasks, "unresolved_tasks": unresolved,
+            "manifest_digest": world.digest(), "integrations": integrations,
+            "tasks": tasks, "unresolved_tasks": unresolved,
             "external_inputs": _external_inputs(world, manifest_path.parent),
             "models": models, "model_pin_assurance": "declared_revision; serving_identity_unverified",
             "runtime": {"python": platform.python_version(), "system": platform.system(),
-                        "machine": platform.machine(), "native_profile": "native-task-with-declared-services",
+                        "machine": platform.machine(), "execution_backend": world.execution.backend,
+                        "native_profile": ("native-task-with-declared-services"
+                                           if world.execution.backend == "docker" else None),
                         "task_services": world.task_services,
                         "container_image_identity": "recorded by native runtime, not resolved by this snapshot"},
             "sampling_determinism_verified": False, "baseline": baseline}
@@ -139,7 +153,8 @@ def verify_inputs(manifest_path: pathlib.Path, expected: dict[str, Any]) -> None
     except (OSError, ValueError, yaml.YAMLError) as exc:
         raise InputDriftError(f"experimental input became unavailable: {exc}") from exc
     if current != expected:
-        raise InputDriftError("experimental input drift: manifest, model metadata, task tree or runtime changed")
+        raise InputDriftError("experimental input drift: manifest, integrations, model metadata, task tree "
+                              "or runtime changed")
 
 
 def require_disjoint_tasks(training: dict[str, Any], evaluation: dict[str, Any]) -> None:

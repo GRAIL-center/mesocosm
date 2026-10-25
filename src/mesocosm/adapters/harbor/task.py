@@ -20,31 +20,22 @@ import math
 import pathlib
 import shlex
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
+
+from mesocosm.integrations.tasks import Reward as Reward
+from mesocosm.integrations.tasks import Task
 
 
 @dataclass
-class HarborTask:
-    path: pathlib.Path
-    name: str
-    instruction: str
-    config: dict[str, Any]
-    has_environment: bool
-    has_tests: bool
-    has_solution: bool
-    side_instruction: str | None = None
-    has_side_tests: bool = False
-    rounds: list[dict[str, Any]] = field(default_factory=list)   # [[rounds]] in task.toml (ADR-0035)
-    dataset: str | None = None   # the registry ref it was imported from, e.g. "terminal-bench@2.0/fix-git" (ADR-0037)
-
+class HarborTask(Task):
     def provenance(self) -> dict[str, Any]:
         """What the task is and exactly which text the agent and verifier saw."""
         toml = self.path / "task.toml"
         test_sh, side_sh = self.path / "tests" / "test.sh", self.path / "tests" / "side_test.sh"
         dockerfile = self.path / "environment" / "Dockerfile"
         return {
-            "source": "harbor",
+            "source": self.source,
             "name": self.name,
             "dataset": self.dataset,
             "path": str(self.path),
@@ -57,32 +48,6 @@ class HarborTask:
             "side_test_sh_sha256": _sha256(side_sh.read_bytes()) if self.has_side_tests else None,
         }
 
-    def instruction_for(self, agent_id: str, side_task_agents: list[str] | None) -> str:
-        """The instruction an agent gets: the task, plus the side task when the agent is one of its recipients
-        (`side_task_agents`; None = every agent)."""
-        if self.side_instruction and (side_task_agents is None or agent_id in side_task_agents):
-            return self.instruction.rstrip("\n") + "\n\n" + self.side_instruction.strip() + "\n"
-        return self.instruction
-
-    def round_prompts(self, agent_id: str, side_task_agents: list[str] | None) -> list[dict[str, Any]]:
-        """The sequence of prompts to send for this task (ADR-0035). With no `[[rounds]]` it is one prompt (the
-        instruction, plus the side task for its recipients). With rounds it is one prompt per round, each with
-        its announced time budget prepended; the side task rides on the first round."""
-        side = ""
-        if self.side_instruction and (side_task_agents is None or agent_id in side_task_agents):
-            side = "\n\n" + self.side_instruction.strip() + "\n"
-        if not self.rounds:
-            base = self.instruction.rstrip("\n") + side if side else self.instruction
-            return [{"prompt": base, "seconds": None, "index": 1}]
-        out = []
-        for i, r in enumerate(self.rounds):
-            prompt = str(r.get("prompt") or "")
-            if r.get("seconds") is not None:
-                prompt = f"You have {int(r['seconds'])} seconds to answer this question.\n\n" + prompt
-            if i == 0 and side:
-                prompt = prompt.rstrip("\n") + side
-            out.append({"prompt": prompt, "seconds": r.get("seconds"), "index": i + 1})
-        return out
 
 
 def _sha256(data: bytes) -> str:
@@ -93,7 +58,7 @@ def load_task(path: str | pathlib.Path, *, dataset: str | None = None, name: str
     path = pathlib.Path(path).resolve()
     instruction_file = path / "instruction.md"
     if not instruction_file.is_file():
-        raise FileNotFoundError(f"{path}: no instruction.md (not a Harbor task directory)")
+        raise FileNotFoundError(f"{path} has no instruction.md (not a Harbor task directory)")
     config: dict[str, Any] = {}
     if (path / "task.toml").is_file():
         config = tomllib.loads((path / "task.toml").read_text(encoding="utf-8"))
@@ -190,15 +155,6 @@ def adaptation(*, mode: str, memory: str, budget: dict[str, Any] | None,
     return {"adapted": bool(reasons), "reasons": reasons}
 
 
-@dataclass
-class Reward:
-    value: float | None
-    source: str | None            # reward.txt | reward.json | checkpoints.json | None
-    raw: Any = None
-    labels: dict[str, Any] = field(default_factory=dict)
-    checkpoints: dict[str, float] = field(default_factory=dict)     # name -> 0..1, from checkpoints.json
-
-
 def read_checkpoints(vdir: pathlib.Path) -> dict[str, float]:
     """checkpoints.json as {name: score}: booleans become 0/1, anything that is not a number is dropped."""
     path = vdir / "checkpoints.json"
@@ -246,7 +202,7 @@ def _reward_file(vdir: pathlib.Path) -> Reward | None:
     return None
 
 
-def verifier_command(task: HarborTask, *, workspace: pathlib.Path, logs_dir: pathlib.Path,
+def verifier_command(task: Task, *, workspace: pathlib.Path, logs_dir: pathlib.Path,
                      image: str | None = None, timeout_sec: int | None = None,
                      script: str = "test.sh", workdir: str = "/app", network: str = "none",
                      container_name: str | None = None) -> list[str]:

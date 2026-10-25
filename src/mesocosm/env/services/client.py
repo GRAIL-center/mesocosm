@@ -25,8 +25,11 @@ class ServicesAdmin:
         r.raise_for_status()
         return r.json()
 
-    async def set_epoch(self, epoch: str) -> dict[str, Any]:
-        r = await self.client.post("/admin/epoch", json={"epoch": epoch})
+    async def set_epoch(self, epoch: str, *, assignments: dict[str, list[str]] | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"epoch": epoch}
+        if assignments is not None:
+            payload["assignments"] = assignments
+        r = await self.client.post("/admin/epoch", json=payload)
         r.raise_for_status()
         return r.json()
 
@@ -54,3 +57,9 @@ class ServicesAdmin:
 
     async def aclose(self) -> None:
         await self.client.aclose()
+
+    async def publish_artifacts(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Publish a captured snapshot after the original verifier completes; retain its receipt."""
+        r = await self.client.post("/admin/artifacts", json=payload)
+        r.raise_for_status()
+        return r.json()

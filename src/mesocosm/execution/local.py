@@ -24,7 +24,9 @@ def build_components(spec, compose_file: pathlib.Path, runs_root: pathlib.Path, 
     from mesocosm.env.stack import DockerStack
     from mesocosm.env.task_runtime import DockerTaskRuntime
     from mesocosm.gateway.client import GatewayAdmin
+    from mesocosm.integrations.registry import validate_integrations
 
+    validate_integrations(spec, require_backend="docker")
     egress = DockerEgressVerifier(compose_file, {a.id: egress_env(spec, a, vllm_host, vllm_port) for a in spec.agents})
     if task_runtime not in ("native", "fixture"):
         raise ValueError("--task-runtime must be native or fixture")
@@ -85,8 +87,10 @@ async def run_manifest(manifest: pathlib.Path, compose_file: pathlib.Path, runs_
                         task_runtime: str = "native", rollout: RolloutContext | None = None):
     from mesocosm.core.manifest import load_manifest
     from mesocosm.core.run import run_world
+    from mesocosm.integrations.registry import validate_integrations
 
     spec = load_manifest(manifest)
+    validate_integrations(spec, manifest.resolve().parent, require_backend="docker", resolve_datasets=True)
     components = build_components(spec, compose_file, runs_root, workspace_root, verifier_image, vllm_host, vllm_port,
                              verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
                              task_runtime=task_runtime, rollout=rollout)
@@ -106,8 +110,10 @@ def prepare_stack(manifest: pathlib.Path, compose_dir: pathlib.Path, runs_root: 
     from mesocosm.core.manifest import load_manifest
     from mesocosm.env.compose import compose_yaml, write_agent_files
     from mesocosm.env.stack import DockerStack
+    from mesocosm.integrations.registry import validate_integrations
 
     spec = load_manifest(manifest)
+    validate_integrations(spec, manifest.resolve().parent, require_backend="docker", resolve_datasets=True)
     label = spec.gateway.run_label or "spike-docker"
     trial_workspace = workspace_root / label if fresh_workspace else workspace_root
     if fresh_workspace and trial_workspace.exists():

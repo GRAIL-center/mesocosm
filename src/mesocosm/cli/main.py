@@ -26,6 +26,7 @@ from mesocosm.execution.local import (
     stack_runner as _stack_runner,
 )
 from mesocosm.execution.worker_cli import worker_app
+from mesocosm.integrations.cli import integration_app
 
 if TYPE_CHECKING:
     from mesocosm.core.run import RunResult
@@ -34,7 +35,6 @@ if TYPE_CHECKING:
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="Mesocosm research world")
 world_app = typer.Typer(no_args_is_help=True, help="World manifests")
 env_app = typer.Typer(no_args_is_help=True, help="Sandbox environment")
-observe_app = typer.Typer(no_args_is_help=True, help="Live observation of a run")
 conditions_app = typer.Typer(no_args_is_help=True, help="Conditions during a run")
 snapshot_app = typer.Typer(no_args_is_help=True, help="Snapshots of a world's declared state")
 activations_app = typer.Typer(no_args_is_help=True, help="Activations recomputed from recorded token ids")
@@ -48,7 +48,6 @@ judge_app = typer.Typer(no_args_is_help=True, help="The judge's model components
 audit_app = typer.Typer(no_args_is_help=True, help="Explicit evidence links and detached bundle anchors")
 app.add_typer(world_app, name="world")
 app.add_typer(env_app, name="env")
-app.add_typer(observe_app, name="observe")
 app.add_typer(conditions_app, name="conditions")
 app.add_typer(flags_app, name="flags")
 app.add_typer(scenario_app, name="scenario")
@@ -62,6 +61,7 @@ app.add_typer(export_app, name="export")
 app.add_typer(audit_app, name="audit")
 app.add_typer(execution_app, name="execution")
 app.add_typer(worker_app, name="worker")
+app.add_typer(integration_app, name="integrations")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
 WORKSPACE_ROOT_OPT = typer.Option(pathlib.Path("spike/workspace"), "--workspace-root")
@@ -104,7 +104,10 @@ app.command(name="version")(version_cmd)
 @app.command()
 def capabilities(json_: bool = JSON_OPT) -> None:
     """List adapters and their verification status (see docs/capability-matrix.md)."""
+    from mesocosm.integrations.registry import integration_inventory
+
     _emit({
+        "installed_integrations": integration_inventory(),
         "harness_adapters": {"opencode": "native three-agent execution verified; see capability matrix limits"},
         "task_adapters": {"harbor": "Debian/Ubuntu agents; original Compose sidecars and separate verifiers",
                           "native_service_acceptance": "unverified with real agents; see research runtime guide"},
@@ -217,8 +220,14 @@ def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "
     """Render the sandbox Compose topology for a manifest (agents on the internal network only)."""
     from mesocosm.core.manifest import load_manifest
     from mesocosm.env.compose import compose_yaml, write_agent_files
+    from mesocosm.integrations.registry import validate_integrations
 
     spec = load_manifest(manifest)
+    try:
+        validate_integrations(spec, manifest.resolve().parent, require_backend="docker", resolve_datasets=True)
+    except (ValueError, OSError) as exc:
+        _emit({"status": "invalid_configuration", "error": str(exc)}, json_, ok=False)
+        return
     expected_label = spec.gateway.run_label or "spike-docker"
     if run_label is not None and run_label != expected_label:
         _emit({"status": "invalid_configuration", "error": "--run-label must match gateway.run_label "
@@ -239,38 +248,6 @@ def env_compose(manifest: pathlib.Path, out: pathlib.Path = typer.Option(None, "
         sys.stdout.write(text)
 
 
-@observe_app.command("serve")
-def observe_serve(bundle: pathlib.Path,
-                  gateway_log: pathlib.Path = typer.Option(
-                      None, "--gateway-log",
-                      help="The gateway's gateway.jsonl to tail live; default: the copy inside the bundle"),
-                  host: str = typer.Option("127.0.0.1", "--host"), port: int = typer.Option(8090, "--port"),
-                  replay: float = typer.Option(None, "--replay", help="Replay the bundle at this speed, not live"),
-                  summarizer_url: str = typer.Option(None, "--summarizer-url",
-                                                     help="OpenAI-compatible base URL (…/v1) that writes the one-line "
-                                                          "status per node; without it the lines are rule-based"),
-                  summarizer_model: str = typer.Option(None, "--summarizer-model"),
-                  summarizer_key: str = typer.Option("", "--summarizer-key"),
-                  summary_lang: str = typer.Option("en", "--summary-lang", help="en or ko"),
-                  services_log: pathlib.Path = typer.Option(None, "--services-log",
-                                                            help="The world services' services.jsonl to tail live; "
-                                                                 "default: the copy inside the bundle"),
-                  gpu_hour_cost: float = typer.Option(None, "--gpu-hour-cost",
-                                                      help="Price of one GPU-hour, for the cost tile of the "
-                                                           "constraint board"),
-                  json_: bool = JSON_OPT) -> None:
-    """Serve the live view of a run: the constraint board, agents, their session trees, one-line summaries,
-    drill-down."""
-    from mesocosm.observe.server import serve
-
-    _emit({"url": f"http://{host}:{port}", "bundle": str(bundle),
-           "gateway_log": str(gateway_log) if gateway_log else None,
-           "mode": f"replay x{replay}" if replay else "live",
-           "summaries": f"model {summarizer_model}" if summarizer_url and summarizer_model else "rules"}, json_)
-    serve(bundle, gateway_log, host, port, replay, summarizer_url, summarizer_model, summarizer_key, summary_lang,
-          services_log, gpu_hour_cost)
-
-
 @app.command()
 def run(manifest: pathlib.Path,
         runs_root: pathlib.Path = RUNS_ROOT_OPT,
@@ -285,11 +262,18 @@ def run(manifest: pathlib.Path,
         vllm_host: str = typer.Option("host.docker.internal", "--vllm-host"),
         json_: bool = JSON_OPT) -> None:
     """Run a world end to end: validate, egress check, budgets, tasks, verifier, judge, run bundle."""
-    from mesocosm.core.manifest import validate_manifest
+    from mesocosm.core.manifest import load_manifest, validate_manifest
+    from mesocosm.integrations.registry import validate_integrations
 
     report = validate_manifest(manifest)
     if not report.ok:
         _emit({"status": "invalid_manifest", "errors": report.errors}, json_, ok=False)
+    try:
+        validate_integrations(load_manifest(manifest), manifest.resolve().parent, require_backend="docker",
+                              resolve_datasets=True)
+    except (ValueError, OSError) as exc:
+        _emit({"status": "invalid_manifest", "errors": [str(exc)]}, json_, ok=False)
+        return
     result = asyncio.run(_run_manifest(manifest, compose_file, runs_root, workspace_root, verifier_image, vllm_host,
                                        vllm_port, verifier_network=verifier_network,
                                        allow_unenforced_storage=allow_unenforced_storage, task_runtime=task_runtime))
@@ -893,13 +877,15 @@ def diagnose(bundle: pathlib.Path, json_: bool = JSON_OPT) -> None:
 def env_calibrate(task: pathlib.Path, out: pathlib.Path = typer.Option(..., "--out"),
                   expected_score: float = typer.Option(1.0, "--expected-score",
                                                        help="Expected reference score on the original task scale"),
-                  verifier_network: str = VERIFIER_NETWORK_OPT, json_: bool = JSON_OPT) -> None:
+                  verifier_network: str = VERIFIER_NETWORK_OPT,
+                  allow_unenforced_resources: bool = UNENFORCED_STORAGE_OPT, json_: bool = JSON_OPT) -> None:
     """Check the original verifier before/after the unchanged reference in fresh environments."""
     from mesocosm.env.reference import calibrate_native
 
     try:
         result = asyncio.run(calibrate_native(task, out, expected_score=expected_score,
-                                              verifier_network=verifier_network))
+                                              verifier_network=verifier_network,
+                                              allow_unenforced_resources=allow_unenforced_resources))
     except (OSError, ValueError, RuntimeError) as exc:
         _emit({"status": "failed_calibration", "error_type": type(exc).__name__}, json_, ok=False)
         return

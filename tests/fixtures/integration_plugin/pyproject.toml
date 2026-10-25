@@ -1,0 +1,18 @@
+[project]
+name = "mesocosm-contract-fixture"
+version = "0.1.0"
+description = "Test-only external provider; no research agents or containment acceptance"
+requires-python = ">=3.11"
+
+[project.entry-points."mesocosm.task_sources"]
+contract-json = "contract_plugin:JsonSource"
+
+[project.entry-points."mesocosm.execution_backends"]
+contract-cpu = "contract_plugin:CpuProvider"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["contract_plugin"]

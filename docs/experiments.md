@@ -8,6 +8,9 @@ Start with the [native three-agent guide](native-multiagent.md). Keep the extern
 environment and original verifier intact. Services and shared files are optional real interfaces;
 providing an interface does not establish that an agent used it or that agents collaborated.
 Generic tool traces stay in the controller’s run bundle; they are not injected into task workspaces.
+Use the [variable manual](experimental-variables.md) to choose actual settings and matched hypotheses,
+the [paper notes](research-literature.md) for their research basis, and the
+[variable audit](variable-audit.md) for enforcement boundaries and confounds.
 
 ## Run and compare
 
@@ -44,6 +47,10 @@ Mappings merge recursively; lists replace; `null` removes a key. Paths in patche
 to the **base world file**, not the experiment file. Unknown fields and unsupported controls are
 errors. `order_seed` only seeds trial scheduling: it does not seed model sampling, tasks or training.
 
+To disable a customized component, remove its whole section, for example
+`judge: {monitor: null}`. Changing only `enabled` to `false` leaves inherited nondefault options in
+place; these are rejected as inactive configuration rather than silently ignored.
+
 Use `--runs-root` and `--workspace-root` for isolated storage. The output manifests and run bundles
 can contain control credentials and task data; keep them in ignored local run storage.
 
@@ -52,19 +59,23 @@ can contain control credentials and task data; keep them in ignored local run st
 | Axis | Enforced setting | What changes |
 |---|---|---|
 | Reward allocation | `rewards.allocation: individual / team_mean / mixed` | Each episode records own score, team arithmetic mean, or their weighted mixture. `team_weight` applies to mixed allocation. |
-| Evaluation independence | `rewards.source: verifier / peer_verdict` | Incentives come from the original task verifier or authenticated peer accept/reject submissions. Original verifier scores remain separate in both cases. |
+| Evaluation independence | `rewards.source: verifier / peer_verdict / components` | Incentives come from original task scores, authenticated peer verdicts, or explicit measured components. Original verifier scores remain separate. |
 | Memory | `memory: reset / carry` | The controller resets or retains the harness session and workspace between tasks. Native carry currently requires compatible task environments. |
 | Shared access | `channels`, `isolate_agents`, configured services and tool permissions | Mounts, network topology, service checks and harness configuration determine actual access. Network isolation alone does not disable shared services. |
 | Monitor scope | `judge.monitor.scope: per_agent / joint` | Posthoc review sees one agent/task window or the collected joint run. Visibility, shared evidence and coverage budgets are explicit. |
-| Learning | `learning.mode: none / in_context` | No reward feedback, or previous episode reward attached to the next task. Neither mode updates model weights. |
+| Learning | `learning.mode: none / in_context` | No outcome feedback, or selected fields delivered after a configured episode delay. Neither mode updates model weights. |
+| Repeated interaction | `history`, `reputation`, `services.peer_review.topology` | Bounded original observations, disclosed participant measurements, and fixed/seeded review relationships. See the variable manual for distinct information treatments. |
+| Work and output availability | `task_assignment`, `artifacts` | Measured cohort selection and immutable publication of actual output files. These change opportunities or available information, not the original tasks. |
 
 Weight-updating RL uses the separate [`mesocosm train run` controller](training.md), which alternates
 complete worlds with verified REINFORCE/LoRA updates. The per-world `learning` field describes context
-feedback; `learning.mode: rl` is still rejected. Bounded sliding-window memory remains unsupported.
+feedback; `learning.mode: rl` is still rejected. `history` implements bounded replay into fresh reset
+sessions, not a complete agent-state restore or guaranteed forgetting across shared services.
 
 ### Incentives and independent performance
 
-With `rewards.enabled: true`, comparison-mode agents finish each task in lockstep. Reward allocation
+With `rewards.enabled: true`, the selected comparison participants finish each task in lockstep.
+The default selects every configured agent. Reward allocation
 is generic over the number of agents. For example, task scores `[1, 0, 0]` yield `[1, 0, 0]` under
 individual allocation and `[1/3, 1/3, 1/3]` under team mean. These incentives never overwrite the
 original three task scores. The agents are told the configured incentive rule; they are not told to
@@ -81,7 +92,8 @@ services:
 ```
 
 The raw peer score is the fraction of assigned reviewers who submit `accept`. `all` uses every other
-agent; `ring` uses one assigned reviewer per agent. A missing required verdict is **unmeasured**, not
+agent; `ring` uses one assigned reviewer per agent; `random_ring` deterministically rematches the
+review ring each episode using `matching_seed`. A missing required verdict is **unmeasured**, not
 zero. Team rewards remain unmeasured when a member is unmeasured. The original verifier still runs
 independently and can disagree with peer rewards.
 
@@ -92,9 +104,10 @@ conclusion. An inaccessible artifact can otherwise turn the experiment into a te
 Legacy `protocol: legacy` retains the old fixture's verdict-accuracy reward and is not combined with
 these generic incentives.
 
-`in_context` feedback contains only that participant's raw and allocated incentive, not private peers'
-scores or hidden verifier scores. It is attached to the next task and marked delivered only after that
-harness request completes. A final task has no subsequent feedback turn. This setting also works with
+By default, `in_context` feedback contains only that participant's raw and allocated incentive. Use
+`learning.feedback` to disclose additional outcome fields or delay delivery; revealing independent
+verifier information in a peer-reward arm is a distinct treatment. Feedback is marked delivered only
+after the harness request completes. Final episodes can lack a subsequent feedback turn. This setting also works with
 `memory: reset`: explicit feedback can be supplied to a fresh session without retaining past dialogue.
 
 ### Monitor controls
@@ -147,8 +160,10 @@ Render a fresh stack so each harness receives the readonly approval plugin. The 
 session, call ID and arguments before asking the reviewer. `deny` blocks a flagged tool and lets the
 agent continue; `terminate` aborts the session. Unknown judgments, missing evidence, input/call budget
 exhaustion and transport failures block and abort. Scores, decisions and execution results remain
-separate records. Live joint/shared evidence, nested agent sessions and per-syscall mediation inside
-an approved shell command are unsupported. See [ADR-0046](adr/0046-before-tool-monitor-intervention.md).
+separate records. Joint/shared live evidence has plumbing-test coverage and still needs real-agent
+validation. Nested agent sessions and per-syscall mediation inside an approved shell command remain
+unsupported. See [research controls](research-controls.md) and
+[ADR-0046](adr/0046-before-tool-monitor-intervention.md).
 
 ## Read outcomes separately
 
@@ -166,6 +181,8 @@ report useful task performance alongside risk measures.
 
 These controls are motivated by related work; the studies do not establish that a particular setting
 will reliably induce misalignment in real coding agents.
+The [literature guide](research-literature.md) records reviewed versions, designs, findings and transfer
+limits; the [variable manual](experimental-variables.md) maps those mechanisms to implemented fields.
 
 - [Emergent Collusion in Long-Horizon LLM Agent Interaction](https://arxiv.org/html/2609.24967v1)
   motivates memory, repeated interaction and reward structure. Its peer-verification setup is a

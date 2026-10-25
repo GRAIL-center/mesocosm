@@ -20,12 +20,13 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from mesocosm.adapters.harbor.task import load_task
 from mesocosm.core.config import deep_merge
 from mesocosm.core.evaluation import pin_task_paths
 from mesocosm.core.experiment import Experiment, _inactive_patches, load_experiment
 from mesocosm.core.manifest import WorldManifest, validate_manifest
 from mesocosm.core.research import validate_research_tasks
+from mesocosm.integrations.registry import integration_snapshot, validate_integration_lock
+from mesocosm.integrations.tasks import load_task
 
 SCHEMA = "mesocosm.execution.package.v1"
 MAX_FILES = 20000
@@ -196,11 +197,13 @@ def _normalize(raw: dict[str, Any], base: pathlib.Path, inputs: _Inputs,
                stripped: set[str], prefix: str = "") -> dict[str, Any]:
     world = WorldManifest.model_validate(raw)
     _profile(world)
+    validate_integration_lock(world)
     data = world.model_dump(mode="json")
+    data["integration_lock"] = integration_snapshot(world)
     pin_task_paths(data, base, required=True)
     for task in data["tasks"]:
         path = base / task["path"]
-        loaded = load_task(path, dataset=task.get("dataset"), name=task.get("name"))
+        loaded = load_task(task["source"], path, dataset=task.get("dataset"), name=task.get("name"))
         validate_research_tasks(world, [loaded])
         task["name"] = loaded.name
     for key in ("api_key", "upstream_key", "url", "agent_url", "run_label"):
@@ -325,7 +328,16 @@ def pack_submission(path: pathlib.Path, destination: pathlib.Path, *, kind: str 
                 patch = _normalize(merged, base_path.parent, inputs, stripped, f"conditions.{condition.name}.")
                 patch.pop("name", None)
                 patch["gateway"].pop("url", None)
-                spec["conditions"][index]["patch"] = _condition_patch(condition.patch, patch)
+                normalized_patch = _condition_patch(condition.patch, patch)
+                normalized_patch.pop("integration_lock", None)
+                if patch["integration_lock"] != normalized["integration_lock"]:
+                    # A condition can replace the selected source/backend. Explicit nulls remove
+                    # obsolete lock entries under the normal dictionary-merge semantics.
+                    normalized_patch["integration_lock"] = {
+                        **{key: None for key in normalized["integration_lock"] if key not in patch["integration_lock"]},
+                        **patch["integration_lock"],
+                    }
+                spec["conditions"][index]["patch"] = normalized_patch
             _write_yaml(root / "experiment.yaml", spec)
             entrypoint = "experiment.yaml"
         _validate(root, kind, entrypoint)
@@ -345,6 +357,9 @@ def _confined(root: pathlib.Path, reference: str) -> pathlib.Path:
 def _validate_world(root: pathlib.Path, raw: dict[str, Any]) -> None:
     world = WorldManifest.model_validate(raw)
     _profile(world)
+    if not world.integration_lock:
+        raise ValueError("remote submission requires pinned integration identities")
+    validate_integration_lock(world)
     gateway = raw.get("gateway") or {}
     if (gateway.get("url") != "http://gateway.invalid"
             or any(key in gateway for key in ("api_key", "upstream_key", "agent_url", "run_label"))
@@ -354,7 +369,8 @@ def _validate_world(root: pathlib.Path, raw: dict[str, Any]) -> None:
         _confined(root, _get(container, key))
     if any(not task.path for task in world.tasks):
         raise ValueError("all submission tasks must be materialized")
-    validate_research_tasks(world, [load_task(root / str(task.path)) for task in world.tasks])
+    validate_research_tasks(world, [load_task(task.source, root / str(task.path),
+                                             dataset=task.dataset, name=task.name) for task in world.tasks])
     # validate_manifest owns condition, model, skill and channel semantics, without Docker.
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", dir=root, delete=False) as check:
         check.write(yaml.safe_dump(raw))

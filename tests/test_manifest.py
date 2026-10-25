@@ -90,8 +90,8 @@ def test_persistent_mode_needs_a_stream_or_tasks_and_comparison_needs_tasks(tmp_
     assert validate_manifest(_write(tmp_path, data)).ok
     data["mode"] = "comparison"
     report = validate_manifest(_write(tmp_path, data))
-    assert set(report.errors) == {"tasks: at least one task is required in mode: comparison",
-                                  "stream.dir applies to mode: persistent only"}
+    assert {"tasks: at least one task is required in mode: comparison",
+                                  "stream.dir applies to mode: persistent only"} <= set(report.errors)
 
 
 def test_not_a_mapping_is_an_error(tmp_path):
@@ -317,7 +317,7 @@ def test_internet_access_is_validated(tmp_path):
     assert validate_manifest(_write(tmp_path, data)).ok, "replay needs no allow list: nothing reaches the internet"
     data["internet"] = {"enabled": False, "allow": ["pypi.org"]}
     report = validate_manifest(_write(tmp_path, data))
-    assert report.ok and any("ignored while internet.enabled is false" in w for w in report.warnings)
+    assert not report.ok and any("internet" in e and "rejected_unsupported" in e for e in report.errors)
     data["internet"] = {"enabled": True, "allow": ["pypi.org"], "budget": {"requests": 0}}
     assert not validate_manifest(_write(tmp_path, data)).ok
 

@@ -13,6 +13,11 @@ success or cooperation; record each deployment's evidence separately.
 These runs are adapted benchmark runs because the harness, network policy, resources and shared volume
 differ from the original benchmark configuration.
 
+The historical Colab run does not verify the current required-PID worker path. Use the
+[native acceptance procedure](native-acceptance.md) for fresh host checks, original-verifier
+calibration, trajectory review and cleanup evidence; do not reuse the historical shared-PID wrapper
+as proof of containment.
+
 ## Requirements and pinned inputs
 
 Use a Linux Docker host with Compose v2, Python 3.12, `uv`, Git and an NVIDIA GPU capable of serving the
@@ -172,14 +177,14 @@ export RUN_BUNDLE="$(uv run python -c \
   'import json,pathlib; print(json.loads(pathlib.Path("runs/native-three/result.json").read_text())["bundle"])')"
 uv run mesocosm report "$RUN_BUNDLE" --json > runs/native-three/report.json
 uv run mesocosm flags list "$RUN_BUNDLE" --json
-uv run mesocosm observe serve "$RUN_BUNDLE"
+uv run mesocosm diagnose "$RUN_BUNDLE" --json
+uv run mesocosm audit graph "$RUN_BUNDLE" --json
 ```
 
-For a finished run the observer reads `$RUN_BUNDLE/native/gateway/records.jsonl` by default.
-To watch an active run, select its newly created `runs/run_*` directory and add
-`--gateway-log runs/native-three/gateway.jsonl`. That live path comes from the rendered gateway's
-`/runs/native-three` log directory mounted on the host. Avoid substituting an earlier run's bundle
-or reusing an accumulated live log as the archived record of one run.
+The collected model requests are in `$RUN_BUNDLE/native/gateway/records.jsonl`; per-agent harness
+records retain tool inputs, results and terminal state. Inspect these alongside the CLI summaries.
+For worker-managed jobs, `execution events <job-id>` reads live lifecycle events; add `--run-id`
+to read a specific run's events. Keep each run's archived records distinct from accumulated live logs.
 
 Preserve the task Git revision and clean diff, Mesocosm Git revision, model revision, `nvidia-smi`,
 Docker/Compose/Python/vLLM/torch/OpenCode versions, and these bundle files: `manifest.json`, receipts,
@@ -187,7 +192,7 @@ events, `native/gateway/records.jsonl`, per-agent native messages and verifier l
 `environment.json`. Environment metadata identifies actual base and verifier image IDs and any
 resource adaptations. Redact control keys from any manifest shared outside private run storage.
 
-After stopping the observer, copy the shared volume before removing it:
+After the run finishes, copy the shared volume before removing it:
 
 ```bash
 mkdir -p runs/native-three/shared-final

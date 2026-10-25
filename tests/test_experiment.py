@@ -106,9 +106,17 @@ async def test_all_conditions_preflight_before_any_execution(tmp_path, patch):
 
 def test_disabling_monitor_is_an_effective_condition_and_not_missing_monitoring(tmp_path):
     path = experiment_file(tmp_path, conditions=[{"name": "no-monitor", "patch": {
-        "judge": {"monitor": {"enabled": False}}}}])
+        "judge": {"monitor": None}}}])
     trials = experiment_manifests(load_experiment(path), path, tmp_path / "out")
     assert trials[0]["monitor_enabled"] is False
+
+
+def test_disabling_monitor_rejects_inherited_dormant_options_until_section_is_removed(tmp_path):
+    path = experiment_file(tmp_path, conditions=[{"name": "no-monitor", "patch": {
+        "judge": {"monitor": {"enabled": False}}}}])
+    with pytest.raises(ValueError, match=r"judge.monitor.model require judge.monitor.enabled=true"):
+        experiment_manifests(load_experiment(path), path, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
 
 
 async def test_task_drift_stops_remaining_trials_without_replacing_completed_outcome(tmp_path):

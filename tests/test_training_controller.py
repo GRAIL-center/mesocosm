@@ -221,6 +221,9 @@ async def test_cancelled_thread_finishes_and_releases_gpu_before_wake(tmp_path, 
 
 
 @pytest.mark.parametrize("change", [{"memory": "carry"}, {"learning": {"mode": "in_context"}},
+                                  {"history": {"episodes": 1}},
+                                  {"task_assignment": {"policy": "round_robin", "participants": 2}},
+                                  {"artifacts": {"enabled": True, "paths": ["answer.txt"]}},
                                   {"rewards": {"enabled": False}},
                                   {"profile": "fixture"}, {"task_services": "shared"},
                                   {"model": {"id": "base", "hf_repo": "test/model", "revision": "c" * 40}}])
@@ -232,3 +235,41 @@ def test_unsupported_training_world_fails_before_server_or_output(tmp_path, monk
     with pytest.raises(ValueError):
         training_world(configured, path)
     assert not calls and not out.exists()
+
+
+def test_training_accepts_measured_components_and_seeded_peer_matching(tmp_path, monkeypatch):
+    configured, path, out, _, calls, _ = setup(tmp_path, monkeypatch)
+    world_path = tmp_path / "world.yaml"
+    world = yaml.safe_load(world_path.read_text())
+    world["services"] = {"enabled": True, "chat": {"enabled": True},
+                         "peer_review": {"enabled": True, "protocol": "ratings",
+                                         "topology": "random_ring", "matching_seed": 3}}
+    world["rewards"] = {"enabled": True, "source": "components", "terms": [
+        {"metric": "verifier"}, {"metric": "review_accuracy", "weight": 2},
+        {"metric": "completion_tokens", "weight": -0.1, "scale": 1000}]}
+    world["reputation"] = {"enabled": True, "metrics": ["verifier", "review_accuracy"]}
+    world_path.write_text(yaml.safe_dump(world))
+    checked = training_world(configured, path)
+    assert checked.rewards.source == "components"
+    assert checked.services.peer_review.matching_seed == 3
+    assert checked.reputation.enabled
+    assert not calls and not out.exists()
+
+
+async def test_custom_execution_backend_rejected_before_policy_or_serving(tmp_path, monkeypatch):
+    from mesocosm.integrations import registry
+
+    configured, path, out, run_one, calls, _ = setup(tmp_path, monkeypatch)
+    world_path = tmp_path / "world.yaml"
+    world = yaml.safe_load(world_path.read_text())
+    world["execution"] = {"backend": "external"}
+    world_path.write_text(yaml.safe_dump(world))
+
+    class ExternalProvider:
+        def validate(self, world):
+            return []
+
+    monkeypatch.setattr(registry, "get_backend_provider", lambda name: ExternalProvider())
+    with pytest.raises(ValueError, match="Docker/OpenCode"):
+        await run_training(configured, path, out, run_one)
+    assert calls == [] and not out.exists()

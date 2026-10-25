@@ -238,6 +238,13 @@ cleanup are reported; they do not become synthetic rewards. Tasks requiring veri
 installation may use the existing `--verifier-network bridge` filesystem path. Separate verifiers and
 live sidecar grading require their declared dependencies already installed and an internal network.
 
+`env calibrate` exposes `--verifier-network none|bridge` and `--allow-unenforced-resources`, with
+strict defaults. The resource opt-in records unsupported storage quotas and unavailable CPU/RAM
+enforcement without changing the original task; it never bypasses PID containment. For the unchanged
+`fix-git` task, both `--verifier-network bridge` and `--allow-unenforced-resources` are needed. Follow
+the [native acceptance procedure](native-acceptance.md) to distinguish original assertion failures
+from verifier setup errors and to keep reference-solution diagnostics separate from agent runs.
+
 The strict repeated-baseline path still requires a materialized original `tests/test.sh` so it can
 fingerprint the checker; merely declaring an image with baked tests does not establish that baseline.
 

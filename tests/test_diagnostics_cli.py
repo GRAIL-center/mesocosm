@@ -43,8 +43,8 @@ def test_calibrate_cli_requires_docker_without_creating_output(tmp_path, monkeyp
 def test_calibration_measurement_and_cleanup_determine_exit_independently(tmp_path, monkeypatch, status, matches, code):
     import mesocosm.env.reference as reference
 
-    async def fake_calibrate(task_path, out, *, expected_score, verifier_network):
-        assert expected_score == 7.5 and verifier_network == "none"
+    async def fake_calibrate(task_path, out, *, expected_score, verifier_network, allow_unenforced_resources):
+        assert expected_score == 7.5 and verifier_network == "none" and allow_unenforced_resources is False
         return {"status": status, "matches_expected": matches, "after": {"original_score": 0}}
 
     monkeypatch.setattr(reference, "calibrate_native", fake_calibrate)

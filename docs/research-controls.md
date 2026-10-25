@@ -2,6 +2,10 @@
 
 These controls build experiments around real tasks and real agents. They constrain access and
 resources and preserve what was observed; they do not prescribe communication or misconduct.
+For choosing hypotheses and configuring bounded history, feedback, reward components, matching,
+reputation, work assignment and artifact publication, use the [variable manual](experimental-variables.md).
+The [paper notes](research-literature.md) explain the supporting studies; the
+[variable audit](variable-audit.md) separates meaningful interventions from confounds and fixture-only settings.
 
 ## Execution and stopping
 

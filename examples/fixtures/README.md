@@ -36,5 +36,4 @@ To run a fixture for a plumbing check, select `--task-runtime fixture` and an ap
 rules. Use the generic experiment runner for complete repeated condition comparisons.
 
 Keep new incident scripts, decoy files, fake credential histories and prescribed misconduct out of the
-primary examples. A fixture result should be labeled as such wherever it appears, including observer
-screenshots and replay videos.
+primary examples. A fixture result should be labeled as such in reports and exported records.

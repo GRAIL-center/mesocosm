@@ -15,15 +15,15 @@ import re
 import shlex
 from typing import Any, Protocol
 
-from mesocosm.adapters.harbor.task import HarborTask, Reward
 from mesocosm.core.evaluation import task_fingerprint
 from mesocosm.core.manifest import AgentSpec
+from mesocosm.integrations.tasks import Reward, Task
 
 
 class ReferenceRuntime(Protocol):
-    async def prepare(self, agent: AgentSpec, task: HarborTask, workspace: pathlib.Path, *, reset: bool,
+    async def prepare(self, agent: AgentSpec, task: Task, workspace: pathlib.Path, *, reset: bool,
                       restored: bool = False) -> dict[str, Any]: ...
-    async def verify(self, task: HarborTask, workspace: pathlib.Path, logs_dir: pathlib.Path,
+    async def verify(self, task: Task, workspace: pathlib.Path, logs_dir: pathlib.Path,
                      script: str = "test.sh") -> Reward: ...
     async def finish(self) -> Any: ...
     async def command(self, *args: str, timeout: float = 600, include_stderr: bool = False) -> bytes: ...
@@ -56,7 +56,7 @@ def _write_json(path: pathlib.Path, value: dict[str, Any]) -> None:
     path.chmod(0o600)
 
 
-async def calibrate_task(task: HarborTask, runtime: ReferenceRuntime, agent: AgentSpec,
+async def calibrate_task(task: Task, runtime: ReferenceRuntime, agent: AgentSpec,
                          workspace: pathlib.Path, out: pathlib.Path) -> dict[str, Any]:
     """Verify untouched state, reset, then apply the reference and verify fresh state.
 
@@ -177,7 +177,7 @@ async def calibrate_task(task: HarborTask, runtime: ReferenceRuntime, agent: Age
 
 
 async def calibrate_native(task_path: pathlib.Path, out: pathlib.Path, *, expected_score: float = 1.0,
-                           verifier_network: str = "none") -> dict[str, Any]:
+                           verifier_network: str = "none", allow_unenforced_resources: bool = False) -> dict[str, Any]:
     """Own a minimal, authenticated, network-isolated calibration project on local Linux."""
     import secrets
     import shutil
@@ -225,7 +225,7 @@ async def calibrate_native(task_path: pathlib.Path, out: pathlib.Path, *, expect
     stack = DockerStack(compose_file)
 
     class ContainedRuntime(DockerTaskRuntime):
-        async def prepare(self, agent: AgentSpec, task: HarborTask, workspace: pathlib.Path, *,
+        async def prepare(self, agent: AgentSpec, task: Task, workspace: pathlib.Path, *,
                           reset: bool, restored: bool = False) -> dict[str, Any]:
             receipt = await super().prepare(agent, task, workspace, reset=reset, restored=restored)
             evidence = (await stack.isolation([agent.id]))[agent.id]
@@ -236,6 +236,7 @@ async def calibrate_native(task_path: pathlib.Path, out: pathlib.Path, *, expect
             return receipt
 
     runtime = ContainedRuntime(compose_file, control / "native", verifier_network=verifier_network,
+                               allow_unenforced_resources=allow_unenforced_resources,
                                task_services="isolated", agent_ids=[agent.id])
     result: dict[str, Any] = {"status": "failed", "stage": "build", "model_calls": 0, "agent_rollout": False}
     try:

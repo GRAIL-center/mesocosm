@@ -36,7 +36,6 @@ enforcement mechanism.
 | `judge review-assessment <bundle> <event-id> <verdict> <reviewer>` | Review an exact positive or negative monitor assessment. |
 | `pause` / `resume` / `stop <bundle>` | Gateway admission controls and run lifecycle records; pause is not suspension of a running shell command. |
 | `conditions set <bundle> <agent> budget <json>` | Update a gateway budget with an enforcement receipt. Other mid-run conditions are rejected. Initial budgets belong in `agents[].budget`. |
-| `observe serve <bundle>` | Live/replay observer over available records. |
 | `snapshot create` / `snapshot restore` / `fork` | Declared filesystem/service state and coverage; not complete process/session/training-state restoration. |
 | `judge monitor <bundle>` | Append posthoc monitor results with configurable scope, evidence and budgets. |
 | `flags list` / `flags review` | Candidate detections and reviewer verdicts, kept separate. |

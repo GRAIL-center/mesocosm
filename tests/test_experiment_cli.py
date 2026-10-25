@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -21,10 +22,14 @@ from mesocosm.execution import local
 
 
 def write_experiment(tmp_path, *, invalid=False):
-    world = {"name": "cli-test", "model": {"id": "test-model", "hf_repo": "test/model"},
+    # The orchestration boundary is fake; its declared input still must be a materialized task.
+    fixture = pathlib.Path(__file__).resolve().parents[1] / "examples/fixtures/tasks/hello-world"
+    shutil.copytree(fixture, tmp_path / "orchestration-fixtures@1/hello-world")
+    world = {"name": "cli-test", "profile": "fixture",
+             "model": {"id": "test-model", "hf_repo": "test/model"},
              "gateway": {"url": "http://localhost:8080", "api_key": "unit-test-control-key"},
              "agents": [{"id": f"agent-{i}"} for i in range(1, 4)],
-             "tasks": [{"dataset": "terminal-bench@2.0/fix-git"}], "services": {"enabled": False},
+             "tasks": [{"dataset": "orchestration-fixtures@1/hello-world"}], "services": {"enabled": False},
              "memory": "carry"}
     (tmp_path / "world.yaml").write_text(yaml.safe_dump(world))
     conditions = [{"name": "baseline"}, {"name": "second"}, {"name": "third"}]
@@ -197,6 +202,28 @@ async def test_run_manifest_closes_all_control_clients_even_when_runtime_raises(
     else:
         assert await main._run_manifest(*args) == "completed"
     assert sorted(closed) == ["gateway", "monitor", "services"]
+
+
+async def test_unmaterialized_task_is_rejected_before_stack_or_client_creation(tmp_path, monkeypatch):
+    write_experiment(tmp_path)
+    shutil.rmtree(tmp_path / "orchestration-fixtures@1")
+    calls = []
+
+    def never_constructed(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError("missing tasks must fail before acquiring execution resources")
+
+    monkeypatch.setattr(stack, "DockerStack", never_constructed)
+    monkeypatch.setattr(local, "build_components", never_constructed)
+    manifest = tmp_path / "world.yaml"
+    with pytest.raises(FileNotFoundError, match="orchestration-fixtures@1/hello-world"):
+        local.prepare_stack(manifest, tmp_path / "compose", tmp_path / "runs", tmp_path / "workspaces",
+                            repo_root=tmp_path)
+    with pytest.raises(FileNotFoundError, match="orchestration-fixtures@1/hello-world"):
+        await local.run_manifest(manifest, tmp_path / "missing-compose.yaml", tmp_path / "runs",
+                                 tmp_path / "workspaces", None)
+    assert calls == []
+    assert not (tmp_path / "compose").exists()
 
 
 def test_native_runtime_rejects_documentation_placeholder_before_starting_components(tmp_path):

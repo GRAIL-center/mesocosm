@@ -19,9 +19,13 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from typing import Any, TypeVar
 
+import yaml
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
+from mesocosm.core.config import deep_merge
+from mesocosm.core.experiment import load_experiment
+from mesocosm.core.manifest import WorldManifest
 from mesocosm.execution.package import MAX_ARCHIVE_BYTES, export_results, unpack_submission
 from mesocosm.execution.protocol import PROTOCOL_VERSION, TERMINAL, ExecutionBackend, JobRecord
 
@@ -29,6 +33,7 @@ JOB_ID = re.compile(r"^[a-f0-9]{32}$")
 RUN_ID = re.compile(r"^run_[a-zA-Z0-9_-]+$")
 MAX_UPLOAD_BYTES = MAX_ARCHIVE_BYTES
 MAX_EVENT_BYTES = 4 * 1024 * 1024
+BACKEND_OWNER = "execution-backend.json"
 T = TypeVar("T")
 
 
@@ -66,14 +71,17 @@ def _write_json(path: pathlib.Path, value: Any) -> None:
 
 class Worker:
     def __init__(self, root: pathlib.Path, backend: ExecutionBackend, *, max_pending: int = 16,
-                 lock_file: pathlib.Path | None = None):
+                 lock_file: pathlib.Path | None = None, backend_id: str = "docker",
+                 backend_identity: dict[str, Any] | None = None):
         self.root = root.resolve()
         if max_pending < 1:
             raise ValueError("max_pending must be positive")
         self.backend = backend
+        self.backend_id = backend_id
+        self.backend_identity = backend_identity or {"id": backend_id, "provider": "injected"}
         self.max_pending = max_pending
-        # One lease per host, independent of the chosen job directory. All managed Docker worlds
-        # share the current fixed subnet allocation. Manual Docker deployments remain operator-owned.
+        # Retain the original host-wide lease name across backend changes. A new provider must
+        # not overlap a still-owned world simply because its job directory or backend differs.
         self.lock_file = lock_file or pathlib.Path("/tmp/mesocosm-docker-worker.lock")
         self.records: dict[str, JobRecord] = {}
         self.tasks: dict[str, asyncio.Task[None]] = {}
@@ -113,6 +121,56 @@ class Worker:
             result = {**result, "previous_result": json.loads(path.read_text())}
         _write_json(path, result)
 
+    def _validate_submission(self, inputs: pathlib.Path, kind: str, entrypoint: str) -> None:
+        """Check the selected provider and every effective condition before accepting any work."""
+        from mesocosm.integrations.registry import backend_identity, validate_integrations
+
+        def inside(path: pathlib.Path) -> pathlib.Path:
+            resolved = path.resolve()
+            if not resolved.is_relative_to(inputs.resolve()):
+                raise ValueError("execution entrypoint escapes submitted inputs")
+            return resolved
+
+        entry = inside(inputs / entrypoint)
+        if kind == "world":
+            variants = [(yaml.safe_load(entry.read_text()), entry.parent)]
+        elif kind == "experiment":
+            experiment = load_experiment(entry)
+            base_path = inside(entry.parent / experiment.base)
+            base = yaml.safe_load(base_path.read_text())
+            variants = [(base, base_path.parent),
+                        *((deep_merge(base, condition.patch), base_path.parent) for condition in experiment.conditions)]
+        else:
+            raise ValueError(f"unsupported execution kind: {kind}")
+        for raw, base_dir in variants:
+            world = WorldManifest.model_validate(raw)
+            if world.execution.backend != self.backend_id:
+                raise ValueError(f"execution backend mismatch: world requires {world.execution.backend!r}, "
+                                 f"worker provides {self.backend_id!r}")
+            if "code_sha256" in self.backend_identity:
+                pinned = world.integration_lock.get(f"execution_backend:{self.backend_id}")
+                if ((pinned is not None and pinned != self.backend_identity)
+                        or backend_identity(self.backend_id) != self.backend_identity):
+                    raise ValueError("worker backend identity changed; restart with the pinned provider")
+            validate_integrations(world, base=base_dir, require_backend=self.backend_id)
+
+    def _validate_owner(self, directory: pathlib.Path) -> None:
+        """Recover recorded ownership without loading task plugins or reevaluating task inputs."""
+        path = directory / BACKEND_OWNER
+        if not path.exists():
+            if self.backend_id != "docker":
+                raise ValueError("legacy job ownership belongs to Docker")
+            return
+        if path.is_symlink():
+            raise ValueError("invalid backend ownership file")
+        owner = json.loads(path.read_text())
+        if owner.get("backend") != self.backend_id:
+            raise ValueError("recovery backend differs from recorded owner")
+        # Docker cleanup uses its durable inspected resource inventory even after a code update.
+        # An external replacement cannot silently assume another provider version's resources.
+        if self.backend_id != "docker" and owner.get("identity") != self.backend_identity:
+            raise ValueError("recovery provider identity differs from recorded owner")
+
     async def start(self) -> None:
         import fcntl
 
@@ -132,6 +190,7 @@ class Worker:
             for record in list(self.records.values()):
                 if record.status not in TERMINAL or record.status == "failed_cleanup":
                     try:
+                        self._validate_owner(self.directory(record.job_id))
                         cleanup = await self.backend.recover(self.directory(record.job_id))
                         if cleanup.get("status") != "complete":
                             raise RuntimeError("unverified recovery")
@@ -168,6 +227,7 @@ class Worker:
 
     async def capabilities(self) -> dict[str, Any]:
         return {"protocol_version": PROTOCOL_VERSION, "backend": await self.backend.capabilities(),
+                "backend_id": self.backend_id, "backend_identity": self.backend_identity,
                 "job_kinds": ["world", "experiment"], "max_active": 1, "max_pending": self.max_pending,
                 "admission": "closed" if self.closing or self.blocked else "open",
                 "blocked_jobs": sorted(self.blocked), "recovery": "cleanup_without_observation_retry"}
@@ -193,12 +253,16 @@ class Worker:
                     raise HTTPException(503, "worker_cleanup_pending")
                 if available.get("status") != "supported":
                     raise HTTPException(503, "execution_backend_unavailable")
+                await _transfer(lambda: self._validate_submission(
+                    temporary, metadata["kind"], metadata["entrypoint"]))
                 if directory.exists():
                     # No durable job record means admission never completed and no execution task
                     # was launched. Fail closed instead of guessing whether disk state is safe.
                     raise HTTPException(409, "incomplete_admission_use_new_job_id")
                 directory.mkdir(mode=0o700)
                 temporary.rename(directory / "input")
+                _write_json(directory / BACKEND_OWNER,
+                            {"backend": self.backend_id, "identity": self.backend_identity})
                 now = time.time()
                 record = JobRecord(job_id=job_id, kind=metadata["kind"], digest=metadata["digest"],
                                    entrypoint=metadata["entrypoint"], created=now, updated=now)
@@ -210,7 +274,11 @@ class Worker:
                     shutil.rmtree(temporary)
 
     async def _recover(self, directory: pathlib.Path) -> dict[str, Any]:
-        cleanup_task = asyncio.create_task(self.backend.recover(directory))
+        async def recover_owned() -> dict[str, Any]:
+            self._validate_owner(directory)
+            return await self.backend.recover(directory)
+
+        cleanup_task = asyncio.create_task(recover_owned())
         while not cleanup_task.done():
             try:
                 await asyncio.shield(cleanup_task)
@@ -240,6 +308,8 @@ class Worker:
                 return
             self._save(record, status="running")
             try:
+                self._validate_owner(directory)
+                await _transfer(lambda: self._validate_submission(directory / "input", record.kind, record.entrypoint))
                 result = await self.backend.execute(directory, directory / "input", record.kind, record.entrypoint)
                 self._receipt(job_id, result)
                 record = self.record(job_id)

@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from mesocosm.adapters.harbor.task import HarborTask
     from mesocosm.core.manifest import WorldManifest
+    from mesocosm.integrations.tasks import Task
 
 
 class ResearchProfileError(ValueError):
@@ -43,24 +43,22 @@ def research_profile_errors(manifest: WorldManifest) -> list[str]:
             "require profile: fixture" for control in controls]
 
 
-def research_task_errors(task: HarborTask) -> list[str]:
-    """Check only task-root platform extensions, preserving the original environment tree."""
-    extensions = ("side_task.md", "tests/side_test.sh", "agents", "instances", "protected")
-    fixture_inputs = [relative for relative in extensions
-                      if (task.path / relative).exists()]
-    if task.side_instruction is not None and "side_task.md" not in fixture_inputs:
-        fixture_inputs.append("side_instruction")
-    if task.has_side_tests and "tests/side_test.sh" not in fixture_inputs:
-        fixture_inputs.append("side_tests")
-    if task.rounds or task.config.get("rounds"):
-        fixture_inputs.append("rounds")
-    if (task.config.get("metadata") or {}).get("fixture"):
-        fixture_inputs.append("metadata.fixture")
-    return [f"rejected_unsupported: profile: research excludes task {task.name!r} fixture input {name}; "
-            "use profile: fixture for regression runs" for name in fixture_inputs]
+def research_task_errors(task: Task) -> list[str]:
+    """Each source owns its format's fixture checks; common world controls stay above."""
+    from mesocosm.integrations.registry import get_task_source
+
+    errors = get_task_source(task.source).research_errors(task)
+    if not isinstance(errors, list) or not all(isinstance(error, str) for error in errors):
+        raise ResearchProfileError(f"task source {task.source!r} research_errors() must return a list of strings")
+    if task.source != "harbor" and task.execution_kind == "harbor":
+        from mesocosm.adapters.harbor.source import HarborSource
+
+        # The native runner interprets these fixture directories regardless of the source's format.
+        errors = [*errors, *HarborSource().research_errors(task)]
+    return errors
 
 
-def validate_research_tasks(manifest: WorldManifest, tasks: Iterable[HarborTask]) -> None:
+def validate_research_tasks(manifest: WorldManifest, tasks: Iterable[Task]) -> None:
     """Recheck at execution, including tasks loaded from datasets or a persistent queue."""
     if manifest.profile == "fixture":
         return

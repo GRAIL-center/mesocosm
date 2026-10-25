@@ -1,135 +1,125 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
-    <img src="docs/assets/banner-light.png" alt="Mesocosm — real agents, real environments, controlled experiments." width="100%">
-  </picture>
-</p>
+# Mesocosm
 
-<p align="center">
-  <strong>Research infrastructure for multi-agent behavior in real task environments.</strong>
-</p>
+**Research infrastructure for multi-agent behavior in real task environments.**
 
-<p align="center">
-  <a href="docs/native-multiagent.md">Start with three agents</a> ·
-  <a href="docs/execution.md">Run from your laptop</a> ·
-  <a href="docs/experiments.md">Design experiments</a> ·
-  <a href="docs/training.md">Train a policy</a> ·
-  <a href="ARCHITECTURE.md">Architecture</a>
-</p>
+Mesocosm runs independent AI coding agents against executable tasks, tools and shared resources.
+You configure access, budgets, memory, incentives and monitoring. Agents choose their actions;
+Mesocosm enforces the configured conditions and records what happened.
 
-Mesocosm connects independent AI coding agents to executable tasks, tools and shared resources.
-You choose their access, budgets, memory, incentives and monitoring. The agents choose their actions;
-Mesocosm runs the environment and collects the evidence needed to study what happens.
+Use it to study how agents work together, share information and respond to competing incentives or
+oversight. A world can give three agents an unchanged external task, expose selected shared resources,
+and compare outcomes under different conditions. Task success, rewards, monitor assessments and
+reviewed behavior remain separate measurements.
 
-Use it to investigate cooperation, information sharing, rule violations and other behavior that emerges
-when agents work alongside one another. For example, give three agents the same software repair task,
-keep its verifier fixed, and compare individual rewards with team rewards. Examine the work they
-produce, the information they exchange and the actions a monitor allows or blocks.
+[Run three agents](docs/native-multiagent.md) · [Submit a job](docs/execution.md) ·
+[Choose variables](docs/experimental-variables.md) · [Compare conditions](docs/experiments.md) ·
+[Task sources](docs/task-sources.md) ·
+[Add an integration](docs/integrations.md) ·
+[Architecture](ARCHITECTURE.md)
 
-## How the system fits together
+## What it does
 
-A **world** describes the agents, tasks, resources and rules for a run. Each agent has its own process,
-session and workspace, even when agents share a model. Native tasks run in Docker environments with
-their original instructions and verifiers; optional shared files and services let agents interact.
+| Function | What Mesocosm provides |
+|---|---|
+| **Execute real tasks** | Independent OpenCode processes, sessions and workspaces; native Docker task environments and original verifiers. Research worker jobs require at least three agents. |
+| **Connect other systems** | Installed task-source and execution-backend plugins; original task formats, environment lifecycles and evaluators can be integrated without editing the core. |
+| **Control conditions** | Agent and team model budgets, service permissions, communication access, memory policy and incentive allocation. Supported controls are enforced by the relevant component. |
+| **Study repeated interaction** | Bounded records from prior tasks, selected and delayed feedback, measured reward components, reviewer matching, observed reputation, work assignment and publication of actual outputs. |
+| **Run comparisons** | Named condition variants, repeated trials, fixed input records and explicit failed or missing observations. |
+| **Monitor and intervene** | Posthoc review or assessment before supported tool calls, with recorded allow, deny or termination decisions. |
+| **Update policies** | An optional REINFORCE/LoRA training loop using validated action/reward records and checkpoint activation between worlds. |
+| **Inspect evidence** | Original model and harness records, tool events, verifier results, enforcement receipts, CLI reports, diagnostics and integrity checks. |
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/system-overview-dark.png">
-    <img src="docs/assets/system-overview-light.png" alt="Independent agents use a model gateway for inference and an optional monitor before executing tools in native task environments. Records and original verifier outcomes support observation, comparison and policy updates between worlds." width="100%">
-  </picture>
-  <br>
-  <sub>Conditions shape the environment. Agents act. The control plane observes, measures and can intervene. <a href="docs/assets/system-overview-light.png">View full size</a>.</sub>
-</p>
+The built-in Docker/OpenCode runtime supports a defined subset of Debian/Ubuntu tasks and original Compose services.
+Shared-service mode retains separate agent workspaces and records one team measurement. Compatibility
+with a task directory must be checked against its actual environment and verifier requirements.
+See [native task support](docs/research-runtime.md).
 
-Three workflows use the same foundation:
+## How a run works
 
-| Workflow | What you do | What you get |
-|---|---|---|
-| **Run a world** | Connect agents to an external task and configure their environment. | Agent activity, tool traces and original verifier outcomes. |
-| **Compare conditions** | Vary selected controls across named conditions and repeated trials. | Separate records for task performance, incentives and monitor judgments. |
-| **Train a policy** | Use measured rewards and verified action traces to update a shared policy between worlds. | REINFORCE/LoRA checkpoints used by the agents in the next world. |
+With the built-in Docker/OpenCode backend:
 
-Policy weights stay fixed during each training world. The optional live monitor reviews proposed
-**tool calls** before execution and can allow or deny a call, or terminate the session. The observer provides a
-view of activity; the monitor provides decisions.
+1. **Select an external task.** Preserve its instructions, initial environment and independent verifier.
+2. **Define a world in YAML.** Configure agents, models, resources, access, rewards and monitoring.
+3. **Execute on Linux.** The Docker worker owns task services, agent execution, verification and cleanup.
+   Model inference can run on a separate GPU host or compatible endpoint.
+4. **Inspect the run bundle.** Review the complete recorded trajectory alongside outputs and original
+   verifier results. Use the same inputs and declared changes for a condition comparison.
 
-## What can you control?
+A client can submit jobs from a Mac or Linux machine and disconnect while an accepted job runs.
+The worker retains lifecycle state and supports status, cancellation and result retrieval.
+Direct execution on a Linux host is also available. [Execution guide →](docs/execution.md)
 
-| Condition | Examples | Research question |
-|---|---|---|
-| **Access & communication** | Directed messages, channel membership, repository/service grants and internet access | What changes when agents can exchange information? |
-| **Budgets & memory** | Individual and team request/token quotas, shared concurrency; reset or retained sessions | How do constraints and prior experience affect decisions? |
-| **Incentives** | Individual, team-mean or mixed rewards; original verifier or peer verdicts | How does the reward structure affect the work agents choose to do? |
-| **Monitoring** | Reviewer, rubric, evidence visibility; posthoc review or before-tool intervention | What can a monitor detect, and how does intervention affect the run? |
-
-Configure these controls in YAML. The [experiment guide](docs/experiments.md) explains the supported
-combinations and how to compare them. Original task outcomes, allocated rewards and monitor judgments
-remain separate, and failed or missing observations stay in the experiment record.
-The [research controls guide](docs/research-controls.md) covers access graphs, joint live review,
-verified stopping, repeated baselines and held-out evaluation.
-
-## See the agents at work
-
-The observer maps agent sessions and recorded activity onto a shared timeline. Select an agent to
-inspect model requests and tool calls, follow a live run, or replay an interaction afterward.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/observer-replay-dark.gif">
-    <img src="docs/assets/observer-replay-light.gif" alt="Mesocosm observer replay with agent sessions, activity summaries and a trail when one agent reads another agent's post." width="800">
-  </picture>
-  <br>
-  <sub>The actual observer interface, replaying an authored fixture. The map visualizes activity; agents execute tools in Docker task environments.</sub>
-</p>
-
-Collected configurations, model and harness records, tool events and verifier results form a
-**run bundle** for inspection and replay. Research records are kept outside agent workspaces.
-
-## Start with three agents
-
-The current stack combines **OpenCode** agent harnesses, **Harbor-format** tasks and **Docker**
-environments. You can prepare experiments on a Mac or Linux laptop and submit them to a **Linux
-execution worker**. The worker owns the agents, task services, verification and cleanup; your laptop
-can disconnect and reconnect to inspect or stop the job. Model serving can run on a separate GPU host.
+## Get started
 
 ```bash
 git clone https://github.com/GRAIL-center/mesocosm.git
 cd mesocosm
 uv sync --locked --extra gateway
 uv run mesocosm --help
+uv run mesocosm capabilities --json
 ```
 
-This installs Mesocosm. Continue with the workflow you need:
+This installs the control software; the built-in runtime also requires a supported Linux Docker environment,
+a model endpoint and an external task.
 
-1. **Launch your first world.** Follow the [three-agent setup guide](docs/native-multiagent.md) to
-   prepare an external task, model server and private configuration. Start from the
-   [native world example](examples/world-native-three.yaml). Use the [execution guide](docs/execution.md)
-   to submit a world from your laptop or operate the worker; direct execution on Linux remains available.
-2. **Compare conditions.** Follow the [experiment guide](docs/experiments.md) to define variants,
-   run repetitions and inspect the resulting records.
-3. **Add policy updates.** Follow the [training guide](docs/training.md) to collect rollouts,
-   update a shared policy and deploy its checkpoint into the next world.
-
-Mesocosm is **pre-alpha**. The native runtime uses Debian/Ubuntu task environments and can connect
-original application/database services with isolated or shared state. The [research runtime guide](docs/research-runtime.md)
-explains configuration and verification boundaries. The [capability matrix](docs/capability-matrix.md) documents settings,
-verification evidence and deployment limits, including the Colab path. The
-[examples guide](examples/README.md) separates external-task configurations from authored fixtures.
-
-## Go deeper
-
-| Resource | Use it for |
+| Next step | Guide |
 |---|---|
-| [Architecture](ARCHITECTURE.md) | Components, data flow and control boundaries |
-| [Execution guide](docs/execution.md) | Laptop client, Linux worker, job lifecycle and remote model serving |
-| [Operation contract](docs/operation-contract.md) | CLI and programmatic interfaces |
-| [Capability matrix](docs/capability-matrix.md) | What is implemented, verified and still limited |
-| [Design decisions](docs/adr/README.md) · [Milestones](docs/milestones.md) | Why the system works this way and what comes next |
+| Configure a first three-agent world | [Native setup](docs/native-multiagent.md) · [Example manifest](examples/world-native-three.yaml) |
+| Choose compatible external tasks | [Task source comparison](docs/task-sources.md) · [Runtime requirements](docs/research-runtime.md) |
+| Add a benchmark, simulator or agent runtime | [Integration contracts and registration](docs/integrations.md) |
+| Submit and manage execution | [Client and worker](docs/execution.md) |
+| Vary conditions across trials | [Experiments](docs/experiments.md) · [Research controls](docs/research-controls.md) |
+| Build a research hypothesis | [Variable manual](docs/experimental-variables.md) · [Paper notes](docs/research-literature.md) · [Variable audit](docs/variable-audit.md) |
+| Train from verified rollouts | [Policy training](docs/training.md) |
 
-<details>
-<summary><strong>Developing Mesocosm</strong></summary>
+## Add an integration
 
-Read [AGENTS.md](AGENTS.md) before contributing. Code lives in [`src/mesocosm/`](src/mesocosm/),
+A **task source** reads a benchmark's original inputs. An **execution backend** owns its environment,
+agent interfaces, evaluator and cleanup. Existing Harbor-compatible tasks use the built-in backend;
+different environments can supply both plugins as a separate Python package.
+
+```bash
+uv run mesocosm integrations list --json
+uv run mesocosm integrations check /path/to/world.yaml --json
+```
+
+Selected plugins are checked before execution and pinned in portable inputs. Backend registration does
+not automatically provide every condition, monitoring or RL feature; unsupported combinations must be
+rejected. See the [integration guide](docs/integrations.md) for contracts and a deployment example.
+
+## Inspect results
+
+Run bundles retain configurations, native model/harness records, events and original verifier artifacts
+outside agent workspaces. With `RUN_BUNDLE` set to a collected bundle directory:
+
+```bash
+uv run mesocosm report "$RUN_BUNDLE" --json
+uv run mesocosm diagnose "$RUN_BUNDLE" --json
+uv run mesocosm evaluate "$RUN_BUNDLE" --json
+uv run mesocosm audit graph "$RUN_BUNDLE" --json
+```
+
+Reports summarize the evidence; diagnoses help distinguish model/tool failures, incomplete turns and
+verifier problems. Audit commands check recorded links and preserved bytes. None establishes that
+uncaptured activity did not occur. The [operation contract](docs/operation-contract.md) documents the
+CLI and worker API. Optional activation analysis and monitor intervention remain separate research
+functions.
+
+## Project status
+
+Mesocosm is **pre-alpha**. Implementation, automated tests and real-agent validation have different
+coverage. The newer Linux worker and shared-service execution paths still need full three-agent
+acceptance, as do the new repeated-interaction controls. A completed policy update does not establish
+improved behavior, and task failure alone does not establish a platform defect.
+
+The [capability matrix](docs/capability-matrix.md) tracks verified scope and remaining limits.
+The [acceptance procedure](docs/native-acceptance.md) defines the next integration checks.
+[Milestones](docs/milestones.md) and [design decisions](docs/adr/README.md) explain the development direction.
+
+## Development
+
+Read [AGENTS.md](AGENTS.md) before contributing. Source is in [`src/mesocosm/`](src/mesocosm/),
 tests in [`tests/`](tests/), and configurations in [`examples/`](examples/).
 
 ```bash
@@ -139,7 +129,9 @@ uv run mypy src
 uv run ruff check .
 ```
 
-</details>
+Optional learning tests need the separate `learning` dependencies. GPU inference and Docker acceptance
+require their documented execution environments. Archived authored examples are explicitly labeled
+[fixtures](examples/fixtures/README.md).
 
 ## License
 

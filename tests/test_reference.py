@@ -136,8 +136,9 @@ async def test_unsafe_or_reused_calibration_inputs_fail_before_execution(tmp_pat
 @pytest.mark.parametrize("isolation,cleanup_fails,status", [("supported", False, "completed"),
                                                            ("unverified", False, "failed"),
                                                            ("supported", True, "failed_cleanup")])
+@pytest.mark.parametrize("operator_options", [{}, {"verifier_network": "bridge", "allow_unenforced_resources": True}])
 async def test_native_calibration_requires_observed_containment_and_always_cleans_owned_project(
-        tmp_path, monkeypatch, isolation, cleanup_fails, status):
+        tmp_path, monkeypatch, isolation, cleanup_fails, status, operator_options):
     import shutil
     from types import SimpleNamespace
 
@@ -155,6 +156,7 @@ async def test_native_calibration_requires_observed_containment_and_always_clean
             super().__init__()
             self.base_compose = yaml.safe_load(compose_file.read_text())
             self.finish_count = 0
+            self.options = kwargs
             instances.append(self)
             assert kwargs["task_services"] == "isolated" and kwargs["agent_ids"] == ["reference"]
 
@@ -188,8 +190,10 @@ async def test_native_calibration_requires_observed_containment_and_always_clean
     monkeypatch.setattr(shutil, "which", lambda command: "/available/docker")
     monkeypatch.setattr(runtime_module, "DockerTaskRuntime", NativeRuntime)
     monkeypatch.setattr(stack_module, "DockerStack", Stack)
-    result = await calibrate_native(task.path, out)
+    result = await calibrate_native(task.path, out, **operator_options)
     assert result["status"] == status
+    assert instances[0].options["verifier_network"] == operator_options.get("verifier_network", "none")
+    assert instances[0].options["allow_unenforced_resources"] is operator_options.get("allow_unenforced_resources", False)
     assert stacks[0].cleaned
     assert instances[0].finish_count >= 1
     assert json.loads((out / "result.json").read_text()) == result

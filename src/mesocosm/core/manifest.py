@@ -21,9 +21,11 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from mesocosm.core.access import AccessSpec, validate_access
+from mesocosm.core.artifacts import ArtifactSpec
+from mesocosm.core.episode_controls import AssignmentSpec, FeedbackSpec, ReputationSpec, RewardTerm
+from mesocosm.core.history import HistorySpec
 
 SUPPORTED_HARNESSES = {"opencode"}
-SUPPORTED_TASK_SOURCES = {"harbor"}
 # Conditions the platform enforces today, and where. M3 extends this table.
 SUPPORTED_CONDITIONS = {"exposure": "services"}  # Initial budgets live in agents[].budget.
 # Hidden channels the sandbox can provide (mesocosm.env.services / compose). Presence is verified
@@ -128,7 +130,7 @@ class AgentSpec(ManifestModel):
 
 class TaskSpec(ManifestModel):
     source: str = "harbor"
-    path: str | None = Field(default=None, description="Task directory (instruction.md, task.toml, tests/)")
+    path: str | None = Field(default=None, description="Original task directory interpreted by its source provider")
     dataset: str | None = None
     name: str | None = None
     side_task: list[str] | None = Field(default=None, description="Agent ids that receive the task's side_task.md "
@@ -224,6 +226,7 @@ class StreamSpec(ManifestModel):
     directories; agents take tasks from one shared queue, one agent per task (ADR-0015)."""
     dir: str | None = Field(default=None, description="Directory where task directories appear (relative to "
                                                       "the manifest); the initial `tasks` are queued first")
+    source: str = Field(default="harbor", description="Installed task source for arriving task directories")
     poll_seconds: float = Field(default=10.0, gt=0)
     max_tasks: int | None = Field(default=None, ge=1, description="Stop taking tasks after this many")
     max_minutes: float | None = Field(default=None, gt=0, description="Stop taking tasks after this long")
@@ -265,9 +268,9 @@ class PeerReviewSpec(ManifestModel):
     episodes. The channel's caps are `services.chat.max_chars` / `max_messages`."""
     enabled: bool = False
     protocol: Literal["legacy", "ratings"] = "legacy"
-    topology: Literal["all", "ring"] = Field(default="all", description="Who reviews whom: `all` = every agent "
-                                                                        "reviews every other; `ring` = each reviews "
-                                                                        "the next agent in manifest order")
+    topology: Literal["all", "ring", "random_ring"] = Field(
+        default="all", description="Review everyone, the next manifest member, or a seeded reshuffled ring per episode")
+    matching_seed: int = 0
     verdict_review: bool = Field(default=True, description="Feedback says whether each verdict was right")
     reward_feedback: bool = Field(default=True, description="Feedback states the episode reward")
     reward_per_verdict: int = Field(default=10, ge=0)
@@ -415,12 +418,18 @@ class ChannelSpec(ManifestModel):
 class RewardSpec(ManifestModel):
     """Episode incentives, kept separate from unchanged external task measurements."""
     enabled: bool = False
-    source: Literal["verifier", "peer_verdict"] = "verifier"
+    source: Literal["verifier", "peer_verdict", "components"] = "verifier"
+    terms: list[RewardTerm] = Field(default_factory=list)
+    success_threshold: float = Field(default=1.0, allow_inf_nan=False)
     allocation: Literal["individual", "team_mean", "mixed"] = "individual"
     team_weight: float = Field(default=0.5, ge=0, le=1)
 
     @model_validator(mode="after")
     def _effective(self) -> RewardSpec:
+        if (self.source == "components") != bool(self.terms):
+            raise ValueError("components reward requires nonempty terms; other sources cannot set terms")
+        if len({term.metric for term in self.terms}) != len(self.terms):
+            raise ValueError("reward component metrics must be unique")
         if self.allocation != "mixed" and self.team_weight != 0.5:
             raise ValueError("rejected_unsupported: team_weight only applies to mixed allocation")
         if not self.enabled and (self.source != "verifier" or self.allocation != "individual"):
@@ -431,10 +440,21 @@ class RewardSpec(ManifestModel):
 class LearningSpec(ManifestModel):
     """Only delivered context feedback is implemented; neither mode updates model weights."""
     mode: Literal["none", "in_context"] = "none"
+    feedback: FeedbackSpec = Field(default_factory=FeedbackSpec)
+
+
+class ExecutionSpec(ManifestModel):
+    """Select an installed whole-world backend and its validated experiment parameters."""
+
+    backend: str = Field(default="docker", pattern=r"^[a-z][a-z0-9_.-]{0,63}$")
+    options: dict[str, object] = Field(default_factory=dict)
 
 
 class WorldManifest(ManifestModel):
     name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")
+    execution: ExecutionSpec = Field(default_factory=ExecutionSpec)
+    integration_lock: dict[str, dict[str, object]] = Field(default_factory=dict,
+        description="Pinned installed provider identities; generated when packaging portable inputs")
     profile: Literal["research", "fixture"] = Field(default="research",
         description="Research excludes simulated services and authored incident inputs; fixture is regression-only")
     task_services: Literal["isolated", "shared"] = Field(default="isolated",
@@ -448,6 +468,10 @@ class WorldManifest(ManifestModel):
     tasks: list[TaskSpec] = Field(default_factory=list)
     stream: StreamSpec = Field(default_factory=StreamSpec)
     memory: Literal["reset", "carry"] = "reset"
+    history: HistorySpec = Field(default_factory=HistorySpec)
+    artifacts: ArtifactSpec = Field(default_factory=ArtifactSpec)
+    reputation: ReputationSpec = Field(default_factory=ReputationSpec)
+    task_assignment: AssignmentSpec = Field(default_factory=AssignmentSpec)
     isolate_agents: bool = Field(default=False, description="Put every agent on its own sandbox network so agents "
                                  "cannot reach each other; only the gateway and control span all of them")
     services: ServicesSpec = Field(default_factory=ServicesSpec)
@@ -566,6 +590,11 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
     except (ValidationError, ValueError, OSError, yaml.YAMLError) as e:
         return ValidationReport(ok=False, errors=[str(e)], warnings=[], resolved=resolved)
 
+    from mesocosm.core.condition_validation import inactive_condition_errors
+    from mesocosm.core.episode_validation import episode_condition_errors
+
+    errors.extend(inactive_condition_errors(manifest))
+    errors.extend(episode_condition_errors(manifest))
     if manifest.rewards.enabled:
         if manifest.mode != "comparison":
             errors.append("rejected_unsupported: rewards require comparison episodes with the same task for each agent")
@@ -578,30 +607,37 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
     if manifest.services.peer_review.enabled and manifest.services.peer_review.protocol == "ratings":
         if not manifest.rewards.enabled:
             errors.append("peer_review.protocol: ratings requires rewards.enabled")
-    for agent in manifest.agents:
-        if agent.harness not in SUPPORTED_HARNESSES:
-            errors.append(f"rejected_unsupported: agent {agent.id!r} harness {agent.harness!r}; "
-                          f"supported: {sorted(SUPPORTED_HARNESSES)}")
+    from mesocosm.integrations.registry import get_task_source, validate_integrations
+    from mesocosm.integrations.tasks import load_task
+
+    try:
+        validate_integrations(manifest, path.parent)
+    except (OSError, ValueError) as exc:
+        errors.append(str(exc))
+    if manifest.stream.dir:
+        try:
+            get_task_source(manifest.stream.source)
+        except ValueError as exc:
+            errors.append(f"stream.source: {exc}")
     for i, task in enumerate(manifest.tasks):
-        if task.source not in SUPPORTED_TASK_SOURCES:
-            errors.append(f"rejected_unsupported: tasks[{i}] source {task.source!r}; "
-                          f"supported: {sorted(SUPPORTED_TASK_SOURCES)}")
+        try:
+            get_task_source(task.source)
+        except ValueError as exc:
+            errors.append(f"rejected_unsupported: tasks[{i}] source {task.source!r}: {exc}")
             continue
         if task.path is None and task.dataset is None:
             errors.append(f"tasks[{i}]: either a path (a local task directory) or a dataset (a benchmark "
                           f"reference, ADR-0037/0040) is required")
         elif task.path is not None:
             task_dir = (path.parent / task.path).resolve()
-            if not (task_dir / "instruction.md").is_file():
-                errors.append(f"tasks[{i}]: {task_dir} has no instruction.md")
-            elif manifest.profile == "research":
-                from mesocosm.adapters.harbor.task import load_task
-                from mesocosm.core.research import research_task_errors
+            from mesocosm.core.research import research_task_errors
 
-                try:
-                    errors.extend(research_task_errors(load_task(task_dir)))
-                except (OSError, ValueError) as exc:
-                    errors.append(f"tasks[{i}]: {exc}")
+            try:
+                loaded = load_task(task.source, task_dir, dataset=task.dataset, name=task.name)
+                if manifest.profile == "research":
+                    errors.extend(research_task_errors(loaded))
+            except (OSError, ValueError) as exc:
+                errors.append(f"tasks[{i}]: {exc}")
         # a dataset is resolved to one or many materialized task directories at run time; `name` is an
         # optional label and a collection reference expands to all its tasks (ADR-0040)
         for agent_id in task.side_task or []:

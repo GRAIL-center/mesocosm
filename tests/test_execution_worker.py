@@ -357,3 +357,44 @@ def test_worker_cli_private_token_and_prerequisite_errors_emit_one_json(tmp_path
     assert result.exit_code == 1
     assert json.loads(result.stdout)["detail"].endswith("docker_missing")
     assert TOKEN not in result.stdout
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_worker_cli_forwards_operator_policy_without_changing_defaults(tmp_path, monkeypatch, explicit):
+    import uvicorn
+
+    from mesocosm.execution.docker import DockerBackend
+
+    monkeypatch.setenv("MESOCOSM_WORKER_TOKEN", TOKEN)
+    observed = []
+
+    async def capability(self):
+        observed.append(self.operator_policy)
+        return {"status": "supported"}
+
+    monkeypatch.setattr(DockerBackend, "capabilities", capability)
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
+    args = ["--root", str(tmp_path / "private"), "--repo-root", str(tmp_path), "--json"]
+    if explicit:
+        args.extend(["--verifier-network", "bridge", "--allow-unenforced-resources"])
+    result = CliRunner().invoke(worker_app, args)
+    assert result.exit_code == 0, result.output
+    expected = {"verifier_network": "bridge" if explicit else "none", "allow_unenforced_resources": explicit}
+    assert observed == [expected]
+    assert json.loads(result.stdout)["operator_policy"] == expected
+    assert TOKEN not in result.stdout
+
+
+@pytest.mark.parametrize("network", ["host", "sandbox"])
+def test_worker_cli_invalid_verifier_network_fails_before_startup(tmp_path, monkeypatch, network):
+    import uvicorn
+
+    monkeypatch.setenv("MESOCOSM_WORKER_TOKEN", TOKEN)
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: pytest.fail("must not start worker"))
+    result = CliRunner().invoke(worker_app, ["--root", str(tmp_path / "private"), "--repo-root", str(tmp_path),
+                                           "--verifier-network", network, "--json"])
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "error" and payload["error_type"] == "ValueError"
+    assert "verifier network must be none or bridge" in payload["detail"]
+    assert TOKEN not in result.stdout and not (tmp_path / "private").exists()

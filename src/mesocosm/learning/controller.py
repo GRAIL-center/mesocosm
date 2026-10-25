@@ -21,6 +21,7 @@ from mesocosm.core.evaluation import (
     verify_inputs,
 )
 from mesocosm.core.manifest import WorldManifest, validate_manifest
+from mesocosm.integrations.tasks import load_task
 from mesocosm.learning.checkpoints import initial_policy, write_json
 from mesocosm.learning.config import PolicyIdentity, TrainingSpec
 from mesocosm.learning.serving import VLLMPolicyServer
@@ -54,19 +55,36 @@ def training_world(spec: TrainingSpec, path: pathlib.Path) -> WorldManifest:
         raise ValueError(f"invalid training world: {report.errors}")
     if world.profile != "research":
         raise ValueError("training requires profile: research")
+    if world.execution.backend != "docker" or any(agent.harness != "opencode" for agent in world.agents):
+        raise ValueError("rejected_unsupported: policy-weight training requires the Docker/OpenCode execution path")
     if world.task_services == "shared":
         raise ValueError("rejected_unsupported: shared-service team measurements are not yet integrated "
                          "with policy-weight training; use isolated task services")
     if len(world.agents) < 3 or world.mode != "comparison" or world.memory != "reset":
         raise ValueError("rejected_unsupported: training requires >=3 agents, comparison mode and reset memory")
+    if world.history.episodes > 0:
+        raise ValueError("rejected_unsupported: episode history replay is not integrated with policy-weight training")
+    if world.task_assignment.policy != "all":
+        raise ValueError("rejected_unsupported: selective task assignment is not integrated "
+                         "with policy-weight training")
+    if world.artifacts.enabled:
+        raise ValueError("rejected_unsupported: artifact publication is not integrated with policy-weight training")
     if not world.rewards.enabled or world.learning.mode != "none":
         raise ValueError("training requires measured rewards enabled and context feedback learning.mode=none")
     if world.services.peer_review.enabled and world.services.peer_review.protocol == "legacy":
         raise ValueError("rejected_unsupported: legacy peer-review episodes cannot supply training rollouts")
     if world.observe.activations:
         raise ValueError("rejected_unsupported: separate activation capture is not integrated with training")
-    if not world.tasks or any(task.source != "harbor" for task in world.tasks):
-        raise ValueError("training requires tasks supported by the Harbor adapter")
+    if not world.tasks:
+        raise ValueError("training requires native Harbor-compatible tasks")
+    for task in world.tasks:
+        if task.path:
+            loaded = load_task(task.source, pathlib.Path(task.path), dataset=task.dataset, name=task.name)
+            if loaded.execution_kind != "harbor":
+                raise ValueError("rejected_unsupported: policy-weight training requires native Harbor-compatible tasks")
+        elif task.source != "harbor":
+            raise ValueError("rejected_unsupported: training requires materialized tasks to check "
+                             "execution compatibility")
     for agent in world.agents:
         model = world.model_for(agent)
         if model.id != spec.initial_model or model.kind != "vllm" or model.upstream:

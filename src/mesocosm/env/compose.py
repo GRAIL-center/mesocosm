@@ -145,6 +145,9 @@ def write_agent_files(manifest: WorldManifest, run_label: str, files_dir: pathli
     """Write `agent_files` under files_dir/<agent_id>/, copy the agent's skill directories to
     files_dir/<agent_id>/skills/<name>/ (manifest_dir resolves them) and, with the internet enabled, make the
     web gateway's CA under web_dir/ca (default: next to files_dir); returns the paths written."""
+    from mesocosm.integrations.registry import validate_integrations
+
+    validate_integrations(manifest, require_backend="docker")
     written = []
     if manifest.internet.enabled:
         web_dir = web_dir or files_dir.parent / "web"
@@ -204,6 +207,9 @@ def render_compose(manifest: WorldManifest, *, repo_root: pathlib.Path, run_labe
     network n = 1..N; otherwise one network n = 0. `files_dir` is where `write_agent_files` put the
     agents' config files (default runs/<run_label>/agents). `workspace_root` selects the same per-agent
     workspace directories used by the run manager (default spike/workspace)."""
+    from mesocosm.integrations.registry import validate_integrations
+
+    validate_integrations(manifest, require_backend="docker")
     repo = repo_root.resolve()
     spike = str(repo / "spike")
     runs = str((repo / runs_dir).resolve())
