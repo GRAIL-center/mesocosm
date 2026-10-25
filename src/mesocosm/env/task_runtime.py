@@ -895,7 +895,11 @@ class DockerTaskRuntime:
         if separate:
             from mesocosm.env.task_verifier import prepare_verifier
 
-            network = self._task_network(agent_id) if group.stack is not None else "none"
+            environment = verifier.get("environment", task.config.get("environment")) or {}
+            offline = (verifier.get("network_mode") or environment.get("network_mode")) == "no-network"
+            # A main-only Compose declaration adds no live service for the verifier to reach.
+            network = (self._task_network(agent_id)
+                       if not offline and group.stack is not None and group.stack.services else "none")
             plan = await prepare_verifier(task, group.native, group.containers[agent_id], workspace, logs_dir,
                                           self.command, network=network, service_scope=self.task_services,
                                           script=script, project=self.project)
