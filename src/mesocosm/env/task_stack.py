@@ -197,7 +197,12 @@ def _validate(compose: dict[str, Any], root: pathlib.Path) -> dict[str, dict[str
         _fields(_mapping(options or {}, f"volume {name}"), {"name", "labels"}, f"volume {name}")
     declared_networks = _mapping(compose.get("networks") or {}, "task networks")
     for name, options in declared_networks.items():
-        _fields(_mapping(options or {}, f"network {name}"), {"name", "internal"}, f"network {name}")
+        options = _mapping(options or {}, f"network {name}")
+        _fields(options, {"name", "internal", "ipam"}, f"network {name}")
+        # Compose 5.6.1 inserts ipam:{} even for an implicit default network.
+        # Only that empty mapping is inert; custom addressing is not preserved.
+        if "ipam" in options and options["ipam"] != {}:
+            raise TaskComposeError(f"network {name}: only empty IPAM is supported")
     normalized = {}
     task_networks = set()
     for name, raw in services.items():
