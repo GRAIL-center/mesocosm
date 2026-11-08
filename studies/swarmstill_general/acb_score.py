@@ -1,6 +1,7 @@
 """Score saved AgentCollabBench runs with the official metrics.
 
 Usage: python acb_score.py <runs_root> <scores.jsonl> [--judge-base-url URL --judge-model NAME] [--workers 8]
+                           [--condition baseline]
 
 <runs_root> holds <metric>/<condition>/<model>/<task_id>.json files written by acb_run.py. RTD and CLC are
 programmatic. IDR and CPR use an LLM judge through the official LLMJudge; pass an OpenAI-compatible judge endpoint
@@ -41,6 +42,8 @@ def main() -> None:
         if (metric, cond, model, f.stem) in done:
             continue
         if metric in ("idr", "cpr") and judge is None:
+            continue
+        if arg("--condition") and cond != arg("--condition"):
             continue
         jobs.append((metric, cond, model, f))
     lock = threading.Lock()

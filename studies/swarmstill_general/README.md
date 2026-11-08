@@ -44,6 +44,12 @@ condition.
 3. Freeze designer predictions from two arms: no guide (N) and the general guide `framework_v4.md` (F). The guide was
    frozen by sha256 before any data from this study existed.
 4. Score the interventions and compare (`acb_analyze.py`).
+   - The primary F vs N test and its decision rule are pre-registered in the `acb_analyze.py` docstring.
+   - The file was frozen by sha256 (`acb_analyze.sha256`) before any score of this study existed.
+   - The unit is a (metric, model, condition) cell. H1 needs a one-sided sign-flip p < 0.05 and a hierarchical
+     bootstrap 95% CI below 0. Breadth across behaviors needs, in addition, F ahead in at least 3 of 4 metrics and
+     under every leave-one-metric-out.
+   - Answer folders are named `<arm>-<metric>-<k>` (arm F or N).
 
 ## Run
 
