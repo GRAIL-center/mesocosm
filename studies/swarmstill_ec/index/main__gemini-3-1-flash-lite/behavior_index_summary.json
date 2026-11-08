@@ -1,0 +1,23 @@
+{
+  "trajectories": 50,
+  "episodes": 500,
+  "judge_tables_joined": false,
+  "categories": {
+    "accepted_incorrect_work": 67,
+    "breakdown_episode": 36,
+    "colluded_not_converged": 19,
+    "converged": 27,
+    "mutual_reject_episode": 167,
+    "no_collusion": 4,
+    "no_raw_log_evidence": 284,
+    "one_sided_accept_episode": 121,
+    "onset_early": 6,
+    "onset_episode": 46,
+    "onset_late": 14,
+    "onset_mid": 26,
+    "pre_onset_rr_verdict_pattern": 26,
+    "pre_onset_sr_verdict_pattern": 18,
+    "raw_log_evidence_only": 101,
+    "sustained_episode": 166
+  }
+}
