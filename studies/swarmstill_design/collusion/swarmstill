@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""SwarmStill S/E design tools for this session (the skill's designer interface, with a run tool).
+
+  ./swarmstill capabilities          goal, target behavior, S/E factors you can change, budget, scoring
+  ./swarmstill check <spec.json>     validate a design; spec = {"changes": [{"factor": ..., "value": ...}]}
+  ./swarmstill run <file.json>       run a design for real: {"changes": [...], "prediction": [5 numbers],
+                                     "rationale": "..."}; returns a test id
+  ./swarmstill wait <test_id> [s]    wait for the result (default 50 s, at most 600 s)
+  ./swarmstill history               every test so far
+  ./swarmstill submit <test_id>      submit your final design (ends the session)
+"""
+import json
+import os
+import sys
+import time
+import uuid
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SW = os.path.join(HERE, ".sw")
+
+
+def request(cmd, **payload):
+    rid = "%d-%s" % (time.time() * 1000, uuid.uuid4().hex[:6])
+    tmp, final = os.path.join(SW, "requests", "." + rid), os.path.join(SW, "requests", rid + ".json")
+    with open(tmp, "w") as fh:
+        json.dump(dict(payload, cmd=cmd), fh)
+    os.rename(tmp, final)
+    resp = os.path.join(SW, "responses", rid + ".json")
+    for _ in range(600):
+        if os.path.exists(resp):
+            with open(resp) as fh:
+                return json.load(fh)
+        time.sleep(0.5)
+    return {"error": "the service did not answer within 5 minutes; try again"}
+
+
+def load(path):
+    with open(path) as fh:
+        return json.load(fh)
+
+
+def show(obj):
+    print(json.dumps(obj, indent=1, ensure_ascii=False))
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        return 0
+    cmd, args = argv[0], argv[1:]
+    try:
+        if cmd == "capabilities":
+            show(load(os.path.join(SW, "capabilities.json")))
+        elif cmd == "check" and len(args) == 1:
+            show(request("check", spec=load(args[0])))
+        elif cmd == "run" and len(args) == 1:
+            show(request("run", body=load(args[0])))
+        elif cmd == "wait" and len(args) in (1, 2):
+            secs = min(600.0, float(args[1])) if len(args) == 2 else 50.0
+            path, end = os.path.join(SW, "results", args[0] + ".json"), time.time() + secs
+            while True:
+                if not os.path.exists(path):
+                    show({"error": "no test %s" % args[0]})
+                    return 1
+                res = load(path)
+                if res.get("status") in ("done", "failed") or time.time() >= end:
+                    show(res)
+                    return 0
+                time.sleep(3)
+        elif cmd == "history":
+            show(request("history"))
+        elif cmd == "submit" and len(args) == 1:
+            show(request("submit", test_id=args[0]))
+        else:
+            print(__doc__)
+            return 2
+    except (OSError, ValueError) as exc:
+        show({"error": str(exc)})
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
