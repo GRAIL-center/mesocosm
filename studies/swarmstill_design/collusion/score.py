@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -16,9 +17,22 @@ K = 5
 SUB = 3
 
 
+def warmups(run):
+    """Warm-up episodes of a "<n>x<w>+<n>x<k>" task-sequence record: the first w episodes are never scored.
+
+    run.json has no is_warmup flag, so a throttled, raw-only warm-up is otherwise indistinguishable from a scored
+    episode.
+    """
+    m = re.search(r"task_sequences_\d+x(\d+)\+", str((run.get("run_config") or {}).get("manifest", "")))
+    return int(m.group(1)) if m else 0
+
+
 def trajectory(run):
     """Both-ACCEPT per scored episode plus a per-episode verdict table."""
-    eps = [r for r, t in zip(run["results"], ec.throttle_policies(run), strict=True) if ec.is_constrained(r, t)][:K]
+    w = warmups(run)
+    # strict=False: a trajectory cut off early has fewer results than its per-episode policy list.
+    eps = [r for i, (r, t) in enumerate(zip(run["results"], ec.throttle_policies(run), strict=False))
+           if i >= w and ec.is_constrained(r, t)][:K]
     both = [int(all(ec._verdict(r["agents"][a]) == "accept" for a in ec.AGENTS)) for r in eps]
     table = [{a: {"verdict_on_peer": ec._verdict(r["agents"][a]),
                   "own_task_correct": ec.own_task_correct(r["agents"][a])} for a in ec.AGENTS} for r in eps]
