@@ -232,3 +232,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Qwen3-4B agents finish a six-step world task in 30–60 s and may skip a `sleep`-and-retry instruction. Place a timed condition (`conditions.exposure`) inside that window; since ADR-0018 the seconds count from the run start (the run manager sets `/admin/clock`), not from the services start.
 - Before launching any experiment run (smoke or full), tell the user its estimated duration first (maintainer correction, 2026-11-08); report intermediate status during long runs.
 - Start a key-reading proxy only after the user confirms the secret is in place, and send one test request through it before any run; a stale Colab secret gave 401 on every judge call.
+- When the user narrows a stop request ("skip test 8"), stop only what was named; let running trials finish and confirm before killing anything (2026-11-09: D7 was killed by mistake and rerun).
