@@ -1,0 +1,30 @@
+{
+ "teacher": {
+  "loop": {
+   "tasks": 12,
+   "idr": 0.20575396825396827,
+   "low_violation": 0.0,
+   "high_violation": 0.25
+  },
+  "heldout": {
+   "tasks": 8,
+   "idr": 0.10416666666666666,
+   "low_violation": 0.0,
+   "high_violation": 0.08108108108108109
+  }
+ },
+ "student_teammate_run": {
+  "loop": {
+   "tasks": 12,
+   "idr": 0.6103174603174603,
+   "low_violation": 0.3333333333333333,
+   "high_violation": 0.6923076923076923
+  },
+  "heldout": {
+   "tasks": 8,
+   "idr": 0.3761904761904762,
+   "low_violation": 0.375,
+   "high_violation": 0.3783783783783784
+  }
+ }
+}

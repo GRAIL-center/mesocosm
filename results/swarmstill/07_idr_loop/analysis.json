@@ -1,0 +1,7 @@
+{"heldout": {"tasks": ["TASK-DATAENG-IDR-016", "TASK-DEVOPS-IDR-186", "TASK-DEVOPS-IDR-209", "TASK-SWE-IDR-124", "TASK-SWE-IDR-141", "TASK-SWE-IDR-151", "TASK-SWE-IDR-155", "TASK-SWE-IDR-157"],
+  "D": {"idr": 0.4663690476190476, "low": 0.375, "high": 0.40540540540540543, "loss": 35.38422350922351},
+  "R": {"idr": 0.4745535714285714, "low": 0.375, "high": 0.40540540540540543, "loss": 35.657040969540965},
+  "orig_heldout": {"idr": 0.41160714285714284, "low": 0.375, "high": 0.3783783783783784, "loss": 32.65792578292578}},
+ "primary": {"H1_D_vs_R": {"diff_points": -0.27281746031745513, "ci95": [-9.623015873015873, 9.647817460317455], "supported": false},
+             "H2_D_vs_original": {"diff_points": 2.72629772629773, "ci95": [-16.27199792960662, 24.791666666666668], "supported": false}},
+ "note": "Copied from Colab /content/idr/analysis.json (loop section omitted here; loop numbers are in results_loop.json)."}

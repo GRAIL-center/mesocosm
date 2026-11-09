@@ -1,0 +1,179 @@
+{
+ "target_loop": {
+  "idr": 0.206,
+  "low": 0.0,
+  "high": 0.25
+ },
+ "original": {
+  "loop": {
+   "idr": 0.585,
+   "low": 0.333,
+   "high": 0.673,
+   "loss": 37.8
+  },
+  "heldout": {
+   "idr": 0.412,
+   "low": 0.375,
+   "high": 0.378
+  }
+ },
+ "D": [
+  {
+   "test": 1,
+   "design": "chain/1/original",
+   "idr": 0.488,
+   "low": 0.25,
+   "high": 0.577,
+   "loss": 28.6,
+   "pred": [
+    0.4,
+    0.2,
+    0.48
+   ]
+  },
+  {
+   "test": 2,
+   "design": "chain/0.5/original",
+   "idr": 0.628,
+   "low": 0.5,
+   "high": 0.692,
+   "loss": 45.5,
+   "pred": [
+    0.35,
+    0.15,
+    0.42
+   ]
+  },
+  {
+   "test": 3,
+   "design": "chain/2/original",
+   "idr": 0.603,
+   "low": 0.417,
+   "high": 0.654,
+   "loss": 40.6,
+   "pred": [
+    0.4,
+    0.18,
+    0.48
+   ]
+  },
+  {
+   "test": 4,
+   "design": "chain/1/none",
+   "idr": 0.27,
+   "low": 0.167,
+   "high": 0.308,
+   "loss": 9.6,
+   "pred": [
+    0.36,
+    0.25,
+    0.38
+   ]
+  },
+  {
+   "test": 5,
+   "design": "original/1/none",
+   "idr": 0.374,
+   "low": 0.333,
+   "high": 0.423,
+   "loss": 22.5,
+   "pred": [
+    0.33,
+    0.25,
+    0.38
+   ]
+  },
+  {
+   "test": 6,
+   "design": "chain/1/none (repeat)",
+   "idr": 0.314,
+   "low": 0.333,
+   "high": 0.327,
+   "loss": 17.3,
+   "pred": [
+    0.3,
+    0.2,
+    0.33
+   ]
+  },
+  {
+   "test": 7,
+   "design": "full/1/none",
+   "idr": 0.501,
+   "low": 0.333,
+   "high": 0.577,
+   "loss": 31.9,
+   "pred": [
+    0.35,
+    0.3,
+    0.4
+   ]
+  }
+ ],
+ "R": [
+  {
+   "test": 1,
+   "design": "chain/2/none",
+   "idr": 0.259,
+   "low": 0.167,
+   "high": 0.288,
+   "loss": 8.6
+  },
+  {
+   "test": 2,
+   "design": "root_broadcast/1.5/original",
+   "idr": 0.595,
+   "low": 0.333,
+   "high": 0.596,
+   "loss": 35.6
+  },
+  {
+   "test": 3,
+   "design": "full/1/original",
+   "idr": 0.634,
+   "low": 0.417,
+   "high": 0.712,
+   "loss": 43.5
+  },
+  {
+   "test": 4,
+   "design": "root_broadcast/2/original",
+   "idr": 0.682,
+   "low": 0.417,
+   "high": 0.769,
+   "loss": 47.1
+  },
+  {
+   "test": 5,
+   "design": "root_broadcast/0.5/none",
+   "idr": 0.394,
+   "low": 0.167,
+   "high": 0.462,
+   "loss": 18.9
+  },
+  {
+   "test": 6,
+   "design": "root_broadcast/2/none",
+   "idr": 0.426,
+   "low": 0.5,
+   "high": 0.423,
+   "loss": 29.8
+  },
+  {
+   "test": 7,
+   "design": "root_broadcast/1/original",
+   "idr": 0.56,
+   "low": 0.25,
+   "high": 0.654,
+   "loss": 33.6
+  },
+  {
+   "test": 8,
+   "design": "full/0.5/none",
+   "idr": 0.489,
+   "low": 0.25,
+   "high": 0.577,
+   "loss": 28.7
+  }
+ ]
+}

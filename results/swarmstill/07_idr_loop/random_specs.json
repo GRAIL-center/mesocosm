@@ -1,0 +1,42 @@
+[
+ {
+  "topology": "chain",
+  "turns": 2,
+  "escalation": "none"
+ },
+ {
+  "topology": "root_broadcast",
+  "turns": 1.5,
+  "escalation": "original"
+ },
+ {
+  "topology": "full",
+  "turns": 1,
+  "escalation": "original"
+ },
+ {
+  "topology": "root_broadcast",
+  "turns": 2,
+  "escalation": "original"
+ },
+ {
+  "topology": "root_broadcast",
+  "turns": 0.5,
+  "escalation": "none"
+ },
+ {
+  "topology": "root_broadcast",
+  "turns": 2,
+  "escalation": "none"
+ },
+ {
+  "topology": "root_broadcast",
+  "turns": 1,
+  "escalation": "original"
+ },
+ {
+  "topology": "full",
+  "turns": 0.5,
+  "escalation": "none"
+ }
+]
