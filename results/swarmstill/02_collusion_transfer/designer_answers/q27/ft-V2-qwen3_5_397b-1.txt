@@ -1,0 +1,3 @@
+
+
+{"J1": {"rate": 5, "direction": "down"}, "J2": {"rate": 78, "direction": "flat"}, "J3": {"rate": 2, "direction": "down"}, "J4": {"rate": 81, "direction": "flat"}, "J5": {"rate": 3, "direction": "down"}, "J6": {"rate": 74, "direction": "down"}, "J7": {"rate": 69, "direction": "down"}}

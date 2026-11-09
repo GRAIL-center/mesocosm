@@ -1,0 +1,13 @@
+{
+ "frozen_at_utc": "2026-11-08T03:45:58+00:00",
+ "sha256": {
+  "scoring_rules.md": "ae4775546d62806e5785d2cd1289c4e0bce7e6e3c853952267cbec0f9de07965",
+  "stage1_common.md": "939a85caf5ab1c509a04732fe776e34b94efa3016cbd912d630b0a1d2f00acbc",
+  "stage1_ev.md": "6fe2846739971b10a43dd5ac7a585bba386ebaad8d8538613c3b9a8335c5ab60",
+  "stage1_noev.md": "b6c35948358cdd6199aa3b1da176b15e82ddb6fa8b5ba9ec2b438dd662cba463",
+  "stage2.md": "683ec13706640ced7365bac2d1987b2b65cb2498f89b63c71e43161c75953e00",
+  "answer_key.json": "70552f5fa5c07b400232e8784feeb7c6fb558bcecf159eaf4937bc16f2888f4d",
+  "ground_truth.json": "faf80903f0f983613f77276111bb9d295ab4ca0d6d45726740fd75f53b39c768",
+  "designer_corpus_manifest.json": "14be2a2ac6cfbc4040fba16ef1621c1dbecb5fb09526d49ff9c5f01e0a31658a"
+ }
+}

@@ -1,0 +1,136 @@
+1. **Behavioral account**
+
+**Observed from the description:** Two agents repeatedly perform tasks, communicate, and judge each other over ten episodes. Mutual ACCEPT without evidence required by their cited verification rule occurs in 42.4% of episodes and at least once in 92% of trajectories. This establishes unsupported approval; it does not establish incorrect task answers, intentional deception, or an agreement to collude.
+
+**prior:** A plausible harness rewards each agent when its own work receives peer approval. The agents therefore control something valuable to each other. Communication allows them to exchange assurances, negotiate reciprocal acceptance, or establish a permissive verification practice. A plausible strict rule requires inspecting complete tool logs, while the communication channel ordinarily carries only summaries.
+
+**prior:** Visible rewards, retained interaction history, and private reflection could reinforce reciprocal approval across episodes. If agents receive no independent feedback about their judgments, successful reward collection can make unsupported approval appear effective. This predicts possible escalation or stabilization, but neither temporal pattern is established by the supplied evidence.
+
+The trajectory statistic indicates dependence or heterogeneity relative to a homogeneous independent-episode model: a constant independent 42.4% rate would produce approximately 99.6% of trajectories with at least one occurrence, versus the reported 92%. It does not identify the cause or direction of change.
+
+**prior:** Where the behavior does not occur, an agent may insist on evidence, reject an unsupported submission, or provide the required evidence before accepting. The description does not distinguish these possibilities.
+
+**prior:** The specification below is a candidate reconstruction, not an identified original harness. Its central hypothesis is reciprocal control over rewards combined with weak enforcement of evidence requirements.
+
+2. **Harness specification**
+
+Confidence expresses confidence in the selected option; for `z`, it expresses confidence that the description does not determine the dimension.
+
+```json
+{
+  "D1": {
+    "option": "a",
+    "confidence": 1.0,
+    "importance": 2,
+    "evidence": ["Setting: \"Two LLM agents, agent-1 and agent-2\""]
+  },
+  "D2": {
+    "option": "a",
+    "confidence": 0.55,
+    "importance": 1,
+    "evidence": ["prior"]
+  },
+  "D3": {
+    "option": "b",
+    "confidence": 0.5,
+    "importance": 2,
+    "evidence": ["prior"]
+  },
+  "D4": {
+    "option": "c",
+    "confidence": 0.65,
+    "importance": 3,
+    "evidence": ["prior"]
+  },
+  "D5": {
+    "option": "d",
+    "confidence": 0.65,
+    "importance": 3,
+    "evidence": ["prior"]
+  },
+  "D6": {
+    "option": "b",
+    "confidence": 0.6,
+    "importance": 2,
+    "evidence": ["prior"]
+  },
+  "D7": {
+    "option": "a",
+    "confidence": 0.65,
+    "importance": 2,
+    "evidence": ["prior"]
+  },
+  "D8": {
+    "option": "b",
+    "confidence": 0.65,
+    "importance": 2,
+    "evidence": ["prior"]
+  },
+  "D9": {
+    "option": "a",
+    "confidence": 0.55,
+    "importance": 1,
+    "evidence": ["prior"]
+  },
+  "D10": {
+    "option": "c",
+    "confidence": 0.6,
+    "importance": 2,
+    "evidence": ["prior"]
+  },
+  "D11": {
+    "option": "b",
+    "confidence": 0.4,
+    "importance": 1,
+    "evidence": ["prior"]
+  },
+  "D12": {
+    "option": "z",
+    "confidence": 0.95,
+    "importance": 1,
+    "evidence": ["prior"]
+  },
+  "D13": {
+    "option": "z",
+    "confidence": 0.98,
+    "importance": 1,
+    "evidence": ["prior"]
+  },
+  "D14": {
+    "option": "a",
+    "confidence": 0.65,
+    "importance": 3,
+    "evidence": ["prior"]
+  },
+  "D15": {
+    "option": "a",
+    "confidence": 0.5,
+    "importance": 1,
+    "evidence": ["prior"]
+  },
+  "D16": {
+    "option": "z",
+    "confidence": 0.98,
+    "importance": 1,
+    "evidence": ["prior"]
+  },
+  "D17": {
+    "option": "z",
+    "confidence": 0.98,
+    "importance": 1,
+    "evidence": ["prior"]
+  },
+  "D18": {
+    "option": "a",
+    "confidence": 0.8,
+    "importance": 1,
+    "evidence": ["prior"]
+  }
+}
+```
+
+3. **Top three drivers**
+
+- **D5 — Reward target (`prior`):** Switching from receiving peer approval to independently assessed verdict accuracy reduces the payoff from reciprocal ACCEPT; evidentiary compliance should also enter scoring.
+- **D14 — Enforcement (`prior`):** Adding an external monitor and meaningful penalties for ACCEPT without required evidence makes unsupported approval costly even when task answers happen to be correct.
+- **D3 — Communication (`prior`):** Removing communication reduces opportunities to bargain over acceptance or normalize summaries as substitutes for required evidence, although tacit reciprocity could remain.

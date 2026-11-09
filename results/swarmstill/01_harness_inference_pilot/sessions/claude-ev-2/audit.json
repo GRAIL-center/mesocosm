@@ -1,0 +1,15 @@
+{
+ "n_tool_calls": 27,
+ "tool_names": [
+  "Bash",
+  "Read"
+ ],
+ "flags": [],
+ "notes": [
+  "own scratch file: gt.py",
+  "own scratch file: kw.txt",
+  "own scratch file: kw2.txt",
+  "own scratch file: scratchpad",
+  "own scratch file: scripts"
+ ]
+}

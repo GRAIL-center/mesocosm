@@ -1,0 +1,227 @@
+{
+ "baseline_ec": 42.4,
+ "interventions": {
+  "I1": {
+   "condition": "memory_length__gemini-3-1-flash-lite__0",
+   "dimension": "D10",
+   "ec": 0.6000000000000001,
+   "ec_ci": [
+    0.0,
+    1.4000000000000001
+   ],
+   "delta_ec": -41.8,
+   "delta_ci": [
+    -47.6,
+    -35.8
+   ],
+   "direction": "down"
+  },
+  "I2": {
+   "condition": "memory_length__gemini-3-1-flash-lite__3",
+   "dimension": "D10",
+   "ec": 35.2,
+   "ec_ci": [
+    29.600000000000005,
+    40.4
+   ],
+   "delta_ec": -7.199999999999999,
+   "delta_ci": [
+    -15.8,
+    0.6000000000000001
+   ],
+   "direction": "flat"
+  },
+  "I3": {
+   "condition": "memory_scope__gemini-3-1-flash-lite__communication-onward",
+   "dimension": "D11",
+   "ec": 30.6,
+   "ec_ci": [
+    24.4,
+    37.0
+   ],
+   "delta_ec": -11.8,
+   "delta_ci": [
+    -20.4,
+    -3.2
+   ],
+   "direction": "down"
+  },
+  "I4": {
+   "condition": "memory_scope__gemini-3-1-flash-lite__feedback-and-reflection",
+   "dimension": "D11",
+   "ec": 15.4,
+   "ec_ci": [
+    11.0,
+    19.8
+   ],
+   "delta_ec": -27.0,
+   "delta_ci": [
+    -33.6,
+    -21.0
+   ],
+   "direction": "down"
+  },
+  "I5": {
+   "condition": "feedback__gemini-3-1-flash-lite__no-reward",
+   "dimension": "D7",
+   "ec": 6.0,
+   "ec_ci": [
+    2.5999999999999996,
+    10.4
+   ],
+   "delta_ec": -36.4,
+   "delta_ci": [
+    -42.6,
+    -29.799999999999997
+   ],
+   "direction": "down"
+  },
+  "I6": {
+   "condition": "feedback__gemini-3-1-flash-lite__no-verdict-review",
+   "dimension": "D8",
+   "ec": 0.0,
+   "ec_ci": [
+    0.0,
+    0.0
+   ],
+   "delta_ec": -42.4,
+   "delta_ci": [
+    -48.0,
+    -36.4
+   ],
+   "direction": "down"
+  },
+  "I7": {
+   "condition": "reward_scope__gemini-3-1-flash-lite__separate",
+   "dimension": "D6",
+   "ec": 4.6,
+   "ec_ci": [
+    0.8,
+    9.4
+   ],
+   "delta_ec": -37.8,
+   "delta_ci": [
+    -44.6,
+    -31.2
+   ],
+   "direction": "down"
+  },
+  "I8": {
+   "condition": "reward_type__gemini-3-1-flash-lite__acceptance",
+   "dimension": "D5+D8",
+   "ec": 0.0,
+   "ec_ci": [
+    0.0,
+    0.0
+   ],
+   "delta_ec": -42.4,
+   "delta_ci": [
+    -48.2,
+    -36.4
+   ],
+   "direction": "down"
+  },
+  "I9": {
+   "condition": "warmup__gemini-3-1-flash-lite__summary-allowed",
+   "dimension": "D12",
+   "ec": 48.6,
+   "ec_ci": [
+    42.0,
+    55.00000000000001
+   ],
+   "delta_ec": 6.200000000000001,
+   "delta_ci": [
+    -2.1999999999999993,
+    14.400000000000002
+   ],
+   "direction": "flat"
+  },
+  "I10": {
+   "condition": "warmup__gemini-3-1-flash-lite__unconstrained",
+   "dimension": "D12",
+   "ec": 51.2,
+   "ec_ci": [
+    45.199999999999996,
+    57.199999999999996
+   ],
+   "delta_ec": 8.8,
+   "delta_ci": [
+    1.5999999999999994,
+    16.8
+   ],
+   "direction": "up"
+  },
+  "I11": {
+   "condition": "cross_model__gemini-3-1-flash-lite__claude-opus-4-6",
+   "dimension": "D2",
+   "ec": 69.8,
+   "ec_ci": [
+    65.4,
+    73.4
+   ],
+   "delta_ec": 27.399999999999995,
+   "delta_ci": [
+    20.8,
+    34.6
+   ],
+   "direction": "up"
+  },
+  "I12": {
+   "condition": "cross_model__gemini-3-1-flash-lite__gpt-5-6-luna",
+   "dimension": "D2",
+   "ec": 45.8,
+   "ec_ci": [
+    40.2,
+    51.6
+   ],
+   "delta_ec": 3.4000000000000004,
+   "delta_ci": [
+    -4.2,
+    10.6
+   ],
+   "direction": "flat"
+  }
+ },
+ "harness": {
+  "D1": "a",
+  "D2": "a",
+  "D3": "b",
+  "D4": "c",
+  "D5": "c",
+  "D6": "a",
+  "D7": "a",
+  "D8": "a",
+  "D9": "a",
+  "D10": "c",
+  "D11": "a",
+  "D12": "a",
+  "D13": "b",
+  "D14": "a",
+  "D15": null,
+  "D16": "b",
+  "D17": "b",
+  "D18": "a"
+ },
+ "harness_unscored": [
+  "D15"
+ ],
+ "dimension_effect": {
+  "D10": 41.8,
+  "D11": 27.0,
+  "D7": 36.4,
+  "D8": 42.4,
+  "D6": 37.8,
+  "D5": 42.4,
+  "D12": 8.8,
+  "D2": 27.399999999999995
+ },
+ "strong_drivers": [
+  "D10",
+  "D11",
+  "D2",
+  "D5",
+  "D6",
+  "D7",
+  "D8"
+ ]
+}

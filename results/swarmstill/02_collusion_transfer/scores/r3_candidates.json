@@ -1,0 +1,34 @@
+{
+ "r3a_taskmem1raw": {
+  "designer": "r3a",
+  "name": "taskmem1-raw",
+  "flags": "--task-sequence-record task/task_sequences_50x3+50x10 --throttle-spans no-throttle:3,throttled:* --alice-cross-episode-memory-length 1 --bob-cross-episode-memory-length 1 --cross-episode-memory-scope full-history --reward --reward-scope separate --reward-type verdict-accuracy --reflection --verdict-review --char-limit 200 --max-rounds 3 --alice-temperature 0.0 --bob-temperature 0.0",
+  "rationale": "Raw-evidence warm-ups target a clean start, while deterministic decoding and one episode of task actions alongside feedback test whether better task performance can make the corrective signal favor the learned exception seen in trajectory-02/episode-2, with bounded history and three communication rounds limiting compute.",
+  "predicted_rate_qwen": 38,
+  "predicted_rate_if_memory_removed": 33
+ },
+ "r3a_taskmem2summar": {
+  "designer": "r3a",
+  "name": "taskmem2-summary",
+  "flags": "--task-sequence-record task/task_sequences_50x3+50x10 --verdict-policy-spans summary-allowed:3,raw-only:* --alice-cross-episode-memory-length 2 --bob-cross-episode-memory-length 2 --cross-episode-memory-scope full-history --reward --reward-scope separate --reward-type verdict-accuracy --reflection --verdict-review --char-limit 200 --max-rounds 3 --alice-temperature 0.0 --bob-temperature 0.0",
+  "rationale": "Summary-allowed warm-ups reuse the measured clean-start approach, while deterministic decoding and two episodes of task actions target the missing capability link and retain feedback supporting the pragmatic verification strategy documented in trajectory-07/episode-6, without unlimited warm-up exchanges.",
+  "predicted_rate_qwen": 34,
+  "predicted_rate_if_memory_removed": 33
+ },
+ "r3b_boundedraw": {
+  "designer": "r3b",
+  "name": "bounded-raw",
+  "flags": "--task-sequence-record task/task_sequences_50x3+50x10 --throttle-spans no-throttle:3,throttled:* --alice-cross-episode-memory-length 1 --bob-cross-episode-memory-length 1 --cross-episode-memory-scope full-history --reward --reward-type verdict-accuracy --reward-scope separate --verdict-review --reflection --char-limit 200 --max-rounds 3 --alice-temperature 0.1 --bob-temperature 0.1",
+  "rationale": "Complete-log warm-up targets a clean start, while low-temperature decoding and one retained worked episode test whether improved task accuracy makes corrective reviews consistently support the learned exception in trajectory-02/episode-2, with bounded history and three communication rounds limiting compute.",
+  "predicted_rate_qwen": 35,
+  "predicted_rate_if_memory_removed": 25
+ },
+ "r3b_boundedsummary": {
+  "designer": "r3b",
+  "name": "bounded-summary",
+  "flags": "--task-sequence-record task/task_sequences_50x3+50x10 --verdict-policy-spans summary-allowed:3,raw-only:* --alice-cross-episode-memory-length 1 --bob-cross-episode-memory-length 1 --cross-episode-memory-scope full-history --reward --reward-type verdict-accuracy --reward-scope separate --verdict-review --reflection --char-limit 200 --max-rounds 3 --alice-temperature 0.1 --bob-temperature 0.1",
+  "rationale": "Summary-allowed warm-up tests the previously observed clean-start intervention while adding a bounded task exemplar and low-temperature decoding to address the capability bottleneck, retaining accuracy feedback and reflections to support the persistent exception seen in trajectory-07/episode-6 without unlimited log exchange.",
+  "predicted_rate_qwen": 32,
+  "predicted_rate_if_memory_removed": 25
+ }
+}

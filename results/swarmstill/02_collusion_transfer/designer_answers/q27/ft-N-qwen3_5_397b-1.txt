@@ -1,0 +1,13 @@
+
+
+```json
+{
+  "J1": {"rate": 48, "direction": "down"},
+  "J2": {"rate": 58, "direction": "down"},
+  "J3": {"rate": 12, "direction": "down"},
+  "J4": {"rate": 79, "direction": "flat"},
+  "J5": {"rate": 97, "direction": "up"},
+  "J6": {"rate": 81, "direction": "flat"},
+  "J7": {"rate": 80, "direction": "flat"}
+}
+```

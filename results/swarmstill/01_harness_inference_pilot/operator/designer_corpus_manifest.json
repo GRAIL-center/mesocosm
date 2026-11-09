@@ -1,0 +1,152 @@
+{
+  "condition": "main__gemini-3-1-flash-lite",
+  "selection": "seeded random sample of released runs, not by outcome",
+  "seed": 20261107,
+  "runs_selected": 20,
+  "runs_available": 50,
+  "projection": {
+    "included": [
+      "task tool calls (raw log)",
+      "delivered messages",
+      "verdict and reasoning",
+      "task family"
+    ],
+    "excluded": [
+      "system, task, judging and verdict prompts",
+      "outcome feedback",
+      "private reflections",
+      "hidden reasoning",
+      "run configuration",
+      "models and usage",
+      "rewards and correctness",
+      "task ids and paths"
+    ],
+    "result_char_limit": 2000,
+    "name_replacement": {
+      "alice": "agent-1",
+      "bob": "agent-2"
+    }
+  },
+  "mapping": [
+    {
+      "public_file": "trajectory-01.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep040.json.gz",
+      "source_sha256": "04073cb40bb4a97106ceb416b66f52e8d96ec9a7146ec2f8dc5725bbdd4cece8",
+      "public_sha256": "5b500515a04d2ece8a8aa122902e72a5f4d4cd2534f7ade437c24f113a39071d"
+    },
+    {
+      "public_file": "trajectory-02.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep014.json.gz",
+      "source_sha256": "9c360ec5696ead2baa3e99bd8719828fc93a385b300a279ff4de831bbc0bad1f",
+      "public_sha256": "7cbf9063e15475f81ddb0c13ec8e15c9021cfef13c9b53544699a1f7e3aa14b9"
+    },
+    {
+      "public_file": "trajectory-03.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep010.json.gz",
+      "source_sha256": "8e7e7fd9260c34cad8e9a7e4aad696d16d3bfa995890e9f142aa632c5cc22fd6",
+      "public_sha256": "da90cb54bdf44112a4d0394d48379070bd429912dfe8f12fced6fc52ff3f022c"
+    },
+    {
+      "public_file": "trajectory-04.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep029.json.gz",
+      "source_sha256": "748a8e7d7636a6477f159bc4f5fed8cc3cce30f56b25b66212a4061aae4d53b0",
+      "public_sha256": "352ee1c76ebb65ae1a2d568c720818194d341971ad67357ed2541611442be6d7"
+    },
+    {
+      "public_file": "trajectory-05.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep037.json.gz",
+      "source_sha256": "02d61a9935dc5c0be869890f86fbde75971cc8795cdfe403c22068d3e90cdab9",
+      "public_sha256": "59d850419308177e8582f0ea8c65c57abbbc5edb6f954946f55f943240f26d05"
+    },
+    {
+      "public_file": "trajectory-06.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep003.json.gz",
+      "source_sha256": "a983d5feb9ac76e3f5145127412c8d0314a8fabe60f044c022598dc9624e137e",
+      "public_sha256": "d77095ad6bdfd4b4611cd5ccdaf989bade5c8c54f31371ffc8066dd7d2b920e2"
+    },
+    {
+      "public_file": "trajectory-07.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep005.json.gz",
+      "source_sha256": "1fab2bc34f5e3e362c1f264aa40086183ca3213c61b1a34fcdf9fb7321ab5633",
+      "public_sha256": "aa785991421ba1023185af9e21e42ade46690dde8b697e886644d6086ae8ca91"
+    },
+    {
+      "public_file": "trajectory-08.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep050.json.gz",
+      "source_sha256": "1761af5d7b3e8187e7e10a8df14382ba340993803ea8791530b0656238635ce8",
+      "public_sha256": "a1fa6f90e93cc3408108a3ec8c75b3787b7f091c543782ec0a7982db913f7d9a"
+    },
+    {
+      "public_file": "trajectory-09.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep045.json.gz",
+      "source_sha256": "4b6eae62f9555d030ed6848d3b32feee5c8e035876f2c7e6467be611a19a23f3",
+      "public_sha256": "11eb192d85f08721dbd55148c921df310f01c716737b736a430d3149379dcbb1"
+    },
+    {
+      "public_file": "trajectory-10.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep026.json.gz",
+      "source_sha256": "ab828297e00e02aea5d20155b91e00f0a5ae3ee27d9c483be0deb5511353ac91",
+      "public_sha256": "629ddc1ca6d99d67fd498a7109f9fea7cde833261a8be01f5b62189408b392d3"
+    },
+    {
+      "public_file": "trajectory-11.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep034.json.gz",
+      "source_sha256": "2e352a86bbeeee750670a90e028478e88f866fe91d897d4ce5fc38d253a7cf29",
+      "public_sha256": "427efdfd8139474ea43aceae237860f9495df7400d123662637f693302e78db6"
+    },
+    {
+      "public_file": "trajectory-12.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep016.json.gz",
+      "source_sha256": "f6f84a2ba85129d3870a70fb7e8b32857862a12c2bbfdcaf211132fdf211c2a5",
+      "public_sha256": "c87d3888778c775029354c7d6ea0334a68c0d7d4469e5f541c36c134fc72b2e9"
+    },
+    {
+      "public_file": "trajectory-13.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep041.json.gz",
+      "source_sha256": "f14f79d111f58e8421180115056a49a02579700021064f4fcda89ea98b67b46f",
+      "public_sha256": "40c1a9d67cbdb8d67cc3dfb4e0d6eb116e901e15e13aa29660310a7564e5e0b8"
+    },
+    {
+      "public_file": "trajectory-14.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep039.json.gz",
+      "source_sha256": "f4a77b17f33ebdeedfd8d64ccfec2af78409a2c0183009ee0b550f584fd00bcf",
+      "public_sha256": "34fdb820478275155749bb2726b0f8e35aad793d67509a868356abf34dce372c"
+    },
+    {
+      "public_file": "trajectory-15.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep019.json.gz",
+      "source_sha256": "9d785b454ec76eaaa97ced0f9bf4a7851a3c19dffb564c06d78911cf125dea69",
+      "public_sha256": "5c27d46fd9c6e44fd1d293e64c61bf67895925991b081270c24aa72b637b12d0"
+    },
+    {
+      "public_file": "trajectory-16.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep043.json.gz",
+      "source_sha256": "7c4ece93b2b29297f20bc393ba059211085e723b724e347e36937e8684c60a7f",
+      "public_sha256": "e285e6b9dc2a43361a54599d0c5bc46539b8eb5a7a829dd71c16d9e39dfc07b4"
+    },
+    {
+      "public_file": "trajectory-17.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep020.json.gz",
+      "source_sha256": "66ccf944a8cd8ece43576a5994d655c14e8e36a64c3629d523391cf62b450989",
+      "public_sha256": "fb0dfcff7e3eae626188a86f130deec91a45aef12ba077b7cde0766524f07de8"
+    },
+    {
+      "public_file": "trajectory-18.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep025.json.gz",
+      "source_sha256": "d03f0c6833bfb0bbe2bc249eae82f18c681166169c939868025f3441f2136ba9",
+      "public_sha256": "072ea5117f04227dd0fda07a1761bdfb74d8d8fc276f927f3f566239060b01c8"
+    },
+    {
+      "public_file": "trajectory-19.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep049.json.gz",
+      "source_sha256": "7ac2a423d2ebd9ce19ffa16305540a19409d7d1ae1d9453feb775bb30f86f75c",
+      "public_sha256": "65e8be8a145c8d25bb6fd32127dd6feb4163e770e5b7b16dfcbae98c875bcd5a"
+    },
+    {
+      "public_file": "trajectory-20.json",
+      "source_trace": "traces/main/main__gemini-3-1-flash-lite/rep036.json.gz",
+      "source_sha256": "60bfbb96d23d09a86079254ea1b9f08e9c5cd7207df40ee9c176952ae6ac6c4f",
+      "public_sha256": "f48a0a40db29ad2de041654b1bc1decdee78f119a3558ed76fd6e022deacb244"
+    }
+  ]
+}

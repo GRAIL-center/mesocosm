@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Test environment designs on the student team (real runs on a GPU machine).
+
+  ./acbdesign info                    target, student baseline, design space, budget
+  ./acbdesign submit <file.json>      start a test; the file is
+                                      {"spec": {...}, "prediction": {"branching_tree": x, "converging_dag": y,
+                                       "custom_graph": z}, "rationale": "..."}
+  ./acbdesign wait <test_id> [secs]   wait for a result (default 50 s, at most 600 s)
+  ./acbdesign history                 every test so far
+  ./acbdesign finalize <test_id>      choose your final design (ends the session)
+"""
+import json
+import os
+import sys
+import time
+import uuid
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ACB = os.path.join(HERE, ".acb")
+
+
+def request(cmd, **payload):
+    rid = "%d-%s" % (time.time() * 1000, uuid.uuid4().hex[:6])
+    req_dir, resp = os.path.join(ACB, "requests"), os.path.join(ACB, "responses", rid + ".json")
+    tmp = os.path.join(req_dir, "." + rid)
+    with open(tmp, "w") as fh:
+        json.dump(dict(payload, cmd=cmd), fh)
+    os.rename(tmp, os.path.join(req_dir, rid + ".json"))
+    for _ in range(600):
+        if os.path.exists(resp):
+            with open(resp) as fh:
+                return json.load(fh)
+        time.sleep(0.5)
+    return {"error": "the test service did not answer within 5 minutes; try again"}
+
+
+def show(obj):
+    print(json.dumps(obj, indent=1, ensure_ascii=False))
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        return 0
+    cmd, args = argv[0], argv[1:]
+    if cmd == "info":
+        with open(os.path.join(ACB, "info.json")) as fh:
+            show(json.load(fh))
+    elif cmd == "submit" and len(args) == 1:
+        try:
+            with open(args[0]) as fh:
+                body = json.load(fh)
+        except (OSError, ValueError) as exc:
+            show({"error": "cannot read %s: %s" % (args[0], exc)})
+            return 1
+        show(request("submit", body=body))
+    elif cmd == "wait" and len(args) in (1, 2):
+        secs = min(600.0, float(args[1])) if len(args) == 2 else 50.0
+        path, end = os.path.join(ACB, "results", args[0] + ".json"), time.time() + secs
+        while True:
+            if not os.path.exists(path):
+                show({"error": "no test %s" % args[0]})
+                return 1
+            with open(path) as fh:
+                res = json.load(fh)
+            if res.get("status") in ("done", "failed") or time.time() >= end:
+                show(res)
+                return 0
+            time.sleep(2)
+    elif cmd == "history":
+        show(request("history"))
+    elif cmd == "finalize" and len(args) == 1:
+        show(request("finalize", test_id=args[0]))
+    else:
+        print(__doc__)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

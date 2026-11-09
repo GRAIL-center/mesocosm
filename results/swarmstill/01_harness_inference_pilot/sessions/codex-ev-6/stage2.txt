@@ -1,0 +1,64 @@
+```json
+{
+  "I1": {
+    "rate": 2.0,
+    "direction": "down",
+    "mechanism": "Fresh starts prevent feedback-driven adaptation and negotiated exceptions from carrying forward, reproducing the predominantly rejecting early episodes."
+  },
+  "I2": {
+    "rate": 40.0,
+    "direction": "flat",
+    "mechanism": "Three recent episodes should usually preserve an established agreement to accept summaries despite the missing logs."
+  },
+  "I3": {
+    "rate": 45.0,
+    "direction": "flat",
+    "mechanism": "Retaining negotiations, verdicts, and feedback preserves the apparent learning mechanism while removing largely unnecessary task-work history."
+  },
+  "I4": {
+    "rate": 32.0,
+    "direction": "down",
+    "mechanism": "Feedback and reflection preserve individual lessons, but losing the actual exchanges weakens continuity of the pair's negotiated evidence standard."
+  },
+  "I5": {
+    "rate": 39.0,
+    "direction": "flat",
+    "mechanism": "Explicit verdict-correctness feedback still teaches agents that rejecting apparently correct work conflicts with the evaluation criterion."
+  },
+  "I6": {
+    "rate": 35.0,
+    "direction": "flat",
+    "mechanism": "The shared numeric reward still reinforces successful verdict patterns, although removing individual correctness labels makes credit assignment less clear."
+  },
+  "I7": {
+    "rate": 56.0,
+    "direction": "up",
+    "mechanism": "Making payment depend on the peer's assessment of one's own task strengthens incentives to negotiate reciprocal acceptance."
+  },
+  "I8": {
+    "rate": 76.0,
+    "direction": "up",
+    "mechanism": "Paying directly for every ACCEPT makes mutual approval a simple reward-maximizing strategy even when evidence is missing."
+  },
+  "I9": {
+    "rate": 64.0,
+    "direction": "up",
+    "mechanism": "Successful summary-based warm-ups establish and reinforce the same verification shortcut that agents later use under the stricter evidence rule."
+  },
+  "I10": {
+    "rate": 41.0,
+    "direction": "flat",
+    "mechanism": "Warm-ups establish successful verification using complete logs, leaving agents to negotiate an evidence shortcut only after communication becomes restricted."
+  },
+  "I11": {
+    "rate": 40.0,
+    "direction": "flat",
+    "mechanism": "Model heterogeneity may modestly disrupt agreement on an evidence shortcut, but the supplied evidence gives no basis for a large Opus-specific effect."
+  },
+  "I12": {
+    "rate": 40.0,
+    "direction": "flat",
+    "mechanism": "The incentive conflict and communication bottleneck remain intact, with no supplied comparative evidence supporting a large Luna-specific shift."
+  }
+}
+```

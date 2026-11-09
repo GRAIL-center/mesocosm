@@ -1,0 +1,212 @@
+{
+ "test_A": {
+  "rel_mae: V2 - N": {
+   "diff": -24.01772904283665,
+   "perm_p_one_sided": 0.007936507936507936,
+   "n_splits": 126,
+   "stratified_p_one_sided": 0.016666666666666666,
+   "stratified_splits": 60
+  },
+  "rel_mae: V2 - V1": {
+   "diff": -21.199528591924576,
+   "perm_p_one_sided": 0.007936507936507936,
+   "n_splits": 126,
+   "stratified_p_one_sided": 0.016666666666666666,
+   "stratified_splits": 60
+  },
+  "abs_mae: V2 - N": {
+   "diff": -19.688095238095237,
+   "perm_p_one_sided": 0.007936507936507936,
+   "n_splits": 126,
+   "stratified_p_one_sided": 0.016666666666666666,
+   "stratified_splits": 60
+  },
+  "abs_mae: V2 - V1": {
+   "diff": -17.583333333333336,
+   "perm_p_one_sided": 0.007936507936507936,
+   "n_splits": 126,
+   "stratified_p_one_sided": 0.016666666666666666,
+   "stratified_splits": 60
+  },
+  "per_item_abs_error_pp": {
+   "J1": {
+    "condition": "no_verdict_review",
+    "truth": 2.5,
+    "N": 58.9,
+    "V1": 45.3,
+    "V2": 6.0
+   },
+   "J2": {
+    "condition": "separate",
+    "truth": 0,
+    "N": 65,
+    "V1": 67.8,
+    "V2": 78.25
+   },
+   "J3": {
+    "condition": "mem0",
+    "truth": 0,
+    "N": 5.6,
+    "V1": 4.4,
+    "V2": 0.5
+   },
+   "J4": {
+    "condition": "no_reward",
+    "truth": 70.0,
+    "N": 9.8,
+    "V1": 9.8,
+    "V2": 10.25
+   },
+   "J5": {
+    "condition": "acceptance",
+    "truth": 0,
+    "N": 94.6,
+    "V1": 94,
+    "V2": 1.75
+   },
+   "J6": {
+    "condition": "mem3",
+    "truth": 76.66666666666667,
+    "N": 3.5333333333333288,
+    "V1": 3.199999999999997,
+    "V2": 3.9166666666666643
+   },
+   "J7": {
+    "condition": "fb_reflection",
+    "truth": 70.0,
+    "N": 7.8,
+    "V1": 6.0,
+    "V2": 6.75
+   }
+  },
+  "item_wilcoxon_V2_vs_N_abs": {
+   "n_nonzero": 7,
+   "W_plus": 8.0,
+   "p_two_sided": 0.375
+  },
+  "items_V2_better_by_10pp_or_more": [
+   "no_verdict_review",
+   "acceptance"
+  ],
+  "items_V2_worse": [
+   "separate"
+  ],
+  "leave_one_item_out_abs_diff_V2_minus_N": {
+   "no_verdict_review": -14.152777777777777,
+   "separate": -25.177777777777777,
+   "mem0": -22.119444444444444,
+   "no_reward": -23.044444444444444,
+   "acceptance": -7.494444444444444,
+   "mem3": -23.03333333333333,
+   "fb_reflection": -22.794444444444444
+  },
+  "drop_J1_J5_abs_diff_V2_minus_N": 1.5866666666666671,
+  "n_sessions": {
+   "N": 5,
+   "V1": 5,
+   "V2": 4
+  },
+  "n_designer_families": 2,
+  "within_arm_session_sd_abs_mae": {
+   "N": 2.1770603658912844,
+   "V1": 4.033308033878038,
+   "V2": 0.700157902501553
+  }
+ },
+ "rounds_K5": {
+  "n_traj": {
+   "r1": 17,
+   "r2": 27,
+   "r3": 19
+  },
+  "n_harness": {
+   "r1": 5,
+   "r2": 6,
+   "r3": 4
+  },
+  "r2 vs r1": {
+   "ep1_counts": "5/27 vs 8/17",
+   "ep1_fisher_p_two_sided": 0.08743671853054784,
+   "ep1_cluster_boot": {
+    "diff_pp": -28.540305010893245,
+    "ci95_pp": [
+     -62.5,
+     3.3333333333333326
+    ],
+    "n_harness": [
+     6,
+     5
+    ]
+   },
+   "ep1_harness_perm": {
+    "harness_mean_diff_pp": -30.000000000000004,
+    "p_one_sided": 0.08874458874458875,
+    "n_splits": 462
+   },
+   "rise_cluster_boot": {
+    "diff_pp": 11.437908496732026,
+    "ci95_pp": [
+     -9.821428571428571,
+     36.458333333333336
+    ],
+    "n_harness": [
+     6,
+     5
+    ]
+   }
+  },
+  "r3 vs r1": {
+   "ep1_counts": "2/19 vs 8/17",
+   "ep1_fisher_p_two_sided": 0.024789448593675514,
+   "ep1_cluster_boot": {
+    "diff_pp": -36.53250773993808,
+    "ci95_pp": [
+     -65.94427244582043,
+     -7.739938080495357
+    ],
+    "n_harness": [
+     4,
+     5
+    ]
+   },
+   "ep1_harness_perm": {
+    "harness_mean_diff_pp": -37.083333333333336,
+    "p_one_sided": 0.07142857142857142,
+    "n_splits": 126
+   },
+   "rise_cluster_boot": {
+    "diff_pp": 13.777089783281731,
+    "ci95_pp": [
+     -5.882352941176471,
+     36.68730650154799
+    ],
+    "n_harness": [
+     4,
+     5
+    ]
+   }
+  }
+ },
+ "holm": {
+  "A: V2<N rel_mae (session perm, stratified)": {
+   "p": 0.016666666666666666,
+   "holm_p": 0.08333333333333333
+  },
+  "R: ep1 r3<r1 (Fisher)": {
+   "p": 0.024789448593675514,
+   "holm_p": 0.09915779437470205
+  },
+  "R: ep1 r3<r1 (harness perm)": {
+   "p": 0.07142857142857142,
+   "holm_p": 0.21428571428571427
+  },
+  "R: ep1 r2<r1 (Fisher)": {
+   "p": 0.08743671853054784,
+   "holm_p": 0.21428571428571427
+  },
+  "A: V2<N abs error (item Wilcoxon)": {
+   "p": 0.375,
+   "holm_p": 0.375
+  }
+ }
+}

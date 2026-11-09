@@ -1,0 +1,1 @@
+--cross-episode-memory-scope communication-onward --reward-scope separate --task-sequence-record task/task_sequences_50x3+50x10 --verdict-policy-spans summary-allowed:3,raw-only:* --alice-temperature 0.7 --bob-temperature 0.7

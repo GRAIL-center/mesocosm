@@ -1,0 +1,1 @@
+--alice-cross-episode-memory-length -1 --bob-cross-episode-memory-length -1 --cross-episode-memory-scope communication-onward --no-reward --verdict-review --no-reflection --char-limit 200 --max-rounds 5 --alice-temperature 0.3 --bob-temperature 0.3

@@ -1,0 +1,29 @@
+```json
+{
+  "q17": {
+    "C1": {"score": 0.55, "direction": "down"},
+    "C2": {"score": 0.85, "direction": "up"},
+    "C3": {"score": 0.43, "direction": "down"}
+  },
+  "q4": {
+    "C1": {"score": 0.58, "direction": "down"},
+    "C2": {"score": 0.91, "direction": "up"},
+    "C3": {"score": 0.47, "direction": "down"}
+  },
+  "q8": {
+    "C1": {"score": 0.70, "direction": "down"},
+    "C2": {"score": 0.95, "direction": "up"},
+    "C3": {"score": 0.62, "direction": "down"}
+  },
+  "g4": {
+    "C1": {"score": 0.80, "direction": "flat"},
+    "C2": {"score": 0.95, "direction": "up"},
+    "C3": {"score": 0.72, "direction": "down"}
+  },
+  "l3": {
+    "C1": {"score": 0.54, "direction": "down"},
+    "C2": {"score": 0.83, "direction": "up"},
+    "C3": {"score": 0.44, "direction": "down"}
+  }
+}
+```

@@ -1,0 +1,30 @@
+
+
+```json
+{
+  "M1": {
+    "I1": {"rate": 0.6, "direction": "down"},
+    "I2": {"rate": 18, "direction": "down"},
+    "I3": {"rate": 28, "direction": "down"},
+    "I4": {"rate": 35, "direction": "down"},
+    "I5": {"rate": 22, "direction": "down"},
+    "I6": {"rate": 0.0, "direction": "down"},
+    "I7": {"rate": 55, "direction": "up"},
+    "I8": {"rate": 68, "direction": "up"},
+    "I9": {"rate": 47, "direction": "flat"},
+    "I10": {"rate": 30, "direction": "down"}
+  },
+  "M2": {
+    "I1": {"rate": 0.2, "direction": "down"},
+    "I2": {"rate": 65, "direction": "down"},
+    "I3": {"rate": 82, "direction": "flat"},
+    "I4": {"rate": 12, "direction": "down"},
+    "I5": {"rate": 84, "direction": "flat"},
+    "I6": {"rate": 72.4, "direction": "down"},
+    "I7": {"rate": 93, "direction": "up"},
+    "I8": {"rate": 96, "direction": "flat"},
+    "I9": {"rate": 87, "direction": "flat"},
+    "I10": {"rate": 70, "direction": "down"}
+  }
+}
+```

@@ -1,0 +1,70 @@
+{
+ "gpt-6.1-sol|A_framework": {
+  "n": 3,
+  "parse_errors": 0,
+  "dir_acc": 0.3958333333333333,
+  "mae": 25.71666666666667,
+  "diff_acc": 0.3333333333333333,
+  "m1_fragile_pred": 49.33333333333333
+ },
+ "gpt-6.1-sol|B_profile": {
+  "n": 3,
+  "parse_errors": 0,
+  "dir_acc": 0.3333333333333333,
+  "mae": 23.920833333333334,
+  "diff_acc": 0.6666666666666666,
+  "m1_fragile_pred": 55.111111111111114
+ },
+ "gpt-6.1-sol|C_none": {
+  "n": 3,
+  "parse_errors": 0,
+  "dir_acc": 0.375,
+  "mae": 23.491666666666664,
+  "diff_acc": 0.6666666666666666,
+  "m1_fragile_pred": 53.111111111111114
+ },
+ "gpt-6.1-sol|D_probe": {
+  "n": 3,
+  "parse_errors": 0,
+  "dir_acc": 0.3541666666666667,
+  "mae": 23.2125,
+  "diff_acc": 0.25,
+  "m1_fragile_pred": 44.0
+ },
+ "qwen3_5_397b|B_profile": {
+  "n": 2,
+  "parse_errors": 0,
+  "dir_acc": 0.46875,
+  "mae": 24.06875,
+  "diff_acc": 0.75,
+  "m1_fragile_pred": 44.33333333333333
+ },
+ "qwen3_5_397b|D_probe": {
+  "n": 2,
+  "parse_errors": 0,
+  "dir_acc": 0.4375,
+  "mae": 27.7125,
+  "diff_acc": 0.5,
+  "m1_fragile_pred": 43.66666666666667
+ },
+ "_reference": {
+  "no_change_mae": 20.4625,
+  "items": [
+   "I2",
+   "I3",
+   "I4",
+   "I5",
+   "I7",
+   "I8",
+   "I9",
+   "I10"
+  ],
+  "diff_items": [
+   "I3",
+   "I4",
+   "I5",
+   "I7"
+  ],
+  "m1_fragile_truth": 3.533333333333333
+ }
+}

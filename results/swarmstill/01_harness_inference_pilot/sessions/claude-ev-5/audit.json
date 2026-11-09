@@ -1,0 +1,8 @@
+{
+ "n_tool_calls": 27,
+ "tool_names": [
+  "Bash"
+ ],
+ "flags": [],
+ "notes": []
+}

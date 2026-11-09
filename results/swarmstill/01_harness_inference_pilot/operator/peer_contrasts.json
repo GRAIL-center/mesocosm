@@ -1,0 +1,62 @@
+{
+ "cells": {
+  "raw-prefix--accept": 16.400000000000002,
+  "raw-prefix--reject": 13.6,
+  "summary--accept": 41.2,
+  "summary--reject": 35.0
+ },
+ "peer_verdict_effect": [
+  {
+   "a": "raw-prefix--accept",
+   "b": "raw-prefix--reject",
+   "delta_pts": 2.8,
+   "ci": [
+    -4.8,
+    10.4
+   ],
+   "n_pairs": 50
+  },
+  {
+   "a": "summary--accept",
+   "b": "summary--reject",
+   "delta_pts": 6.200000000000001,
+   "ci": [
+    -1.7999999999999992,
+    14.200000000000001
+   ],
+   "n_pairs": 50
+  }
+ ],
+ "peer_message_effect": [
+  {
+   "a": "summary--accept",
+   "b": "raw-prefix--accept",
+   "delta_pts": 24.8,
+   "ci": [
+    17.0,
+    32.6
+   ],
+   "n_pairs": 50
+  },
+  {
+   "a": "summary--reject",
+   "b": "raw-prefix--reject",
+   "delta_pts": 21.4,
+   "ci": [
+    13.600000000000001,
+    29.2
+   ],
+   "n_pairs": 50
+  }
+ ],
+ "paper_headline": {
+  "a": "summary--accept",
+  "b": "raw-prefix--reject",
+  "delta_pts": 27.6,
+  "ci": [
+   19.6,
+   35.6
+  ],
+  "n_pairs": 50
+ }
+}
