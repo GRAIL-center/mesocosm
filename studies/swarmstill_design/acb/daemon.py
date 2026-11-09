@@ -149,9 +149,11 @@ class Session:
             return {t: v.get("score") for t, v in summ.items()}
         # judge scoring on pod1: copy runs into acb_score's layout, score with retries, read back
         root = f"/workspace/acbd_score/{self.name}/{tid}"
-        tar = subprocess.run(["tar", "czf", "-", "-C", str(local), "."], capture_output=True, check=True)
+        tar = subprocess.run(["tar", "czf", "-", "--exclude=._*", "-C", str(local), "."], capture_output=True,
+                             check=True, env={"COPYFILE_DISABLE": "1", "PATH": "/usr/bin:/bin"})  # no macOS ._ files
         subprocess.run(POD1 + [f"rm -rf {root}; mkdir -p {root}/{self.metric}/{tid}/qwen3-4b && "
-                               f"tar xzf - -C {root}/{self.metric}/{tid}/qwen3-4b && rm -f "
+                               f"tar xzf - -C {root}/{self.metric}/{tid}/qwen3-4b && "
+                               f"find {root} -name '._*' -delete && rm -f "
                                f"{root}/{self.metric}/{tid}/qwen3-4b/summary.json"],
                        input=tar.stdout, check=True, timeout=600)
         score_cmd = (f"cd /workspace && for p in 1 2 3; do /workspace/acb-env/bin/python study/acb_score.py {root} "

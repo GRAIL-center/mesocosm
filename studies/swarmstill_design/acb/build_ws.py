@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 
 HOME = Path(__file__).resolve().parent
-sys.path.insert(0, str(HOME))
-sys.path.insert(0, str(HOME.parent / "collusion"))
+sys.path.insert(0, str(HOME.parent / "collusion"))  # prompt.py
+sys.path.insert(0, str(HOME))  # this folder's daemon.py wins
 import daemon  # noqa: E402
 import prompt  # noqa: E402
 
