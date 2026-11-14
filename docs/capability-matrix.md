@@ -184,3 +184,14 @@ Update this matrix when an interface or its evidence changes. Keep raw runs outs
 | Real local SFT/LoRA queue, session-wide reserved compute limits, owned status/cancel and explicit verified activation | **supported** in software contracts using the native optimizer/serving pipeline; CPU training without a venue is permitted; trained student serving and behavioral effect are **unverified** | [Policy lifecycle tests](../tests/test_designer_policy.py), [operator guide](designer-policy.md), [native training](../tests/test_reproduction_training.py) |
 | Legacy fixed-P six-tool mode and optional ten-tool P mode with private source/job boundaries | **supported** in software contracts; actual stdio SDK discovery/calls, final binding, drift, lease/race and privacy checks | [Legacy designer tests](../tests/test_designer_mcp.py), [mutable tests](../tests/test_designer_mutable.py) |
 | General profile-aware P/S/E composer, arbitrary review/scheduling DAG, PPO/GRPO and unified comparison façade | **unsupported** by the new restricted interface; proposed architecture only. Existing native controls retain their separately documented scope | [P/S/E design and status](swarmstill-pse-design.md), [proposed ADR-0070](adr/0070-pse-experiment-workflow.md) |
+
+## Behavior studies (ADR-0074)
+
+| Capability | Status and boundary | Evidence |
+|---|---|---|
+| Seven-lever conditions over a substrate's declared switches; undeclared switches and values refused | **supported** in CPU tests | [Study tests](../tests/test_study.py) |
+| Typing battery plan: baseline repetitions, one-switch arms, 2x2 removal arms, shared seeds, minimum repetitions for the chosen alpha | **supported** in CPU tests | [Study tests](../tests/test_study.py) |
+| Parallel, resumable trial runner with one write-once record per trial and retained failures | **supported** in CPU tests with a deterministic test environment; unattended runs of a real environment are **unverified** | [Study tests](../tests/test_study.py) |
+| Behavior card: lever states, reach check, 2x2 interaction interval and computed type | **supported** in CPU tests. The reach check is inconclusive under sampled decoding until the gateway replays paired responses | [Study tests](../tests/test_study.py), [ADR-0074](adr/0074-behavior-studies.md) |
+| Connected substrates: original published environments, reconstructions, the native world | **unsupported**: none is connected | [ADR-0074](adr/0074-behavior-studies.md) |
+| Behavior cards from real models | **unverified**: no study has run | None |

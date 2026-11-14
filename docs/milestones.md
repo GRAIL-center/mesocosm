@@ -1,8 +1,10 @@
 # Development milestones
 
-The project is a pre-alpha research runtime. The current direction is condition-led experiments over
-real tasks and at least three real agents. Current acceptance is functional system composition, not
-behavior reproduction. Earlier incident scenarios and synthetic workplace histories
+The project is a pre-alpha research runtime. Since [ADR-0074](adr/0074-behavior-studies.md) the direction
+is behavior studies: reproducing reported multi-agent behaviors and deciding by experiment which
+conditions each one needs. The native runtime in the table below stays what it was, condition-led
+experiments over real tasks with at least three real agents, and its acceptance is functional system
+composition, not behavior reproduction. Earlier incident scenarios and synthetic workplace histories
 are retained as [legacy fixtures](../examples/fixtures/README.md); reproducing their expected flags is
 not a research milestone.
 
@@ -15,6 +17,7 @@ not a research milestone.
 | Compare monitoring systems | Configurable posthoc review and bounded before-tool intervention are implemented. The released OpenCode hook has [real-model allow/deny/abort evidence](training-monitor-evidence.md), including a falsely allowed read; malformed/unknown decisions, global budgets and failed-run evidence have tests. | The tested intervention boundary works; establish monitor accuracy separately. Detection quality and adaptive reviewer training are later studies; the gate mediates top-level tool calls. |
 | Persistent operation and records | Queueing, snapshots, CLI analysis and activation recomputation have tests and earlier fixture evidence. | Validate long real workloads and document uncaptured state; existing snapshots do not establish exact process or training continuation. |
 | Actual policy training | `train run` implements complete frozen-policy worlds, exact rollout validation, a real REINFORCE LoRA update, checkpoint activation and final policy verification. The [native A100 FP16 run](training-monitor-evidence.md) completed one actual update and a second three-agent world using the new checkpoint, with final probability verification. `none` and `in_context` remain fixed-weight modes inside an ordinary world. | The tested training loop works with documented operator-assisted Colab cleanup. Learning benefit requires a separate held-out evaluation; a nonzero parameter update alone is not that evidence. |
+| Behavior studies | The study core (conditions, substrate contract, trial runner, typing battery, behavior card) has CPU tests with a deterministic test environment. No environment is connected and no card comes from real models. | Connect the original Emergent Collusion environment through the gateway, reproduce its published baseline with an open model, add paired replay so the reach check is decisive, and produce the first card. |
 | Later research studies | Outside current implementation acceptance; no completed general misalignment study is established by the infrastructure work. | When conducting a study, report task performance, incentives, reviewed behavior and monitor errors across conditions, with uncertainty and complete trial accounting. |
 
 The new experiment, reward and monitoring implementations do not inherit live validation from the older

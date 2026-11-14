@@ -12,6 +12,25 @@ This document describes the implemented structure and its boundaries. Consult th
 [capability matrix](docs/capability-matrix.md) for evidence and the
 [native runtime guide](docs/native-multiagent.md) for deployment requirements.
 
+## Behavior studies
+
+A behavior study decides by experiment which conditions a multi-agent behavior needs
+([ADR-0074](docs/adr/0074-behavior-studies.md)). It is the organizing unit for new research work.
+`mesocosm.study` does not import the world manifest or the native runtime described in the rest of
+this document; that runtime is one possible substrate.
+
+| Part | Responsibility |
+|---|---|
+| `study.condition` | The seven levers, a substrate's declared switches, conditions as complete assignments, and explicit refusal of undeclared settings. |
+| `study.substrate` | The contract of an environment in which a behavior is defined: identity, lever space, its own measures, one fresh trial per call, and model calls in gateway order with input and output digests. |
+| `study.trial`, `study.runner` | One write-once record per trial; parallel, resumable execution; a failed trial stays a missing observation; nothing is stopped, retried or replaced by outcome. |
+| `study.battery` | Baseline repetitions for run-to-run noise, one-switch arms and 2x2 removal arms, all with shared seeds. |
+| `study.card` | Lever states from an exact permutation test and the measure's floor, the reach check, and the type computed from the necessary levers. |
+
+No substrate is connected yet, and the reach check is inconclusive under sampled decoding until the
+gateway can replay paired responses. The study layer has CPU tests with a deterministic test
+environment only.
+
 ## Execution and authority
 
 The experiment definition and execution location are separate. A Mac or Linux client packages a

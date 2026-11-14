@@ -16,7 +16,7 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0010](0010-world-services.md) | The world is a set of ordinary services that identify callers by address | accepted (accounts clause superseded by ADR-0011; `sites` removed by ADR-0024) |
 | [0011](0011-conditions-enforced-by-the-world.md) | Exposure timing, accounts and traps are conditions enforced by the world services | accepted (schedule origin superseded by ADR-0018) |
 | [0012](0012-memory-chaining-mid-run-conditions.md) | Memory policy, run chaining and mid-run condition changes are control-plane operations with receipts | accepted |
-| [0013](0013-flags-verdicts-staged-scenarios.md) | Candidate incidents are flags from traps and state checks; people give verdicts; scenarios escalate what the world offers | accepted |
+| [0013](0013-flags-verdicts-staged-scenarios.md) | Candidate incidents are flags from traps and state checks; people give verdicts; scenarios escalate what the world offers | accepted (catalog clause superseded by ADR-0074) |
 | [0014](0014-run-lifecycle-at-the-gateway.md) | Pause, resume and stop are enforced at the gateway | accepted (error types and endpoint paths superseded by ADR-0019) |
 | [0015](0015-persistent-operation-and-snapshots.md) | Persistent operation is a shared work queue; snapshots copy what the platform owns and declare the rest | accepted |
 | [0016](0016-activations-by-recompute.md) | Activations are recomputed from recorded token ids, not captured inside the serving engine | accepted |
@@ -27,9 +27,9 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0021](0021-mcp-and-skills.md) | Agents get MCP servers and skills through the harness config; the world is an MCP server too | accepted |
 | [0022](0022-web-gateway.md) | The real internet reaches the sandbox only through a web gateway: a logging, policed proxy, verified like a condition | accepted |
 | [0023](0023-context-budget-of-the-world.md) | The world is cheap in the agent's context: board lists are glances, task text uses `curl -s`, harness tools are a manifest choice | accepted |
-| [0024](0024-the-worlds-actors-are-agents.md) | The world's actors are agents; nothing in it is scripted or mocked (no `world.events`, no `sites`) | accepted |
+| [0024](0024-the-worlds-actors-are-agents.md) | The world's actors are agents; nothing in it is scripted or mocked (no `world.events`, no `sites`) | accepted (limited to the native world by ADR-0074) |
 | [0025](0025-inspect-export.md) | Run bundles export to Inspect eval logs (`mesocosm export inspect`) | accepted |
-| [0026](0026-peer-review-over-n-agents.md) | Every mechanism takes N agents; peer review is a topology over them (`all`, `ring`), instances come from a pool | accepted |
+| [0026](0026-peer-review-over-n-agents.md) | Every mechanism takes N agents; peer review is a topology over them (`all`, `ring`), instances come from a pool | accepted (three-agent rule limited to the native world by ADR-0074) |
 | [0027](0027-chat-is-a-standing-service.md) | The chat is a standing world service (channels, direct messages, caps as conditions); peer review runs on top of it | accepted |
 | [0028](0028-world-state-is-verifiable.md) | The world's state is a verifiable object: `world.json` to verifiers, checkpoints as partial credit, a simulated clock, a ledger | accepted |
 | [0029](0029-one-gateway-many-models.md) | One gateway, a model per agent: a model catalog, routing by model id, keys from the environment | accepted |
@@ -75,3 +75,4 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0071](0071-recover-owned-policy-start-and-activation.md) | Recover owned queued training jobs and distinguish pre-admission activation failure from uncertain admitted loading | accepted |
 | [0072](0072-native-structure-graphs-and-designer-composition.md) | Native artifact/review/execution graphs, approved population compiler and finalizer-only original grading | accepted |
 | [0073](0073-bounded-designer-development-execution.md) | Optional bounded development execution, owned recovery and unknown-aware comparisons over native original evidence | accepted |
+| [0074](0074-behavior-studies.md) | Behavior studies are the organizing unit: substrates, seven-lever conditions, typing batteries and behavior cards with computed types | accepted |

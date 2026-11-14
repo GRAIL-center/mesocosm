@@ -143,7 +143,7 @@ Under 300 lines is a good ceiling. Over 500 and you are fighting your own config
 
 ## 10. Project context
 
-Mesocosm: research infrastructure for studying behavior that emerges from real agents performing real tasks under controlled conditions. Read `README.md`, then `ARCHITECTURE.md`, then `docs/adr/README.md` before any non-trivial change. Current phase: pre-alpha native multi-agent runtime and condition-led experiments; evidence and remaining work are in `docs/capability-matrix.md` and `docs/milestones.md`.
+Mesocosm: research infrastructure for reproducing multi-agent behaviors and deciding by experiment which conditions each one needs (ADR-0074). The Docker/OpenCode world of real agents on real tasks is one substrate. Read `README.md`, then `ARCHITECTURE.md`, then `docs/adr/README.md` before any non-trivial change. Current phase: pre-alpha; the study core has tests only and no connected environment, and the native multi-agent runtime runs condition-led experiments; evidence and remaining work are in `docs/capability-matrix.md` and `docs/milestones.md`.
 
 ### Stack
 - Language and version: Python 3.11–3.13 (vLLM and NNsight install on 3.13 as of the Colab spike), `from __future__ import annotations` in every module.
@@ -163,7 +163,7 @@ Mesocosm: research infrastructure for studying behavior that emerges from real a
 Prefer single-file or single-test runs during iteration. Full suites are for the final verification pass.
 
 ### Layout
-- Source lives in: `src/mesocosm/` (`core`, `gateway`, `env`, `adapters/{opencode,harbor}`, `observe`, `judge`, `cli`)
+- Source lives in: `src/mesocosm/` (`study`, `core`, `gateway`, `env`, `adapters/{opencode,harbor}`, `observe`, `judge`, `cli`)
 - Tests live in: `tests/` (pytest, `asyncio_mode = auto`)
 - Deployment/spike scripts and historical runbook: `spike/`; current runtime lives in `src/`
 - Research examples: `examples/`; authored legacy tasks, scenarios and histories: `examples/fixtures/`
@@ -182,7 +182,7 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 ### Forbidden
 - Patching or forking OpenCode, Harbor, vLLM or NNsight internals (ADR-0002). Control them through config and APIs; record limits as `unsupported`.
 - Any outbound route from the sandbox network other than the two gateways: the model gateway and, when `internet.enabled`, the web gateway (ADR-0022). Never `network_mode: host`, a second NIC on an agent container, or internet that bypasses the web gateway's policy and log.
-- Approximating an unsupported condition with prompt text (ADR-0003). It must fail.
+- Approximating an unsupported condition with prompt text (ADR-0003). It must fail. Prompt text is varied only as a declared switch of the instructions lever in a study (ADR-0074).
 - Committing anything under `runs/`, activations, or run logs.
 - Describing reward logging or context feedback as policy-weight training. `train run` (ADR-0045) requires verified rollout provenance, action/reward boundaries, checkpoint updates and serving activation; report its evidence separately from context feedback and learning effectiveness.
 - Marking a capability `supported` without a linked evidence file or test.
@@ -216,7 +216,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - `activations verify --dtype float32` does not fit a 4B model plus 8k-token logits on an L4; use `float16` for the second pass.
 - Legacy world-facing fixture content must not leak control-plane credentials or identifiers; `tests/test_examples.py` checks its platform-name convention. Preserve original external task content rather than rewriting it to manufacture a fictional workplace.
 - Build for the long term, never the cheapest way (maintainer correction, 2026-10-18): when a feature can be a stand-in or the real thing, build the real thing or stop and say what it costs; the scripted `world.events` and the mock `sites` were cheap stand-ins that had to be removed (ADR-0024).
-- Every mechanism is built for N agents from the start (ADR-0026). Research acceptance requires at least three real agents; one/two-agent fixtures may test isolated plumbing. A two-party protocol is a topology over N, not an exactly-two-agent runtime restriction.
+- Every mechanism is built for N agents from the start (ADR-0026). Native-world research acceptance requires at least three real agents; one/two-agent fixtures may test isolated plumbing. A two-party protocol is a topology over N, not an exactly-two-agent runtime restriction. A study substrate uses the agent counts its environment defines, and one agent only as a control arm (ADR-0074).
 - Native multi-agent acceptance requires at least three real harness sessions, actual tool execution in the task's declared environment, and its original verifier; authored fixtures and fake E2E servers are not acceptance evidence. Older acceptance runs do not verify newly added conditions. Acceptance is system integration and condition/record correctness, not desired behavior or task success. Preserve predeclared budgets and incomplete outcomes; do not force completion through prompts or treat noncompletion alone as a platform defect.
 - Vary real permissions, resources, incentives, memory and monitoring; do not build incident scripts, decoy scorers or invented histories into the primary research path. Retain legacy examples only as labeled fixtures (ADR-0044).
 - Document each research variable's paper motivation, actual enforcement, evidence and confounds in the experimental-variable guide; distinguish proposed mechanisms, automated contract tests and real-agent acceptance.
@@ -225,10 +225,11 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Lead the README with what Mesocosm is, why it exists and a concrete use case; keep run results, validation counts and detailed limitations in linked documentation.
 - Keep development focused on execution, enforced conditions and evidence. Agent visualization UI and its demos/assets were removed; preserve CLI analysis, original trajectories, monitoring and activation research independently.
 - Integrate benchmarks through installed task-source and execution-backend contracts, preserving original inputs and evaluators. Do not add benchmark-name branches to the core or treat registration as research acceptance.
-- Every actor in the world is an agent in the manifest (ADR-0024): no scripted posts, bots or scheduled messages, no mock services. A background colleague is an `agents[]` entry; external information is the real internet through the web gateway. Scheduled *conditions* (exposure timing) are allowed; scheduled *behavior* is not.
+- Every actor in the native world is an agent in the manifest (ADR-0024): no scripted posts, bots or scheduled messages, no mock services. A background colleague is an `agents[]` entry; external information is the real internet through the web gateway. Scheduled *conditions* (exposure timing) are allowed; scheduled *behavior* is not. In other study substrates a fixed or scripted counterpart is a declared control arm only, never evidence of emergent behavior (ADR-0074).
 - Treat fixed versus designer-modifiable P as an explicit study configuration; mutable P must use actual model/deployment selection or verified weight training, never persona or prompt substitutions.
 - The egress check's probes through the web gateway and the harness's own update checks (`registry.npmjs.org`) show up in `web.jsonl`; the run manager marks them (`probe`, `origin: harness`) and the judge skips them. Do not read raw `blocked_egress` counts without those marks.
 - Colab: run `mesocosm env compose --out` as `dock` with the output under `/home/dock` (`/content` is not writable by dock); `colab exec` wedges after a while, so drive long runs over SSH (`scratchpad/cssh.py`) and detach with `(setsid ... &)`.
 - Qwen3-4B agents finish a six-step world task in 30–60 s and may skip a `sleep`-and-retry instruction. Place a timed condition (`conditions.exposure`) inside that window; since ADR-0018 the seconds count from the run start (the run manager sets `/admin/clock`), not from the services start.
 
 - Separate durable job admission, supervisor launch and remote loading. Recover an owned queued job by the same identity/reservation; only proven pre-admission deployment failure permits a retry, and uncertain admitted loading requires verify-only reconciliation.
+- Organize research features around a behavior study (substrate, seven-lever condition, typing battery, behavior card; ADR-0074), not around the world manifest (maintainer correction, 2026-11-14). `mesocosm.study` never imports `core.manifest` or `core.run`. A behavior's type is computed from tested lever states and is never assigned by hand; an untested lever stays `not-tested`.
