@@ -3,7 +3,8 @@
 One trial: N agents, and in each interaction two agents drawn at random each pick one name from a pool of
 ten letters without seeing the other's pick. A match raises both scores, a mismatch lowers both. An agent's
 prompt shows its own last H interactions. The script reads the trial's condition, calls the model endpoint
-once per pick and writes the measures and one event per interaction.
+once per pick, writes the measures to the outcome file and one line per interaction to events.jsonl next
+to it.
 
 Every request carries a sampling seed drawn from the trial seed. Two trials with the same trial seed then
 send the same requests until the condition makes them differ, which is what lets the platform decide
@@ -84,17 +85,18 @@ def main() -> None:
             matched = one is not None and one == two
             history[first].append((one, two, matched))
             history[second].append((two, one, matched))
-            events.append({"step": step, "kind": "interaction", "agent_id": first,
-                           "data": {"partner": second, "choice": one, "partner_choice": two, "match": matched}})
+            events.append({"round": step, "agents": [first, second], "choices": [one, two], "match": matched})
 
-    last = [event["data"]["match"] for event in events if event["step"] >= condition["environment.rounds"] - 2]
+    last = [event["match"] for event in events if event["round"] >= condition["environment.rounds"] - 2]
     latest = [next((own for own, _, _ in reversed(history[agent]) if own), None) for agent in agents]
     held = Counter(name for name in latest if name)
     measures = {"final_match_rate": sum(last) / len(last),
                 "consensus": max(held.values()) / len(agents) if held else None,
                 "valid_rate": valid / replies}
+    with open(os.path.join(os.path.dirname(os.environ["TRIAL_OUTCOME"]), "events.jsonl"), "w", encoding="utf-8") as log:
+        log.writelines(json.dumps(event) + "\n" for event in events)
     with open(os.environ["TRIAL_OUTCOME"], "w", encoding="utf-8") as stream:
-        json.dump({"measures": measures, "events": events}, stream)
+        json.dump({"measures": measures}, stream)
 
 
 if __name__ == "__main__":

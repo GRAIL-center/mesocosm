@@ -22,11 +22,6 @@ behavior. Keep the task and independent success criteria fixed when comparing a 
 [research-method note](../docs/incident-reproducibility.md) explains why an incident script cannot
 establish that a behavior emerged under those conditions.
 
-## Behavior studies
-
-[study/](study/README.md) holds a template environment for `mesocosm study` and references of original
-studies. The [study guide](../docs/study.md) explains how an agent builds and runs a reproduction.
-
 ## Legacy authored fixtures
 
 All previous authored tasks, scenario ladders, workplace histories and demo worlds now live together

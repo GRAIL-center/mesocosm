@@ -19,18 +19,16 @@ Mode = Literal["exploration", "claim"]
 
 
 class TrialSpec(BaseModel):
-    """One scheduled run of a substrate. Trials of different arms with the same repetition share a seed.
-
-    An ``exploration`` trial is cheap and free; only ``claim`` trials can enter a behavior card."""
+    """One scheduled run of a substrate. Trials of different conditions with the same repetition share a
+    seed. Only ``claim`` trials enter a behavior card."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     trial_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_.=+-]{0,160}$")
-    arm: str = Field(min_length=1)
     repetition: int = Field(ge=0)
     seed: int
     condition: Condition
-    mode: Mode = "claim"
+    mode: Mode
 
 
 class TrialRecord(BaseModel):

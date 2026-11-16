@@ -5,7 +5,8 @@ set, its measures and the command that runs one trial. The code itself is not ch
 
 - ``TRIAL_CONDITION``: a JSON file with the value of every switch, keyed ``lever.name``,
 - ``TRIAL_SEED``: the seed of this repetition,
-- ``TRIAL_OUTCOME``: where the command writes ``{"measures": {...}, "events": [...], "note": ""}``,
+- ``TRIAL_OUTCOME``: where the command writes ``{"measures": {...}, "note": ""}``; the directory of
+  this file is the trial's own and keeps whatever else the command writes there,
 - ``OPENAI_BASE_URL``, ``OPENAI_API_BASE`` and ``OPENAI_API_KEY`` when a model gateway is attached, so that
   every model call of the trial is recorded, and ``MODEL_KEYS`` (JSON, agent id -> key) for the agents the
   manifest names. The model server's own key is withheld from the command.
@@ -30,7 +31,7 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from mesocosm.study.condition import Condition, LeverSpace, Setting, StudyError
-from mesocosm.study.substrate import NAME, Event, Measure, ModelCall, SubstrateInfo, TrialOutcome
+from mesocosm.study.substrate import NAME, Measure, ModelCall, SubstrateInfo, TrialOutcome
 
 STDERR_TAIL = 2000
 
@@ -64,7 +65,6 @@ class _Outcome(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     measures: dict[str, float | None]
-    events: tuple[Event, ...] = ()
     note: str = ""
 
 
@@ -112,7 +112,7 @@ class CommandSubstrate:
             raise StudyError(f"the outcome file is not a valid outcome: {exc.errors()[0]['msg']}") from exc
         calls = self.link.calls(trial_id) if self.link is not None else ()
         self._check_models(condition, calls)
-        return TrialOutcome(measures=outcome.measures, calls=calls, events=outcome.events, note=outcome.note)
+        return TrialOutcome(measures=outcome.measures, calls=calls, note=outcome.note)
 
     def _check_models(self, condition: Condition, calls: tuple[ModelCall, ...]) -> None:
         """A model switch is enforced by evidence: the recorded requests name exactly the declared ids."""
