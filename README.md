@@ -1,22 +1,28 @@
 # Mesocosm
 
-**Research infrastructure for multi-agent behavior in real task environments.**
+**An experimental environment for reproducing, observing and eliciting multi-agent behavior.**
 
-Mesocosm runs independent AI coding agents against executable tasks, tools and shared resources.
-You configure access, budgets, memory, incentives and monitoring. Agents choose their actions;
-Mesocosm enforces the configured conditions and records what happened.
+Mesocosm is a laboratory for the behavior of teams of AI agents. It reproduces behaviors that have been
+reported, observes what independent agents do on real tasks, and elicits behavior by varying enforced
+conditions instead of instructions. The long-term use is red-teaming: finding the conditions under which
+a team behaves in misaligned ways, and measuring what monitoring misses, before deployment.
 
-Use it to study how agents work together, share information and respond to competing incentives or
-oversight. A world can give three agents an unchanged external task, expose selected shared resources,
-and compare outcomes under different conditions. Task success, rewards, monitor assessments and
-reviewed behavior remain separate measurements.
+Reported multi-agent behaviors depend on conditions that look incidental, such as one prompt sentence,
+an adjacent model version or memory between episodes, and a report rarely says which conditions matter.
+Mesocosm therefore enforces each condition in the environment and records what reached every agent.
+You configure access, budgets, memory, incentives and monitoring; agents choose their actions. Task
+success, rewards, monitor assessments and reviewed behavior remain separate measurements.
+
+A study can rerun a published collusion experiment with and without memory between episodes, or give
+three agents an unchanged external task, expose selected shared resources, and compare outcomes when
+incentives or oversight change.
 
 [Run three agents](docs/native-multiagent.md) · [Submit a job](docs/execution.md) ·
 [Choose variables](docs/experimental-variables.md) · [Compare conditions](docs/experiments.md) ·
 [Task sources](docs/task-sources.md) ·
 [Add an integration](docs/integrations.md) ·
 [Research-agent tools](docs/reproduction.md) ·
-[Architecture](ARCHITECTURE.md)
+[Architecture](ARCHITECTURE.md) · [Direction](docs/adr/0075-behavior-laboratory-direction.md)
 
 ## What it does
 
@@ -30,6 +36,7 @@ reviewed behavior remain separate measurements.
 | **Monitor and intervene** | Posthoc review or assessment before supported tool calls, with recorded allow, deny or termination decisions. |
 | **Update policies** | An optional REINFORCE/LoRA training loop using validated action/reward records and checkpoint activation between worlds. |
 | **Inspect evidence** | Original model and harness records, tool events, verifier results, enforcement receipts, CLI reports, diagnostics and integrity checks. |
+| **Study a behavior** | Behavior studies over declared environments and seven-lever conditions, repeated baselines for run-to-run noise, and behavior cards. The study core has tests only; no environment is connected yet. |
 | **Build a research workflow** | Callable tools connect evidence, typed factors, local SFT/LoRA, serving attribution, verified run evaluation and repeated base/trained × baseline/designed comparisons. [Workflow and limits →](docs/verified-research-loop.md) |
 
 The built-in Docker/OpenCode runtime supports a defined subset of Debian/Ubuntu tasks and original Compose services.
@@ -109,6 +116,21 @@ verifier problems. Audit commands check recorded links and preserved bytes. None
 uncaptured activity did not occur. The [operation contract](docs/operation-contract.md) documents the
 CLI and worker API. Optional activation analysis and monitor intervention remain separate research
 functions.
+
+## Direction
+
+Work proceeds in four stages, and each is the precondition of the next
+([ADR-0075](docs/adr/0075-behavior-laboratory-direction.md)).
+
+| Stage | What it establishes |
+|---|---|
+| 1. Reproduce | The laboratory can obtain a published behavior, and lose it when the published condition is removed. |
+| 2. Observe | What teams of agents do on real tasks, read with detectors checked against stage 1. |
+| 3. Elicit | Which enforced conditions turn a behavior on, against measured run-to-run noise. |
+| 4. Red-team | Under which conditions a team behaves in misaligned ways, and what monitoring misses. |
+
+The project is at stage 1, and no behavior has been reproduced yet. [Milestones](docs/milestones.md)
+give the evidence and exit criteria for each stage.
 
 ## Project status
 

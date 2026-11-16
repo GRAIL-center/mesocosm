@@ -47,7 +47,7 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0041](0041-enforced-round-deadlines.md) | Round deadlines explicitly abort the harness turn; incomplete work and missing verifier measurements cannot become successful runs | accepted |
 | [0042](0042-native-task-environments.md) | Run agents and verifiers in native task environments | accepted |
 | [0043](0043-authenticated-budgeted-model-surface.md) | Authenticate model calls and expose only the observed inference surface | accepted |
-| [0044](0044-condition-led-experiments.md) | Condition-led repeated experiments, independent incentives and task outcomes, explicit context feedback, configurable posthoc monitoring and archived fixtures | accepted (supersedes the stated parts of ADR-0004, ADR-0013, ADR-0030 and ADR-0039) |
+| [0044](0044-condition-led-experiments.md) | Condition-led repeated experiments, independent incentives and task outcomes, explicit context feedback, configurable posthoc monitoring and archived fixtures | accepted (supersedes the stated parts of ADR-0004, ADR-0013, ADR-0030 and ADR-0039; purpose widened by ADR-0075) |
 | [0045](0045-on-policy-world-training.md) | On-policy REINFORCE LoRA updates between complete real multi-agent worlds, exact action/reward provenance, checkpoint activation and final policy verification | accepted |
 | [0046](0046-before-tool-monitor-intervention.md) | Bounded live monitor decisions at the supported OpenCode before-tool hook, with session attribution and fail-closed single-use approvals | accepted |
 | [0047](0047-explicit-policy-precision.md) | Explicit policy compute dtype, precision-sensitive identity, and verified serving configuration before real-agent rollouts | accepted |
@@ -75,4 +75,5 @@ One file per decision, numbered. Status is `proposed`, `accepted`, `superseded b
 | [0071](0071-recover-owned-policy-start-and-activation.md) | Recover owned queued training jobs and distinguish pre-admission activation failure from uncertain admitted loading | accepted |
 | [0072](0072-native-structure-graphs-and-designer-composition.md) | Native artifact/review/execution graphs, approved population compiler and finalizer-only original grading | accepted |
 | [0073](0073-bounded-designer-development-execution.md) | Optional bounded development execution, owned recovery and unknown-aware comparisons over native original evidence | accepted |
-| [0074](0074-behavior-studies.md) | Behavior studies are the organizing unit: substrates, seven-lever conditions, typing batteries and behavior cards with computed types | accepted |
+| [0074](0074-behavior-studies.md) | Behavior studies are the organizing unit: substrates, seven-lever conditions, typing batteries and behavior cards with computed types | accepted (purpose widened by ADR-0075) |
+| [0075](0075-behavior-laboratory-direction.md) | Direction: a laboratory that reproduces, observes and elicits multi-agent behavior in four ordered stages, toward red-teaming; hosted models first-class; extensions frozen until two positive controls pass | accepted |
