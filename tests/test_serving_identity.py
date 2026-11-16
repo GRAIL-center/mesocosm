@@ -8,7 +8,6 @@ import httpx
 import pytest
 
 from mesocosm.gateway.app import Settings, create_app, parse_sse
-from mesocosm.reproduction.lineage import verify_wire
 
 IDENTITY = {
     "deployment_id": "deployment-" + "a" * 64,
@@ -59,7 +58,6 @@ async def test_bound_gateway_preserves_sampling_and_records_actual_response(tmp_
         completed = next(row for row in records if row["event"] == "chat_completion")
         assert admitted["serving_identity"] == completed["serving_identity"] == IDENTITY
         assert completed["model_identity_check"] == expected
-        verify_wire(completed)
     finally:
         await app.state.gateway.client.aclose()
 

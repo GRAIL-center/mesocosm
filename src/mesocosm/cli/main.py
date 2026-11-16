@@ -27,8 +27,6 @@ from mesocosm.execution.local import (
 )
 from mesocosm.execution.worker_cli import worker_app
 from mesocosm.integrations.cli import integration_app
-from mesocosm.reproduction.cli import research_app
-from mesocosm.research_mcp.cli import designer_app
 from mesocosm.study.cli import study_app
 
 if TYPE_CHECKING:
@@ -65,8 +63,6 @@ app.add_typer(audit_app, name="audit")
 app.add_typer(execution_app, name="execution")
 app.add_typer(worker_app, name="worker")
 app.add_typer(integration_app, name="integrations")
-app.add_typer(research_app, name="research")
-app.add_typer(designer_app, name="designer")
 app.add_typer(study_app, name="study")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
@@ -134,9 +130,6 @@ def capabilities(json_: bool = JSON_OPT) -> None:
         "team_resources": ["model_requests", "completion_tokens", "model_concurrency", "service_requests"],
         "internal_access": "services.access; isolate_agents required; shared mounts unsupported",
         "containment": "required private PID inspection; adapted hosts remain explicitly unverified",
-        "research_workbench": {"entrypoint": "mesocosm research tools --json", "tools": 14,
-                               "software_contracts": "supported", "native_acceptance": "unverified",
-                               "requirements": "docs/reproduction-requirements.md"},
         "evidence": "docs/capability-matrix.md; automated tests are not live agent behavior evidence",
     }, json_)
 

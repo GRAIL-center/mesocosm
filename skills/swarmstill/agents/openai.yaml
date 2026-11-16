@@ -1,4 +1,0 @@
-interface:
-  display_name: "SwarmStill"
-  short_description: "Mesocosm research workflows with cited evidence"
-  default_prompt: "Use $swarmstill to inspect the available Mesocosm tools and prepare an evidence-backed experiment plan."
