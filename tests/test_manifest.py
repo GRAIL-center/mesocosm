@@ -169,7 +169,7 @@ def test_clock_origin_and_ledger_accounts_are_checked(tmp_path):
     assert validate_manifest(_write(tmp_path, data)).ok
 
 
-def test_peer_review_needs_two_or_more_agents_comparison_mode_and_no_board(tmp_path):
+def test_peer_review_needs_rewards_two_or_more_agents_chat_and_comparison_mode(tmp_path):
     from mesocosm.core.manifest import reviewers
 
     data = _valid()
@@ -179,6 +179,9 @@ def test_peer_review_needs_two_or_more_agents_comparison_mode_and_no_board(tmp_p
     report = validate_manifest(_write(tmp_path, data))
     assert "the channel caps live in services.chat" in report.errors[0], "moved by ADR-0027, never ignored"
     data["services"] = {"board": False, "peer_review": {"enabled": True}}
+    report = validate_manifest(_write(tmp_path, data))
+    assert report.errors[0] == "peer_review.protocol: ratings requires rewards.enabled"
+    data["rewards"] = {"enabled": True}
     report = validate_manifest(_write(tmp_path, data))
     assert report.errors == ["services.peer_review needs at least two agents",
                              "services.peer_review needs services.chat.enabled: the verdicts and the channel caps run "
@@ -205,7 +208,7 @@ def test_peer_review_needs_two_or_more_agents_comparison_mode_and_no_board(tmp_p
     data["services"]["board"] = True
     data["mode"] = "persistent"
     report = validate_manifest(_write(tmp_path, data))
-    assert any("lockstep" in e for e in report.errors) and any("services.board: false" in e for e in report.errors)
+    assert any("lockstep" in e for e in report.errors)
 
 
 def test_personas_and_domain_are_validated(tmp_path):

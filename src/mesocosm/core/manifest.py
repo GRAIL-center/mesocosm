@@ -287,29 +287,18 @@ class ChatSpec(ManifestModel):
 
 
 class PeerReviewSpec(ManifestModel):
-    """The peer-verification protocol after Shi et al. (ADR-0017) over any number of agents (ADR-0026) on top
-    of the chat service (ADR-0027): verdicts on the peers' work along a review topology, message counts per
-    episode, a shared reward when verdicts match the peers' actual correctness, and runner feedback between
-    episodes. The channel's caps are `services.chat.max_chars` / `max_messages`."""
+    """Peer review over any number of agents on top of the chat service: verdicts on the peers' work along a
+    review topology and message counts per episode. `ratings` feeds measured rewards; `graph` follows the
+    declared structure. The channel's caps are `services.chat.max_chars` / `max_messages`."""
     enabled: bool = False
-    protocol: Literal["legacy", "ratings", "graph"] = "legacy"
+    protocol: Literal["ratings", "graph"] = "ratings"
     topology: Literal["all", "ring", "random_ring"] = Field(
         default="all", description="Review everyone, the next manifest member, or a seeded reshuffled ring per episode")
     matching_seed: int = 0
-    verdict_review: bool = Field(default=True, description="Feedback says whether each verdict was right")
-    reward_feedback: bool = Field(default=True, description="Feedback states the episode reward")
-    reward_per_verdict: int = Field(default=10, ge=0)
 
     @model_validator(mode="before")
     @classmethod
     def _caps_moved_to_chat(cls, data: object) -> object:
-        if isinstance(data, dict) and data.get("protocol") in {"ratings", "graph"}:
-            ignored = {key for key, default in {"verdict_review": True, "reward_feedback": True,
-                                                "reward_per_verdict": 10}.items()
-                       if key in data and data[key] != default}
-            if ignored:
-                raise ValueError(f"rejected_unsupported: {sorted(ignored)} only apply to legacy peer review; "
-                                 "ratings/graph use their declared measurement and execution contracts")
         if isinstance(data, dict) and ({"max_chars", "max_messages"} & set(data)):
             raise ValueError("the channel caps live in services.chat (max_chars, max_messages) since ADR-0027")
         return data
@@ -644,8 +633,6 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
     if manifest.rewards.enabled:
         if manifest.mode != "comparison":
             errors.append("rejected_unsupported: rewards require comparison episodes with the same task for each agent")
-        if manifest.services.peer_review.enabled and manifest.services.peer_review.protocol == "legacy":
-            errors.append("rejected_unsupported: rewards require peer_review.protocol: ratings, not legacy scoring")
         if manifest.rewards.source == "peer_verdict" and not manifest.services.peer_review.enabled:
             errors.append("rewards.source: peer_verdict requires services.peer_review.enabled")
     elif manifest.learning.mode != "none":
@@ -784,9 +771,6 @@ def validate_manifest(path: str | pathlib.Path) -> ValidationReport:
             errors.append("rejected_unsupported: services.peer_review runs episodes in lockstep; use mode: comparison")
         if not manifest.services.enabled:
             errors.append("rejected_unsupported: services.peer_review needs services.enabled")
-        if manifest.services.board and manifest.services.peer_review.protocol == "legacy":
-            errors.append("services.peer_review: set services.board: false, "
-                          "the board would be an unconstrained channel")
     if manifest.mode == "persistent":
         if not manifest.tasks and not manifest.stream.dir:
             errors.append("mode: persistent needs initial tasks or stream.dir")

@@ -27,7 +27,6 @@ def world(**changes):
     ({"services": {"seed": "past"}}, "services.seed"),
     ({"services": {"cache": {"enabled": True, "seed": {"key": "planted"}}}}, "services.cache.seed"),
     ({"services": {"accounts": [{"user": "decoy", "password": "test", "trap": True}]}}, "accounts"),
-    ({"services": {"peer_review": {"enabled": True}}}, "peer_review.protocol: legacy"),
     ({"tasks": [{"path": "task", "side_task": []}]}, "tasks[].side_task"),
     ({"judge": {"monitor": {"side_task_aware": True}}}, "side_task_aware"),
 ])

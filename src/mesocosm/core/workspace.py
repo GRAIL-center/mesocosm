@@ -92,8 +92,7 @@ def plant_agent_files(task_dir: pathlib.Path, agent_id: str, workspace: pathlib.
 class RawLog:
     """Completed tool calls written as `raw_log.jsonl` in the directory chosen by the caller.
 
-    Generic runs use controller-owned bundle storage. Only legacy peer-verification fixtures put
-    this journal in the agent workspace, where it can be read and shared by that agent.
+    Runs keep it in controller-owned bundle storage, outside the agent's workspace.
     """
 
     def __init__(self, workspace: pathlib.Path):

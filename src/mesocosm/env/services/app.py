@@ -414,13 +414,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         st.started = float(body["started"])
         return {"started": st.started}
 
-    @app.post("/admin/feedback")
-    async def admin_feedback(request: Request):
-        """Episode feedback for one agent, delivered as a message from the runner."""
-        body = await request.json()
-        msg = chat.add_feedback(str(body["to"]), str(body.get("epoch") or chat.epoch), str(body["text"]))
-        return JSONResponse(msg, status_code=201)
-
     @app.get("/admin/verdicts")
     async def admin_verdicts(request: Request, epoch: str | None = None):
         return {"verdicts": chat.verdicts_for(epoch), "epoch": chat.epoch}
@@ -1217,12 +1210,6 @@ class Chat(Journal):
         with self.lock:
             self.append({"kind": "message", "id": len(self.messages) + 1, "ts": time.time(), "epoch": self.epoch,
                          "from": sender, "to": to, "channel": channel, "text": text})
-            return self.messages[-1]
-
-    def add_feedback(self, to: str, epoch: str, text: str) -> dict[str, Any]:
-        with self.lock:
-            self.append({"kind": "message", "id": len(self.messages) + 1, "ts": time.time(), "epoch": epoch,
-                         "from": "runner", "to": to, "channel": None, "text": text})
             return self.messages[-1]
 
     def messages_for(self, agent: str, since: float | None = None,

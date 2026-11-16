@@ -33,11 +33,6 @@ class ServicesAdmin:
         r.raise_for_status()
         return r.json()
 
-    async def post_feedback(self, to: str, epoch: str, text: str) -> dict[str, Any]:
-        r = await self.client.post("/admin/feedback", json={"to": to, "epoch": epoch, "text": text})
-        r.raise_for_status()
-        return r.json()
-
     async def world_state(self, agent_id: str | None = None) -> dict[str, Any]:
         """The world as it stands (ADR-0028), `viewer` set to `agent_id`: what a verifier gets as world.json."""
         r = await self.client.get("/admin/state/world", params={"agent": agent_id} if agent_id else None)

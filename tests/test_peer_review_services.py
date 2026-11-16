@@ -53,13 +53,9 @@ async def test_messages_are_capped_per_episode_and_logged_with_chars(tmp_path):
         assert full.status_code == 400 and "message limit (2)" in full.json()["error"]
         inbox = (await a2.get("/api/messages")).json()
         assert [m["text"] for m in inbox["messages"]] == ["log: 3 tool calls", "more"] and inbox["epoch"] == "ep01"
-        # a new episode resets the count; the runner's feedback shows up as a message from `runner`
+        # a new episode resets the count
         await control.post("/admin/epoch", json={"epoch": "ep02"})
         assert (await a1.post("/api/messages", json={"to": "agent-2", "text": "ep2"})).status_code == 201
-        fb = await control.post("/admin/feedback", json={"to": "agent-1", "epoch": "ep01", "text": "Reward +10"})
-        assert fb.status_code == 201
-        mine = (await a1.get("/api/messages")).json()["messages"]
-        assert mine[-1]["from"] == "runner" and mine[-1]["text"] == "Reward +10"
     ops = [(ln["op"], ln["agent"], ln.get("reason"), ln.get("chars"), ln.get("epoch")) for ln in log_lines(st.log_path)
            if ln["service"] == "chat"]
     assert ("message_rejected", "agent-1", "too_long", 21, "ep01") in ops

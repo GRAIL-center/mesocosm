@@ -34,7 +34,6 @@ def _write(tmp_path, data):
     {"learning": {"mode": "rl"}},
     {"rewards": {"enabled": False}, "learning": {"mode": "in_context"}},
     {"rewards": {"enabled": True, "source": "peer_verdict"}},
-    {"services": {"chat": {"enabled": True}, "peer_review": {"enabled": True, "protocol": "legacy"}}},
     {"rewards": {"enabled": False}, "services": {"chat": {"enabled": True},
                                                 "peer_review": {"enabled": True, "protocol": "ratings"}}},
     {"judge": {"monitor": {"timing": "before_action"}}},

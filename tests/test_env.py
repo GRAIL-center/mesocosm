@@ -170,7 +170,7 @@ def test_chat_adds_the_hostname_and_carries_its_limits_and_peer_review_rides_on_
     chat = yaml.safe_load(svc["services"]["environment"]["MESOCOSM_CHAT"])
     assert chat["channels"] == [] and chat["max_chars"] == 200 and chat["max_messages"] == 5
     pr = yaml.safe_load(svc["services"]["environment"]["MESOCOSM_PEER_REVIEW"])
-    assert pr["topology"] == "all" and pr["reward_per_verdict"] == 10 and "max_chars" not in pr
+    assert pr["topology"] == "all" and pr["protocol"] == "ratings" and "max_chars" not in pr
     assert egress_env(manifest, manifest.agents[0])["MESOCOSM_SERVICES"] == "wiki,git,pypi,chat"
     plain = render_compose(load_manifest(ROOT / "tests" / "fixtures" / "spike-world.yaml"), repo_root=ROOT, run_label="lbl")
     assert plain["services"]["services"]["environment"]["MESOCOSM_PEER_REVIEW"] == "null"

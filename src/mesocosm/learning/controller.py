@@ -71,8 +71,6 @@ def training_world(spec: TrainingSpec, path: pathlib.Path) -> WorldManifest:
         raise ValueError("rejected_unsupported: artifact publication is not integrated with policy-weight training")
     if not world.rewards.enabled or world.learning.mode != "none":
         raise ValueError("training requires measured rewards enabled and context feedback learning.mode=none")
-    if world.services.peer_review.enabled and world.services.peer_review.protocol == "legacy":
-        raise ValueError("rejected_unsupported: legacy peer-review episodes cannot supply training rollouts")
     if world.observe.activations:
         raise ValueError("rejected_unsupported: separate activation capture is not integrated with training")
     if not world.tasks:

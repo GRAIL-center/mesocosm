@@ -38,7 +38,6 @@ from mesocosm.core.episode_controls import select_participants
 from mesocosm.core.episode_usage import measured_usage, request_boundary
 from mesocosm.core.episode_validation import episode_condition_errors
 from mesocosm.core.history import EpisodeHistory
-from mesocosm.core.legacy_peer_review import EpisodeSync  # legacy import compatibility
 from mesocosm.core.manifest import SUPPORTED_CHANNELS, AgentSpec, TaskSpec, WorldManifest
 from mesocosm.core.receipts import EnforcedAt, Receipt, Verification
 from mesocosm.core.records import EventIdentity, EventLink, RunBundle
@@ -622,7 +621,7 @@ class CohortStart:
 
 async def _run_task(manifest: WorldManifest, components: Components, bundle: RunBundle, agent: AgentSpec,
                     task: Task, ctx: AgentContext, marks: dict[str, Any],
-                    sync: EpisodeSync | RewardEpisodes | None = None,
+                    sync: RewardEpisodes | None = None,
                     cohort: CohortStart | None = None) -> float | None:
     """One task for one agent: memory policy, planted files, harness turn, native log, verifier, state check;
     under peer review also the episode's opening, scoring and feedback; with a side task its delivery and
@@ -656,10 +655,8 @@ async def _run_task(manifest: WorldManifest, components: Components, bundle: Run
     if manifest.judge.monitor.enabled and manifest.judge.monitor.timing == "pre_action":
         components.intervention.register(agent.id, ctx.harness, ctx.session_id, task.name)
     if ctx.raw_log is None:
-        # Only the archived peer-verification protocol requires an agent-readable log.
-        # Generic runs must not add control-plane logs to the task's working tree or verifier input.
-        directory = ctx.workspace if isinstance(sync, EpisodeSync) else bundle.root / "native" / agent.id / "tools"
-        ctx.raw_log = RawLog(directory)
+        # Control-plane logs stay out of the task's working tree and the verifier's input.
+        ctx.raw_log = RawLog(bundle.root / "native" / agent.id / "tools")
     ctx.raw_log.task = task.name
     if ctx.collector is None:
         ctx.collector = asyncio.create_task(_collect_events(ctx.harness, bundle, ctx.session_to_agent, ctx.raw_log,
@@ -1173,7 +1170,7 @@ async def _close_agent(ctx: AgentContext) -> None:
 
 async def _run_agent(manifest: WorldManifest, components: Components, bundle: RunBundle, agent: AgentSpec,
                      tasks: list[Task],
-                     sync: EpisodeSync | RewardEpisodes | None = None,
+                     sync: RewardEpisodes | None = None,
                      cohort: CohortStart | None = None) -> dict[str, float | None]:
     """Comparison mode: one agent through every task, in order. Agents run concurrently."""
     rewards: dict[str, float | None] = {}
@@ -1565,9 +1562,7 @@ async def _run(manifest: WorldManifest, manifest_path: pathlib.Path, components:
             bundle.record("task.loaded", task=task.name, provenance=task.provenance(), source="manifest",
                           allowed_channels=allowed_channels(task), **task_marks)
         # Agents work on the tasks at the same time; each has its own harness, sessions and collector.
-        sync = (RewardEpisodes(manifest, components.services, bundle) if manifest.rewards.enabled else
-                EpisodeSync(manifest, components, bundle)
-                if manifest.services.peer_review.enabled and manifest.structure is None else None)
+        sync = RewardEpisodes(manifest, components.services, bundle) if manifest.rewards.enabled else None
         if manifest.structure is not None:
             rewards.update(await _run_graph(manifest, components, bundle, tasks))
         elif manifest.task_assignment.policy != "all":

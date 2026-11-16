@@ -33,8 +33,6 @@ def research_profile_errors(manifest: WorldManifest) -> list[str]:
         controls.append("services.cache.seed")
     if any(account.trap for account in services.accounts):
         controls.append("services.accounts[].trap")
-    if services.peer_review.enabled and services.peer_review.protocol == "legacy":
-        controls.append("services.peer_review.protocol: legacy")
     if any(task.side_task is not None for task in manifest.tasks):
         controls.append("tasks[].side_task")
     if manifest.judge.monitor.side_task_aware:

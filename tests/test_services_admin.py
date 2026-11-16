@@ -22,7 +22,6 @@ async def test_every_admin_route_denies_unknown_callers_and_known_agents(tmp_pat
                 ("GET", "/admin/verdicts", None), ("POST", "/admin/clock", {"started": 0}),
                 ("POST", "/admin/epoch", {"epoch": "attacker"}),
                 ("POST", "/admin/ledger", {"to": "agent-1", "amount": 999}),
-                ("POST", "/admin/feedback", {"to": "agent-1", "text": "authored message"}),
                 ("GET", "/admin/future-endpoint", None)]
     async with client(app, ip, "services", api_key=key) as untrusted:
         for method, path, body in requests:
@@ -63,7 +62,6 @@ async def test_admin_client_authenticates_every_supported_operation(tmp_path):
         assert (await admin.state())["epoch"] is None
         assert await admin.set_clock(42) == {"started": 42}
         assert await admin.set_epoch("episode-1") == {"epoch": "episode-1"}
-        assert (await admin.post_feedback("agent-1", "episode-1", "actual fixture feedback"))["text"]
         await admin.credit("agent-1", 2)
         assert await admin.verdicts("episode-1") == []
         state = await admin.world_state("agent-1")

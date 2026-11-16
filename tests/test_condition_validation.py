@@ -35,8 +35,6 @@ def test_default_and_fully_serialized_default_controls_remain_valid():
     ({"internet": {"allow": ["example.org"]}}, "internet.allow"),
     ({"internet": {"replay_file": "flows.jsonl"}}, "internet.replay_file"),
     ({"services": {"peer_review": {"topology": "ring"}}}, "services.peer_review.topology"),
-    ({"services": {"peer_review": {"protocol": "ratings"}}}, "services.peer_review.protocol"),
-    ({"services": {"peer_review": {"reward_feedback": False}}}, "services.peer_review.reward_feedback"),
     ({"stream": {"max_tasks": 3}}, "stream.max_tasks"),
     ({"stream": {"poll_seconds": 2}}, "stream.poll_seconds"),
     ({"stream": {"source": "external"}}, "stream.source"),
