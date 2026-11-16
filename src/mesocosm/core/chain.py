@@ -4,8 +4,8 @@ lets an interrupted chain resume where it stopped.
 
     name: nightly
     runs:
-      - {manifest: examples/fixtures/world-demo.yaml, repeat: 3}
-      - {manifest: examples/fixtures/world-channels.yaml}
+      - {manifest: examples/world-native-three.yaml, repeat: 3}
+      - {manifest: examples/world-benchmark.yaml}
     retries: 1
     on_failure: continue
 """

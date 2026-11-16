@@ -11,7 +11,6 @@ import yaml
 from mesocosm.adapters.harbor.task import load_task
 from mesocosm.core.manifest import WorldManifest, load_manifest, validate_manifest
 from mesocosm.core.research import ResearchProfileError, validate_research_tasks
-from mesocosm.core.scenario import Scenario, stage_manifests
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -98,29 +97,14 @@ def test_runtime_rechecks_mutated_research_manifest():
         validate_research_tasks(manifest, [])
 
 
-def test_archived_worlds_and_tasks_are_explicit_fixtures_even_after_relocation(tmp_path):
-    for path in sorted((ROOT / "examples/fixtures").glob("*.yaml")):
+def test_test_inputs_are_explicit_fixtures_and_examples_are_research_worlds(tmp_path):
+    for path in sorted((ROOT / "tests/fixtures").glob("*.yaml")):
         assert load_manifest(path).profile == "fixture", path
         report = validate_manifest(path)
         assert report.ok, (path, report.errors)
     for path in sorted((ROOT / "examples").glob("*.yaml")):
         assert load_manifest(path).profile == "research", path
     task = tmp_path / "renamed-original"
-    shutil.copytree(ROOT / "examples/fixtures/tasks/hello-world", task)
+    shutil.copytree(ROOT / "tests/fixtures/tasks/hello-world", task)
     with pytest.raises(ResearchProfileError, match="metadata.fixture"):
         validate_research_tasks(WorldManifest.model_validate(world()), [load_task(task)])
-
-
-def test_legacy_scenario_cannot_run_a_research_world_or_switch_a_stage_to_research(tmp_path):
-    base = tmp_path / "base.yaml"
-    base.write_text(yaml.safe_dump(world()))
-    scenario = Scenario(name="legacy", base="base.yaml", stages=[{"name": "first"}])
-    with pytest.raises(ValueError, match="require a base world with profile: fixture"):
-        stage_manifests(scenario, tmp_path / "scenario.yaml", tmp_path / "out")
-    assert not (tmp_path / "out").exists()
-    base.write_text(yaml.safe_dump(world(profile="fixture")))
-    for patch in ({"profile": "research"}, {"profile": None}):
-        scenario.stages[0].patch = patch
-        with pytest.raises(ValueError, match="retain profile: fixture"):
-            stage_manifests(scenario, tmp_path / "scenario.yaml", tmp_path / "out")
-    assert not (tmp_path / "out").exists()

@@ -22,7 +22,7 @@ from mesocosm.gateway.app import Settings, create_app
 from mesocosm.gateway.client import GatewayAdmin
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "examples" / "fixtures" / "spike-world.yaml"
+MANIFEST = ROOT / "tests" / "fixtures" / "spike-world.yaml"
 
 
 def fake_vllm() -> FastAPI:

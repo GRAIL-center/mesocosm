@@ -23,7 +23,7 @@ from mesocosm.execution import local
 
 def write_experiment(tmp_path, *, invalid=False):
     # The orchestration boundary is fake; its declared input still must be a materialized task.
-    fixture = pathlib.Path(__file__).resolve().parents[1] / "examples/fixtures/tasks/hello-world"
+    fixture = pathlib.Path(__file__).resolve().parent / "fixtures/tasks/hello-world"
     shutil.copytree(fixture, tmp_path / "orchestration-fixtures@1/hello-world")
     world = {"name": "cli-test", "profile": "fixture",
              "model": {"id": "test-model", "hf_repo": "test/model"},

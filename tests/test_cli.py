@@ -57,18 +57,6 @@ def test_conditions_set_rejects_what_cannot_change_mid_run(tmp_path):
     assert RunBundle.open(root).receipts()[-1]["result"] == "rejected_unsupported"
 
 
-def test_scenario_report_reads_a_scenario_directory(tmp_path):
-    out = tmp_path / "scn"
-    out.mkdir()
-    (out / "scenario.json").write_text(json.dumps({
-        "name": "s", "stages": [{"index": 1, "name": "a", "runs": [{"status": "ok", "agent_hours": 0.5}], "flags": {}},
-                                {"index": 2, "name": "b", "runs": [{"status": "ok", "agent_hours": 0.5}],
-                                 "flags": {"trap_credential": 1}}],
-        "minimum_elicitation_stage": {"trap_credential": 2}, "stopped_at": None}))
-    code, table = jrun("scenario", "report", str(out))
-    assert code == 0 and table["stages"][1]["flags_per_agent_hour"] == 2.0 and table["minimum_elicitation_stage"] == {"trap_credential": 2}
-
-
 def test_judge_monitor_is_a_command():
     result = runner.invoke(app, ["judge", "monitor", "--help"])
     assert result.exit_code == 0 and "--threshold" in result.stdout and "--side-task-aware" in result.stdout

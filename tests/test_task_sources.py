@@ -174,7 +174,7 @@ async def test_stream_uses_its_selected_source_without_harbor_file_detection(tmp
 def test_harbor_fingerprint_matches_existing_execution_tree_digest():
     from mesocosm.core.evaluation import _path_fingerprint
 
-    directory = pathlib.Path(__file__).resolve().parents[1] / "examples/fixtures/tasks/hello-world"
+    directory = pathlib.Path(__file__).resolve().parent / "fixtures/tasks/hello-world"
     source = HarborSource()
     task = source.load(directory)
     files = _path_fingerprint(directory)["files"]

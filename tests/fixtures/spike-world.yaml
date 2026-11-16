@@ -1,4 +1,4 @@
-# Legacy authored fixture; see examples/fixtures/README.md. Not evidence of emergent behavior.
+# Test input with a handwritten check. Not a research world and not evidence of any behavior.
 # One agent, one Harbor task, host-only addresses (spike/SPIKE.md day 1).
 # For the Docker topology, set gateway.url to http://127.0.0.1:8080 only if the control plane
 # runs on the host; inside the control container use http://gateway:8080 and agent urls http://agent-1:4096.

@@ -41,7 +41,6 @@ snapshot_app = typer.Typer(no_args_is_help=True, help="Snapshots of a world's de
 activations_app = typer.Typer(no_args_is_help=True, help="Activations recomputed from recorded token ids")
 probe_app = typer.Typer(no_args_is_help=True, help="Linear probes over captured activations")
 flags_app = typer.Typer(no_args_is_help=True, help="Candidate incidents and their review")
-scenario_app = typer.Typer(no_args_is_help=True, help="Deprecated authored fixture scenarios")
 experiment_app = typer.Typer(no_args_is_help=True, help="Repeated comparisons of enforced conditions")
 train_app = typer.Typer(no_args_is_help=True, help="On-policy weight updates from real multi-agent worlds")
 export_app = typer.Typer(no_args_is_help=True, help="Run bundles in formats other tools read")
@@ -51,7 +50,6 @@ app.add_typer(world_app, name="world")
 app.add_typer(env_app, name="env")
 app.add_typer(conditions_app, name="conditions")
 app.add_typer(flags_app, name="flags")
-app.add_typer(scenario_app, name="scenario")
 app.add_typer(experiment_app, name="experiment")
 app.add_typer(train_app, name="train")
 app.add_typer(snapshot_app, name="snapshot")
@@ -462,54 +460,6 @@ def experiment_report(out_dir: pathlib.Path, json_: bool = JSON_OPT) -> None:
         _emit({"status": "invalid_experiment_record", "error": str(exc)}, json_, ok=False)
         return
     _emit(result, json_)
-
-
-@scenario_app.command("run")
-def scenario_run(scenario: pathlib.Path,
-                 out: pathlib.Path = typer.Option(None, "--out",
-                                                  help="Where stage manifests, compose files and scenario.json go; "
-                                                       "default runs/scenarios/<name>"),
-                 runs_root: pathlib.Path = RUNS_ROOT_OPT,
-                 workspace_root: pathlib.Path = WORKSPACE_ROOT_OPT,
-                 verifier_image: str = VERIFIER_IMAGE_OPT,
-                 verifier_network: str = VERIFIER_NETWORK_OPT,
-                 allow_unenforced_storage: bool = UNENFORCED_STORAGE_OPT,
-                 task_runtime: str = TASK_RUNTIME_OPT,
-                 vllm_port: int = typer.Option(8000, "--vllm-port"),
-                 vllm_host: str = typer.Option("host.docker.internal", "--vllm-host"),
-                 keep_up: bool = typer.Option(False, "--keep-up", help="Leave the sandbox running afterwards"),
-                 json_: bool = JSON_OPT) -> None:
-    """Run a staged scenario: per stage, render and reconcile the sandbox, run, collect the judge's flags."""
-    from mesocosm.core.scenario import load_scenario, run_scenario
-
-    spec = load_scenario(scenario)
-    out_dir = out or runs_root / "scenarios" / spec.name
-    stacks: list = []
-    run_one = _stack_runner(out_dir, runs_root, workspace_root, verifier_image, vllm_port, vllm_host, stacks,
-                            verifier_network=verifier_network, allow_unenforced_storage=allow_unenforced_storage,
-                            task_runtime=task_runtime)
-
-    async def main():
-        try:
-            return await run_scenario(spec, scenario.resolve(), out_dir, run_one)
-        finally:
-            if stacks and not keep_up:
-                await stacks[-1].down()
-
-    result = asyncio.run(main())
-    _emit({"name": result["name"], "out": str(out_dir), "stopped_at": result["stopped_at"],
-           "minimum_elicitation_stage": result["minimum_elicitation_stage"],
-           "stages": [{"index": s["index"], "name": s["name"], "flags": s["flags"],
-                       "ok": s.get("ok", 0), "runs": len(s["runs"])} for s in result["stages"]]},
-          json_, ok=all(r["status"] == "ok" for s in result["stages"] for r in s["runs"]))
-
-
-@scenario_app.command("report")
-def scenario_report(out_dir: pathlib.Path, json_: bool = JSON_OPT) -> None:
-    """The minimum elicitation stage per flag kind and per-stage counts from a scenario directory."""
-    from mesocosm.core.scenario import scenario_table
-
-    _emit(scenario_table(out_dir), json_)
 
 
 @app.command()
