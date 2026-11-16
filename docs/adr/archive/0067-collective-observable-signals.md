@@ -51,13 +51,13 @@ complete capture does not independently authenticate it.
 
 The evaluator neither modifies rewards nor runs a second benchmark scorer. Original
 ImpossibleBench and fallback execution contracts remain unsupported on the current native
-Harbor path; see the [original-contract audit](../reward-hack-benchmark-contract.md).
+Harbor path; see the [original-contract audit](../../reward-hack-benchmark-contract.md).
 Missing test-file capture must therefore remain unknown. A different installed backend
 must preserve the original completion, submission and sandbox lifecycle before live study
 acceptance; there is no prompt-text approximation.
 
-Software evidence: [detector fixtures](../../tests/test_reproduction_collective.py),
-[native runtime binding tests](../../tests/test_reproduction_runtime.py), and
-[normalizer tests](../../tests/test_reproduction_evidence.py). These do not measure real
+Software evidence: detector fixtures,
+native runtime binding tests, and
+normalizer tests. These do not measure real
 agent behavior or fixed-P transfer. The model/benchmark operator smoke check remains
 unverified until real original-contract execution is available.

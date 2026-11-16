@@ -28,9 +28,9 @@ Checks inspect the task-root extensions, not similarly named directories inside 
 including materialized dataset tasks and tasks received through the persistent queue. Nothing strips
 or rewrites the original task to make it pass validation.
 
-Archived worlds under `examples/fixtures/` explicitly select the fixture profile, and their task TOMLs
-carry `metadata.fixture = true`. Relocating an archived task therefore retains its fixture marker.
-Legacy staged scenarios require fixture worlds and cannot switch a stage into research. The CLI's
+Test inputs under `tests/fixtures/` explicitly select the fixture profile, and their task TOMLs
+carry `metadata.fixture = true`. Relocating such a task therefore retains its fixture marker.
+The CLI's
 `--task-runtime fixture` also requires the fixture profile.
 
 The compatibility key and hostname `cache` still refer to a **text object store**. It stores actual
@@ -257,4 +257,4 @@ new real Docker calibration or N >= 3 shared-service acceptance is claimed. A st
 run must still show three actual harness sessions and tool execution, unchanged task inputs/verifier,
 working shared services, preserved original scores and successful owned-resource cleanup. The historical
 Colab wrapper removes PID isolation, so its earlier runs cannot establish that evidence. See the
-[capability matrix](capability-matrix.md) and [ADR-0050](adr/0050-native-service-worlds.md).
+[capability matrix](capability-matrix.md) and [ADR-0050](adr/archive/0050-native-service-worlds.md).

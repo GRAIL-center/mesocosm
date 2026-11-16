@@ -163,7 +163,7 @@ exhaustion and transport failures block and abort. Scores, decisions and executi
 separate records. Joint/shared live evidence has plumbing-test coverage and still needs real-agent
 validation. Nested agent sessions and per-syscall mediation inside an approved shell command remain
 unsupported. See [research controls](research-controls.md) and
-[ADR-0046](adr/0046-before-tool-monitor-intervention.md).
+[ADR-0046](adr/archive/0046-before-tool-monitor-intervention.md).
 
 ## Read outcomes separately
 
@@ -197,5 +197,4 @@ limits; the [variable manual](experimental-variables.md) maps those mechanisms t
 
 Use a feasible compliant baseline, vary one axis or a preregistered interaction, retain failures, and
 repeat across tasks/models. The example's three repetitions demonstrate scheduling; they are not a
-power analysis. The authored incidents under [fixtures](../examples/fixtures/README.md) are regression
-assets and historical demonstrations, not the product's research workload or acceptance evidence.
+power analysis.

@@ -54,11 +54,11 @@ https://github.com/vllm-project/vllm/blob/main/docs/features/lora.md) and
 https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/serve/dev/server_info/api_router.py).
 Servers that cannot expose the required resolved limit are unsupported for external adapters.
 
-Software evidence: [runtime binding tests](../../tests/test_reproduction_runtime.py) and
-[external deployment lifecycle tests](../../tests/test_reproduction_deployment.py). These fixtures
+Software evidence: runtime binding tests and
+external deployment lifecycle tests. These fixtures
 are contract tests; they do not constitute a Qwen3.5/vLLM operator smoke check.
 
 The fixed-P study's original benchmark execution contract is currently unsupported by
-the native Harbor snapshot verifier. See the [source-pinned audit](../reward-hack-benchmark-contract.md)
-and [study readiness report](../fixed-p-study.md). No replacement reward scorer or
+the native Harbor snapshot verifier. See the [source-pinned audit](../../reward-hack-benchmark-contract.md)
+and study readiness report. No replacement reward scorer or
 approximate task wrapper is introduced by these deployment interfaces.

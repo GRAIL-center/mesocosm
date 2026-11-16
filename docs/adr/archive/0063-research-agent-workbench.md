@@ -41,5 +41,5 @@ The store is for one trusted operator. Content hashes are consistency checks, no
 authentication. Held-out evaluation needs independently enforced filesystem/tool permissions when
 the caller is an autonomous research agent. Local methods do not purchase or allocate compute.
 
-See [user guide](../reproduction.md), [requirements audit](../reproduction-requirements.md),
+See user guide, requirements audit,
 `tests/test_reproduction_*.py` and the capability matrix.

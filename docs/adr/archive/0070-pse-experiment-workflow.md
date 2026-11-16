@@ -23,7 +23,7 @@ trial. Preserve exact source-linked observation/action/checkpoint provenance.
 
 New population/graph/scheduler/comparison and PPO/GRPO capabilities require real implementations
 and linked acceptance evidence; this ADR does not add them. No prompt approximation or renamed
-optimizer is permitted. See the [design and current status](../swarmstill-pse-design.md).
+optimizer is permitted. See the design and current status.
 
 ## Consequences
 

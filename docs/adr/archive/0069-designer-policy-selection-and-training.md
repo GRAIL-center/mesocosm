@@ -55,8 +55,8 @@ the prior restrictions. Prepared training datasets may contain their native inte
 partition; the native trainer excludes it, and the designer receives no examples or test
 metrics. Operators must approve source provenance independently of split labels.
 
-Software evidence is in [policy contracts](../../tests/test_designer_policy.py) and
-[mutable designer integration](../../tests/test_designer_mutable.py). Live student serving,
+Software evidence is in policy contracts and
+mutable designer integration. Live student serving,
 behavioral transfer and hidden-intervention response require separate real execution.
 The benchmark incompatibility recorded in ADR-0066 remains unchanged. See the
-[operator guide](../designer-policy.md) for configuration and limits.
+operator guide for configuration and limits.

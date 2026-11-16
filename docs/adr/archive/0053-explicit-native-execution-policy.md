@@ -29,7 +29,7 @@ unchanged. Refuse invalid network values before starting the worker or calibrati
 
 Regression tests cover strict defaults, explicit forwarding through worlds and experiments,
 persisted worker policy and calibration options. These are local interface and orchestration tests,
-not a real Linux run. [Native acceptance](../native-acceptance.md) requires separate host, calibration,
+not a real Linux run. [Native acceptance](../../native-acceptance.md) requires separate host, calibration,
 three-agent, trajectory and lifecycle evidence. The historical Colab wrapper cannot provide required
 private PID containment. Task failure or timeout is an observation; neither prompts nor verifier
 criteria are changed to manufacture completion.

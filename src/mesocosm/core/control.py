@@ -27,10 +27,6 @@ def stop_requested(bundle_root: pathlib.Path) -> bool:
     return (bundle_root / STOP_MARKER).exists()
 
 
-def gateway_url_of(bundle_root: str | pathlib.Path) -> str:
-    return RunBundle.open(bundle_root).manifest()["manifest"]["gateway"]["url"]
-
-
 def gateway_admin_of(bundle_root: str | pathlib.Path) -> GatewayAdmin:
     """A client for the gateway the bundle's manifest names, with its control key."""
     spec = RunBundle.open(bundle_root).manifest()["manifest"]["gateway"]

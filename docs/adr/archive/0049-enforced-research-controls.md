@@ -48,8 +48,8 @@ introduce desired-behavior scripts or establish any misalignment or learning-eff
 
 ## Consequences and evidence
 
-See [research controls](../research-controls.md) for configuration and the
-[capability matrix](../capability-matrix.md) for the tested boundary. New controls have local plumbing
+See [research controls](../../research-controls.md) for configuration and the
+[capability matrix](../../capability-matrix.md) for the tested boundary. New controls have local plumbing
 and regression tests. They do not inherit real-agent acceptance from earlier A100 runs. Standard Linux
 containment, new joint monitoring and a repeated held-out real-agent study require new live evidence.
 

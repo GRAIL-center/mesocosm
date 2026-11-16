@@ -134,7 +134,7 @@ These capabilities are not supplied automatically by the worker or task-source i
 unsupported combinations before workload allocation, including features a backend supports separately
 but cannot combine faithfully. Native limitations, including shared-service artifact exchange and
 policy-training exclusions, remain in force when reusing that path. See
-[ADR-0056](adr/0056-measured-interaction-conditions.md) and the [capability matrix](capability-matrix.md).
+[ADR-0056](adr/archive/0056-measured-interaction-conditions.md) and the [capability matrix](capability-matrix.md).
 
 `create` receives the private worker root and operator options. The returned object implements:
 

@@ -1,28 +1,22 @@
 # Development milestones
 
-The project is a pre-alpha research runtime. Since
-[ADR-0075](adr/0075-behavior-laboratory-direction.md) the direction is a laboratory for multi-agent
-behavior, built in four stages: reproduce, observe, elicit, red-team. Each stage is the precondition of
-the next. Earlier incident scenarios and synthetic workplace histories are retained as
-[legacy fixtures](../examples/fixtures/README.md); reproducing their expected flags is not a research
-milestone.
+The project is a pre-alpha research runtime. The direction is a laboratory for multi-agent behavior,
+built in four stages: reproduce, observe, elicit, red-team
+([ADR-0078](adr/0078-purpose-stages-and-builders.md)). Each stage is the precondition of the next.
 
 ## Research stages
 
 | Stage | Current evidence | Exit criterion / remaining work |
 |---|---|---|
-| 1. Reproduce | No published behavior has been reproduced. The study core of [ADR-0074](adr/0074-behavior-studies.md) (conditions, substrate contract, trial runner, typing battery, behavior card) has CPU tests with a deterministic test environment. Since [ADR-0077](adr/0077-agent-built-study-environments.md) an agent can bring an environment as a manifest and a command, record its model calls through the gateway, run tests that return the effect with the run-to-run noise, read events and get the original study's stated conditions; a naming-game reconstruction runs end to end with scripted inference. No trial has run with a real model and no card comes from real models. | Two positive controls. First, connect the original Emergent Collusion environment through the gateway, reproduce its published baseline, and compare runs with and without memory across episodes. Second, a naming game with and without interaction history; a [reconstruction template](../examples/study/naming-game/) exists and has not run with real models. For each control: the baseline effect exceeds measured run-to-run noise, removing the published condition changes the behavior in the reported direction, and request records show the manipulation reached model inputs, which needs per-request sampling seeds that the model server honors, or paired replay, to make the reach check decisive. A control that does not reproduce is recorded as a re-test result and is not repaired by adding cues. |
+| 1. Reproduce | No published behavior has been reproduced. An agent can bring an environment as a manifest and a command, record its model calls through the gateway, and run comparisons that return the effect next to the run-to-run noise ([ADR-0079](adr/0079-behavior-studies.md)); a naming-game reconstruction runs end to end with scripted inference. No trial has run with a real model and no card comes from real models. | Two positive controls. First, connect the original Emergent Collusion environment through the gateway, reproduce its published baseline, and compare runs with and without memory across episodes. Second, a naming game with and without interaction history; a [reconstruction template](../skills/behavior-study/template/) exists and has not run with real models. For each control: the baseline effect exceeds measured run-to-run noise, removing the published condition changes the behavior in the reported direction, and request records show the manipulation reached model inputs, which needs per-request sampling seeds that the model server honors, or paired replay, to make the reach check decisive. A control that does not reproduce is recorded as a re-test result and is not repaired by adding cues. |
 | 2. Observe | The recorded real-agent runs on the native world scored zero on every task, and the first of them observed no cooperation. | Agents complete solvable tasks at a rate fixed in advance. Detectors are checked against the stage-1 cases before their flags are read. Hosted models run through the gateway; multi-provider deployment is unverified. |
 | 3. Elicit | Enforced conditions (budgets, access, memory, incentives, monitoring) have tests and partial real-agent evidence, listed below. No behavior has been elicited. | Run-to-run noise measured before any comparison is interpreted. Every case carries the origin of the behavior. Forked reruns from a saved live state, unsupported today, for attribution inside a run. |
 | 4. Red-team | Containment through the two gateways and before-tool monitor intervention exist. No red-team study has been run. | A search for conditions under which a team behaves in misaligned ways, monitor misses and false alarms measured on those cases, and a release review for elicitation recipes. |
 
 The two positive controls are tasks for a team of AI agents, and where the team gets stuck is the list of
-defects to fix ([ADR-0076](adr/0076-agent-teams-build-reproductions.md)). The agent-facing tools are
-extended in this order: a runner for a published repository through the gateway and a noise instrument
-(needed by the first control), then diagnosis and context, then all seven levers in the designer tools.
-The runner, the instrument, diagnosis and context exist as `mesocosm study` commands with scripted-inference
-tests ([guide](study.md)). Still missing: a contained runner for environments whose agents execute code,
-which the Emergent Collusion repository needs, its adapter, and the levers in the designer tools.
+defects to fix. The team works from the [behavior-study skill](../skills/behavior-study/SKILL.md) and three
+commands, which have scripted-inference tests. Still missing for the first control: a contained runner
+for environments whose agents execute code, which the Emergent Collusion repository needs, and its adapter.
 
 ## Runtime acceptance
 

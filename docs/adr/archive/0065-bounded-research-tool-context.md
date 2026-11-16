@@ -35,4 +35,4 @@ the agent response contract, documented as tool-index schema version 2. This bou
 responses, not arbitrary client prompt history, total campaign costs or tokenizer-dependent tokens.
 No scientific search strategy, intermediate checkpoint deployment or native acceptance is implied.
 
-See the [workbench guide](../reproduction.md#bounded-agent-context) and its regression tests.
+See the workbench guide and its regression tests.

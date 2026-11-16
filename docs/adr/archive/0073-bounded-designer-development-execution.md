@@ -58,10 +58,10 @@ private evaluator implementation and full native records remain operator-only. A
 can recover an accepted worker job; arbitrary live harness restoration is not provided. Public
 runtime logs require a separate operator-reviewed corpus release before designer access.
 
-Software contracts in [test_designer_execution.py](../../tests/test_designer_execution.py) cover
+Software contracts in test_designer_execution.py cover
 the façade and strict original-bundle verification using explicitly labeled transport/runtime
 fixtures. These tests are not live worker, model-serving or multi-agent acceptance evidence.
 The original benchmark compatibility blocker remains as documented in the
-[benchmark audit](../reward-hack-benchmark-contract.md).
+[benchmark audit](../../reward-hack-benchmark-contract.md).
 
-See the [operator and designer guide](../designer-execution.md) for configuration and lifecycle.
+See the operator and designer guide for configuration and lifecycle.

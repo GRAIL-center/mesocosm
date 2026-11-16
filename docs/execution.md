@@ -85,7 +85,7 @@ dependencies online and whose storage quota is unsupported, explicitly use
 and retained in the execution result; native receipts record actual applied and unsupported resources.
 It does not relax required PID containment or open agent internet access. Available CPU/RAM limits
 still apply. Separate live verifiers retain their existing network restrictions. See
-[ADR-0053](adr/0053-explicit-native-execution-policy.md) and the
+[ADR-0053](adr/archive/0053-explicit-native-execution-policy.md) and the
 [native acceptance procedure](native-acceptance.md).
 
 The worker runs one active job and admits at most 16 unfinished jobs by default (`--max-pending`). Current worlds use
@@ -228,4 +228,4 @@ They do not demonstrate a real Linux worker running three real agents, native ap
 actual tools and the original verifier. No Linux execution host was available for this implementation;
 that acceptance run remains **unverified**. Existing earlier Colab evidence does not verify this
 worker or its stricter containment path. See the [capability matrix](capability-matrix.md) and
-[ADR-0051](adr/0051-remote-world-execution.md).
+[ADR-0051](adr/archive/0051-remote-world-execution.md).

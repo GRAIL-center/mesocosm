@@ -6,9 +6,8 @@ Python users can call the underlying modules, such as `core.run` and `core.exper
 There is no implemented `core.api` facade or general HTTP/MCP control API. The worker API owns finite
 world/experiment jobs; it is not an arbitrary mid-run control surface. The training controller
 uses its strict native rollout collector; Inspect export remains an evaluation format.
-The separate [designer stdio MCP](designer-mcp.md) exposes six restricted inverse-study tools,
-with four optional [policy selection/training tools](designer-policy.md). It keeps trusted
-operator records, world execution and evaluation controls private.
+Behavior studies have their own three commands, `mesocosm study describe`, `test` and `card`
+([skill](../skills/behavior-study/SKILL.md)).
 
 Changing a supported variable is a configuration operation. Introducing a new variable or service
 requires implementation, validation and a capability declaration. A prompt description is not an
@@ -44,8 +43,8 @@ enforcement mechanism.
 | `flags list` / `flags review` | Candidate detections and reviewer verdicts, kept separate. |
 | `export inspect <bundle>` | Inspect evaluation JSON with explicit omitted data; not an RL trajectory export. |
 
-Use `mesocosm <command> --help` for exact arguments. `chain` and deprecated `scenario` remain available
-for legacy workflows; new condition comparisons should use `experiment`.
+Use `mesocosm <command> --help` for exact arguments. `chain` remains available; new condition
+comparisons should use `experiment`.
 
 ## Receipts and records
 

@@ -88,7 +88,7 @@ research feature to restore. The [research profile](../src/mesocosm/core/researc
 | `services.seed`, `services.cache.seed` | Load invented service history or initial text objects. | Reproduce authored fixtures. | A seeded backstory is not agent interaction evidence. Original benchmark environment files remain allowed. | **Deprecate** for research. |
 | `tasks[].side_task`, `side_task.md`, side tests, authored rounds, `agents/`, `instances/`, `protected/` | Deliver side objectives, personalized planted content or prescribed turns in fixture mode. | Test legacy adversarial/regression workflows. | These can script the supposed incident and change original task semantics. | **Deprecate** for research. |
 | `peer_review.protocol: legacy`, `monitor.side_task_aware` | Paper-specific verdict correctness/reward/reflection protocol and attacker-goal-aware fixture judging. | Preserve isolated historical plumbing tests. | Legacy feedback switches are not generic ratings variables. | **Deprecate** for research; use ratings plus independent measurements. |
-| Legacy `scenario` / `chain` | Compatibility workflows have their own stopping/retry/snapshot semantics. | Retain old fixtures. | Outcome-dependent stopping/retrying is not a neutral condition comparison. | **Restrict** to fixture use; use experiments for research comparisons. |
+| `chain` | A compatibility workflow with its own retry/snapshot semantics. | Keep it out of comparisons. | Outcome-dependent stopping/retrying is not a neutral condition comparison. | **Restrict** to fixture use; use experiments for research comparisons. |
 
 ## Validation findings and boundaries to preserve
 

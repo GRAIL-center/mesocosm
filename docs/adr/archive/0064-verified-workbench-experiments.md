@@ -36,4 +36,4 @@ final identity check. Neither registration nor a completed study proves behavior
 Live Linux/GPU three-agent acceptance remains unverified. No automatic research search, resource
 allocation, remote weight upload, or change to original task content is introduced.
 
-See [the workflow and test evidence](../verified-research-loop.md).
+See the workflow and test evidence.

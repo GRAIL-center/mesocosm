@@ -23,8 +23,8 @@ incentives or oversight change.
 [Choose variables](docs/experimental-variables.md) · [Compare conditions](docs/experiments.md) ·
 [Task sources](docs/task-sources.md) ·
 [Add an integration](docs/integrations.md) ·
-[Research-agent tools](docs/reproduction.md) ·
-[Architecture](ARCHITECTURE.md) · [Direction](docs/adr/0075-behavior-laboratory-direction.md)
+[Study a behavior](skills/behavior-study/SKILL.md) ·
+[Architecture](ARCHITECTURE.md) · [Direction](docs/adr/0078-purpose-stages-and-builders.md)
 
 ## What it does
 
@@ -38,8 +38,7 @@ incentives or oversight change.
 | **Monitor and intervene** | Posthoc review or assessment before supported tool calls, with recorded allow, deny or termination decisions. |
 | **Update policies** | An optional REINFORCE/LoRA training loop using validated action/reward records and checkpoint activation between worlds. |
 | **Inspect evidence** | Original model and harness records, tool events, verifier results, enforcement receipts, CLI reports, diagnostics and integrity checks. |
-| **Study a behavior** | An agent brings an environment as a manifest and a command, reads the original study's conditions and the measured baseline, runs tests that return the effect with the run-to-run noise, looks inside trials, and confirms claims as behavior cards ([guide](docs/study.md)). Tested with scripted inference only; no study has run with a real model. |
-| **Build a research workflow** | Callable tools connect evidence, typed factors, local SFT/LoRA, serving attribution, verified run evaluation and repeated base/trained × baseline/designed comparisons. [Workflow and limits →](docs/verified-research-loop.md) |
+| **Study a behavior** | An agent brings an environment as a manifest and a command, measures the unchanged baseline, runs comparisons that return the effect next to the run-to-run noise, and confirms claims as behavior cards. Three commands and a [skill](skills/behavior-study/SKILL.md). Tested with scripted inference only; no study has run with a real model. |
 
 The built-in Docker/OpenCode runtime supports a defined subset of Debian/Ubuntu tasks and original Compose services.
 Shared-service mode retains separate agent workspaces and records one team measurement. Compatibility
@@ -83,8 +82,7 @@ a model endpoint and an external task.
 | Vary conditions across trials | [Experiments](docs/experiments.md) · [Research controls](docs/research-controls.md) |
 | Build a research hypothesis | [Variable manual](docs/experimental-variables.md) · [Paper notes](docs/research-literature.md) · [Variable audit](docs/variable-audit.md) |
 | Train from verified rollouts | [Policy training](docs/training.md) |
-| Configure and evaluate candidates from a research agent | [Workbench guide](docs/reproduction.md) · [185-item implementation audit](docs/reproduction-requirements.md) |
-| Use an agent skill for SwarmStill research | [Install and use the SwarmStill skill](skills/swarmstill/README.md) |
+| Reproduce a behavior with an agent | [Behavior-study skill](skills/behavior-study/README.md) |
 
 ## Add an integration
 
@@ -121,9 +119,9 @@ functions.
 
 ## Direction
 
-Work proceeds in four stages, and each is the precondition of the next
-([ADR-0075](docs/adr/0075-behavior-laboratory-direction.md)). Agent teams do the building, under one rule:
-permissive to build, strict to label and record ([ADR-0076](docs/adr/0076-agent-teams-build-reproductions.md)).
+Work proceeds in four stages, and each is the precondition of the next. Agent teams do the building,
+under one rule: permissive to build, strict to label and record
+([ADR-0078](docs/adr/0078-purpose-stages-and-builders.md)).
 
 | Stage | What it establishes |
 |---|---|
@@ -143,9 +141,6 @@ acceptance, as do the new repeated-interaction controls. A completed policy upda
 improved behavior, and task failure alone does not establish a platform defect.
 
 The [capability matrix](docs/capability-matrix.md) tracks verified scope and remaining limits.
-The research workbench has software-contract and tiny local training tests; its full native workflow
-still needs real-agent acceptance. Full live-state rewind and several advanced training/harness
-controls remain unsupported, as listed in the requirements audit.
 The [acceptance procedure](docs/native-acceptance.md) defines the next integration checks.
 [Milestones](docs/milestones.md) and [design decisions](docs/adr/README.md) explain the development direction.
 
@@ -162,8 +157,7 @@ uv run ruff check .
 ```
 
 Optional learning tests need the separate `learning` dependencies. GPU inference and Docker acceptance
-require their documented execution environments. Archived authored examples are explicitly labeled
-[fixtures](examples/fixtures/README.md).
+require their documented execution environments.
 
 ## License
 

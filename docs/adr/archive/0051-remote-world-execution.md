@@ -60,4 +60,4 @@ Package, API, lifecycle, client and Docker command-boundary tests verify local c
 injected backends or controlled command responses where Docker is unavailable. They do not establish
 acceptance with three real agents, actual tools, native services and the original verifier on a Linux
 worker. That integration remains unverified until an appropriate host is available. See the
-[execution guide](../execution.md) and [capability matrix](../capability-matrix.md).
+[execution guide](../../execution.md) and [capability matrix](../../capability-matrix.md).

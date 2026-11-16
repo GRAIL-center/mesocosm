@@ -11,8 +11,8 @@ system composition (ADR-0044), and behavior studies that decide which conditions
 needs (ADR-0074).
 
 The platform has not yet shown a behavior. The recorded real-agent runs scored zero on every task
-([native run](../native-multiagent-evidence.md), [condition run](../condition-experiment-evidence.md),
-[training run](../training-monitor-evidence.md)), the first of them observed no cooperation, and the
+([native run](../../native-multiagent-evidence.md), [condition run](../../condition-experiment-evidence.md),
+[training run](../../training-monitor-evidence.md)), the first of them observed no cooperation, and the
 study core has tests only, with no connected environment. An environment that has never
 produced a known behavior cannot tell an absent behavior from one it failed to produce or detect.
 
@@ -78,7 +78,7 @@ the order and the rules below.
 ## Consequences
 
 - Research milestones are the four stages. Runtime acceptance stays functional system composition and
-  is tracked separately ([milestones](../milestones.md)). No capability becomes `supported` through
+  is tracked separately ([milestones](../../milestones.md)). No capability becomes `supported` through
   this record.
 - Widens the purpose stated in ADR-0044 and ADR-0074. Their rules and decisions stand.
 - The first substrate named in ADR-0074, the original Emergent Collusion environment, is the first

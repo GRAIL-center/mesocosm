@@ -5,8 +5,7 @@ interactions. Experiments vary enforced conditions while preserving independent 
 The implementation goal is correct system composition: real environment/agent interfaces, enforceable
 conditions, independent measurement and repeatable execution. Acceptance does not require cooperation,
 collusion or any other desired behavior. The agents choose their actions. Incident stories, planted
-decoys and prescribed misconduct are
-[legacy fixtures](examples/fixtures/README.md), not the architecture's organizing unit.
+decoys and prescribed misconduct are not part of it.
 
 This document describes the implemented structure and its boundaries. Consult the
 [capability matrix](docs/capability-matrix.md) for evidence and the
@@ -15,21 +14,23 @@ This document describes the implemented structure and its boundaries. Consult th
 ## Behavior studies
 
 A behavior study decides by experiment which conditions a multi-agent behavior needs
-([ADR-0074](docs/adr/0074-behavior-studies.md)). It is the organizing unit for new research work.
+([ADR-0079](docs/adr/0079-behavior-studies.md)). It is the organizing unit for new research work.
 `mesocosm.study` does not import the world manifest or the native runtime described in the rest of
-this document; that runtime is one possible substrate.
+this document; that runtime is one possible environment. An agent drives a study with three commands
+and the [behavior-study skill](skills/behavior-study/SKILL.md).
 
 | Part | Responsibility |
 |---|---|
-| `study.condition` | The seven levers, a substrate's declared switches, conditions as complete assignments, and explicit refusal of undeclared settings. |
-| `study.substrate` | The contract of an environment in which a behavior is defined: identity, lever space, its own measures, one fresh trial per call, and model calls in gateway order with input and output digests. |
+| `study.condition` | The seven levers, an environment's declared switches with their labels, conditions as complete assignments, and explicit refusal of undeclared settings. |
+| `study.substrate` | The contract of an environment: identity, switches, its own measures, one fresh trial per call, and model calls in gateway order with input and output digests. |
+| `study.command` | An environment brought as a manifest and a command, so published code runs unchanged. |
+| `study.gateway_link` | The model gateway started for the trials of one command: a key per trial and agent, calls returned as records. |
 | `study.trial`, `study.runner` | One write-once record per trial; parallel, resumable execution; a failed trial stays a missing observation; nothing is stopped, retried or replaced by outcome. |
-| `study.battery` | Baseline repetitions for run-to-run noise, one-switch arms and 2x2 removal arms, all with shared seeds. |
-| `study.card` | Lever states from an exact permutation test and the measure's floor, the reach check, and the type computed from the necessary levers. |
+| `study.compare` | Plans of a baseline and changed conditions on shared seeds; a comparison with the effect, the baseline's spread, an exact permutation test and the reach check; the behavior card. |
+| `study.cli` | `mesocosm study describe`, `test` and `card`. |
 
-No substrate is connected yet, and the reach check is inconclusive under sampled decoding until the
-gateway can replay paired responses. The study layer has CPU tests with a deterministic test
-environment only.
+A command environment is a host process and is not contained. The study layer has CPU tests with a
+deterministic test environment and scripted inference only.
 
 ## Execution and authority
 
@@ -39,7 +40,7 @@ owns the whole world through its selected execution backend: agent and environme
 verification, record collection and cleanup. Accepted jobs continue after the client disconnects. Model inference
 can run on a separate host; the built-in execution backend is Docker on Linux. This boundary does not
 provide remote policy training or persistent streams. See the [execution guide](docs/execution.md)
-and [ADR-0051](docs/adr/0051-remote-world-execution.md).
+and [ADR-0051](docs/adr/archive/0051-remote-world-execution.md).
 
 The Docker worker runs beside a local Linux Docker daemon, with the host PID visibility required by native
 containment checks. It does not turn a remote Docker socket into a portable controller. A host-wide
@@ -98,7 +99,7 @@ not pin dependencies, remote service state or sampling behavior.
 The extension contracts have CPU tests; benchmark acceptance still requires three real agents,
 actual actions, original evaluation and trajectory inspection. Native baseline acceptance and
 policy-weight training remain Docker/OpenCode paths. See the [integration guide](docs/integrations.md)
-and [ADR-0055](docs/adr/0055-installed-integration-contracts.md).
+and [ADR-0055](docs/adr/archive/0055-installed-integration-contracts.md).
 
 ## Components
 
@@ -133,8 +134,8 @@ plan continues. If teardown fails, the prior environment may still exist: the ex
 `failed_cleanup`, retaining completed results and unrun trials. Bounded teardown verifies an empty
 project container inventory. Active stop requests and failures invoke owned-container termination
 with separate process-isolation evidence. The runner has no flag-triggered stopping or automatic replacement trials;
-these would select observations based on outcomes. Older `scenario` and `chain` interfaces remain for
-compatibility, with their distinct stopping and retry semantics.
+these would select observations based on outcomes. The older `chain` interface remains, with its
+distinct retry semantics.
 
 Conditions are enforced at their actual point of effect: token and request budgets at the gateway,
 shared-directory access through mounts, service permissions at the service, and memory at task
@@ -156,7 +157,7 @@ Managed OpenCode configurations disable automatic compaction and pruning, preser
 in the working history. Context overflow ends the turn explicitly. Each round retains its complete
 native turn separately from the last HTTP reply; terminal errors and truncated endings prevent grading.
 An actual terminal model-budget refusal triggers controller abort, while the last admitted request
-can finish normally. See [ADR-0052](docs/adr/0052-harness-turn-evidence-and-termination.md).
+can finish normally. See [ADR-0052](docs/adr/archive/0052-harness-turn-evidence-and-termination.md).
 
 Optional `history.episodes` replays only the last k completed tasks into fresh reset sessions. The
 projection includes tool inputs/results, optionally assistant visible responses, with source identities
@@ -182,9 +183,8 @@ The original verifier always measures task outcome independently of the incentiv
 
 Peer scoring uses `services.peer_review.protocol: ratings` with an `all`, `ring` or seeded `random_ring`
 topology. Assignments are recorded, installed at the real verdict endpoint and preserved on service
-restart. Random matching changes review relationships, not the agent population or task cohort. The
-paper-specific correctness-of-verdict protocol is isolated in `core.legacy_peer_review` and retained for
-legacy fixtures. Generic rewards are not supported in persistent queue mode.
+restart. Random matching changes review relationships, not the agent population or task cohort.
+Generic rewards are not supported in persistent queue mode.
 
 `learning.mode: none` records incentives without delivering outcome feedback. `in_context` attaches the
 selected outcome fields after the configured episode delay and records attachment and completed delivery.
@@ -215,7 +215,7 @@ One REINFORCE optimizer step updates LoRA weights from each complete batch. The 
 saved checkpoint, activates a fresh vLLM alias and uses it in the next world. The final world performs
 evaluation and token-logprob consistency verification without another update. Original scores and
 allocated incentives remain distinct. Context feedback stays disabled in this training profile. See
-the [training guide](docs/training.md) and [ADR-0045](docs/adr/0045-on-policy-world-training.md) for the
+the [training guide](docs/training.md) and [ADR-0045](docs/adr/archive/0045-on-policy-world-training.md) for the
 estimator, supported profile and distinction between a real update and demonstrated learning benefit.
 Optional `evaluation_world` runs content-disjoint tasks before and after training without updates.
 Experiment inputs are fingerprinted and checked for drift; `baseline: true` requires a three-agent
@@ -245,12 +245,12 @@ before the tool implementation starts. A gate binds the loaded plugin digest, au
 top-level session; the controller checks the proposed call and arguments against the actual harness
 record. The reviewer assesses whether executing that proposed action would violate the configured
 rubric; a temporary hold is not a completed intervention. Its prompt version and exact system-prompt
-hash are recorded separately from the rubric hash ([ADR-0048](docs/adr/0048-prospective-monitor-assessment.md)).
+hash are recorded separately from the rubric hash ([ADR-0048](docs/adr/archive/0048-prospective-monitor-assessment.md)).
 A threshold crossing denies the tool or terminates the session. Unknown assessments, exhausted
 budgets and transport failures deny and abort. This is a per-agent tool boundary, not a syscall monitor
 inside an allowed shell command. Joint live review can collect registered sessions and shared-service/web
 evidence, preserving the exact input and collection interval. Missing evidence fails closed. Nested
-agent sessions and adaptive monitor training remain unsupported. [ADR-0046](docs/adr/0046-before-tool-monitor-intervention.md)
+agent sessions and adaptive monitor training remain unsupported. [ADR-0046](docs/adr/archive/0046-before-tool-monitor-intervention.md)
 describes this boundary.
 
 Activation capture is opt-in. The gateway can retain token IDs when the upstream provides them;
@@ -276,7 +276,7 @@ then uses either completed measured attempts or an original-score threshold. Rea
 to fetch the bytes, with board access permissions and exact content/version records. Publication,
 listing and file reads are separate evidence; a read does not prove adoption. Author/score metadata
 can be hidden, but content is not thereby anonymous. Shared-service artifact exchange and pre-verifier
-publication remain unsupported. See [ADR-0056](docs/adr/0056-measured-interaction-conditions.md).
+publication remain unsupported. See [ADR-0056](docs/adr/archive/0056-measured-interaction-conditions.md).
 
 Persistent mode assigns tasks from a shared queue. Snapshots save declared workspace/service/shared-file
 state and queue metadata, verify file hashes on restore, and record lineage and missing coverage.

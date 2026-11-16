@@ -48,9 +48,9 @@ weakening uncertain-load protection. Public diagnostics remain bounded and omit 
 IDs, paths, credentials and exception text. Existing policy/session ownership checks and
 post-final mutation restrictions remain in force.
 
-[Policy lifecycle contracts](../../tests/test_designer_policy.py) inject both reported
+Policy lifecycle contracts inject both reported
 failures, verify exact identities and budget preservation, exercise concurrent retries,
 recover persisted-but-unacknowledged jobs, and verify that admitted or ambiguous activation
 never invokes another load. These are software contracts; they do not establish live vLLM
 availability, GPU training effectiveness or behavioral improvement. See the
-[operator recovery guide](../designer-policy.md#recovery).
+operator recovery guide.

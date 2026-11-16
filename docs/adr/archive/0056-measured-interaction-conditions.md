@@ -8,8 +8,8 @@ Research needs to vary the conditions behind repeated interaction without prescr
 inventing histories, replacing original tasks, or silently accepting ineffective configuration.
 The earlier reset/carry, scalar incentive and fixed peer-review controls leave several independent
 questions coupled. Literature motivates additional controls but does not establish their effects
-on Mesocosm's native tasks. See [primary sources](../research-literature.md) and the
-[existing-variable audit](../variable-audit.md).
+on Mesocosm's native tasks. See [primary sources](../../research-literature.md) and the
+[existing-variable audit](../../variable-audit.md).
 
 ## Decision
 

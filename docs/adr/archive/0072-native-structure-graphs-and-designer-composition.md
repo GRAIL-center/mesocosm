@@ -72,11 +72,11 @@ artifact, review and scheduling relationships. P selection can bind to the resul
 IDs. Explicit unsupported combinations still fail before native execution. Role/team
 names alone grant nothing; only compiled native edges and existing backend admission do.
 
-Evidence: [native graph access](../../tests/test_structure_access.py),
-[native scheduler](../../tests/test_structure_runtime.py),
-[quiescent work completion](../../tests/test_structure_native_completion.py), and
-[designer composition](../../tests/test_designer_structure.py). The composer tests include
+Evidence: [native graph access](../../../tests/test_structure_access.py),
+[native scheduler](../../../tests/test_structure_runtime.py),
+[quiescent work completion](../../../tests/test_structure_native_completion.py), and
+designer composition. The composer tests include
 3, 6 and 32 agents, private template preservation, path relocation, exact artifact ACLs,
 team expansion, graph dependencies and safe diagnostics. These software tests do not replace
 three-agent Docker/OpenCode acceptance with original tasks and trajectory inspection.
-See the [designer structure guide](../designer-structure.md).
+See the designer structure guide.

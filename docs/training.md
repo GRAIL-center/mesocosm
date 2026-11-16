@@ -145,7 +145,7 @@ The trainer uses parameter-shared independent REINFORCE. For each agent trajecto
 trajectories, and takes one gradient-clipped AdamW step. Prompt/tool-result tokens are observations.
 There are no replay epochs; Adam state starts afresh each update. `team_mean` allocation gives every
 agent a common team return; individual allocation does not claim the complete gradient of a coupled
-team objective. See [ADR-0045](adr/0045-on-policy-world-training.md).
+team objective. See [ADR-0045](adr/archive/0045-on-policy-world-training.md).
 
 The baseline is a declared control variate, not a changed task score. If every return equals the
 baseline, the controller records `no_update` and stops without activating a checkpoint. A deliberately
@@ -164,7 +164,7 @@ and fresh rollouts. Matching declared dtypes does not guarantee cross-engine num
 batching, attention kernels and rounding can still differ. Keep the predeclared parity tolerance when
 investigating a failure; preserve the original batch and failed receipt. Historical policy IDs created
 before the precision contract are rejected by the new reader rather than silently reassigned a dtype.
-See [ADR-0047](adr/0047-explicit-policy-precision.md).
+See [ADR-0047](adr/archive/0047-explicit-policy-precision.md).
 
 Failures retain their artifacts, including world results before teardown and a completed but unactivated
 update after cancellation. Cancellation waits for an active GPU worker to release its model before

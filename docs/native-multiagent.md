@@ -241,4 +241,4 @@ zero task stagger. The default `as_ready` retains independent starts. This chang
 original prompts, rewards, private workspaces and configured shared channels stay the same. Release
 records link every ready session; failures or cancellation release waiters and fail the run. This
 creates an opportunity for overlapping activity, not evidence of interaction. New real-agent acceptance
-is still required; see [ADR-0059](adr/0059-cohort-task-start.md).
+is still required; see [ADR-0059](adr/archive/0059-cohort-task-start.md).

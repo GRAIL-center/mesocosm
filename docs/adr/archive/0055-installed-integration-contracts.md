@@ -55,7 +55,7 @@ installed CPU distribution tests the packaging boundary with explicit non-agent 
 Actual benchmark adapters and their N >= 3 real-agent acceptance remain separate implementation work.
 No new SWE-bench or WebArena support is asserted.
 
-See the [integration guide](../integrations.md), [task-source tests](../../tests/test_task_sources.py),
-[input tests](../../tests/test_integration_inputs.py),
-[backend tests](../../tests/test_execution_backends.py) and
-[worker tests](../../tests/test_execution_worker.py).
+See the [integration guide](../../integrations.md), [task-source tests](../../../tests/test_task_sources.py),
+[input tests](../../../tests/test_integration_inputs.py),
+[backend tests](../../../tests/test_execution_backends.py) and
+[worker tests](../../../tests/test_execution_worker.py).

@@ -66,7 +66,7 @@ prevents a successful run result and therefore policy updates; an earlier failur
 
 ## Verification and limits
 
-See [research runtime](../research-runtime.md) and [capability matrix](../capability-matrix.md) for tests
+See [research runtime](../../research-runtime.md) and [capability matrix](../../capability-matrix.md) for tests
 and the exact supported subset. Command-level and control-plane tests cover these contracts. The new
 Compose/separate-verifier combination, reference calibration, and shared-service world have no new
 standard Linux Docker acceptance with N >= 3 real agents. Earlier adapted Colab execution does not
