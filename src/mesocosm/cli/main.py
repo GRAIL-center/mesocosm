@@ -29,6 +29,7 @@ from mesocosm.execution.worker_cli import worker_app
 from mesocosm.integrations.cli import integration_app
 from mesocosm.reproduction.cli import research_app
 from mesocosm.research_mcp.cli import designer_app
+from mesocosm.study.cli import study_app
 
 if TYPE_CHECKING:
     from mesocosm.core.run import RunResult
@@ -66,6 +67,7 @@ app.add_typer(worker_app, name="worker")
 app.add_typer(integration_app, name="integrations")
 app.add_typer(research_app, name="research")
 app.add_typer(designer_app, name="designer")
+app.add_typer(study_app, name="study")
 
 RUNS_ROOT_OPT = typer.Option(pathlib.Path("runs"), "--runs-root")
 WORKSPACE_ROOT_OPT = typer.Option(pathlib.Path("spike/workspace"), "--workspace-root")

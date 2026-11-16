@@ -11,7 +11,7 @@ import math
 import pathlib
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from mesocosm.study.condition import Condition, LeverSpace
 
@@ -49,6 +49,21 @@ class ModelCall(BaseModel):
     agent_id: str = Field(min_length=1)
     input_sha256: str = Field(pattern=SHA256)
     output_sha256: str = Field(pattern=SHA256)
+    model: str | None = None
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+
+
+class Event(BaseModel):
+    """One thing that happened inside a trial, reported by the environment for diagnosis: a verdict, a
+    message, a choice. ``step`` is the environment's own turn, round or episode index."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    step: int = Field(ge=0)
+    kind: str = Field(pattern=NAME)
+    agent_id: str | None = None
+    data: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class TrialOutcome(BaseModel):
@@ -58,6 +73,7 @@ class TrialOutcome(BaseModel):
 
     measures: dict[str, float | None]
     calls: tuple[ModelCall, ...] = ()
+    events: tuple[Event, ...] = ()
     note: str = ""
 
     @field_validator("measures")

@@ -22,7 +22,7 @@ from typing import Literal, get_args
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from mesocosm.study.battery import Arm, BatteryPlan, Origin, minimum_p
-from mesocosm.study.condition import LEVERS, Condition, Lever
+from mesocosm.study.condition import LEVERS, Condition, Lever, StudyError
 from mesocosm.study.substrate import Measure, ModelCall, SubstrateInfo
 from mesocosm.study.trial import TrialRecord
 
@@ -56,6 +56,7 @@ class Finding(BaseModel):
     lever: Lever
     value: JsonValue
     removal: bool
+    stand_in_for: Lever | None = None
     state: State
     reach: Reach
     baseline: Summary
@@ -138,6 +139,8 @@ def type_labels(levers: dict[Lever, State]) -> tuple[str, ...]:
 
 def build_card(plan: BatteryPlan, records: Sequence[TrialRecord]) -> BehaviorCard:
     """Summarize the recorded trials of a plan. Trials without a record are missing observations."""
+    if any(record.spec.mode != "claim" for record in records):
+        raise StudyError("rejected_unsupported: exploration trials cannot enter a behavior card")
     by_id = {record.spec.trial_id: record for record in records}
     values: dict[str, dict[int, float]] = {arm.name: {} for arm in plan.arms}
     calls: dict[str, dict[int, tuple[ModelCall, ...]]] = {arm.name: {} for arm in plan.arms}
@@ -199,8 +202,9 @@ def _finding(plan: BatteryPlan, arm: Arm, base: list[float], variant: list[float
             state, reason = "sufficient", "the behavior is absent at baseline and present in the arm"
         else:
             state, reason = "modulates", "the behavior changes and remains present"
-    return Finding(arm=arm.name, setting=key, lever=lever, value=value, removal=arm.removal, state=state,
-                   reach=reached, baseline=summarize(base), variant=summarize(variant), p_value=p_value, reason=reason)
+    return Finding(arm=arm.name, setting=key, lever=lever, value=value, removal=arm.removal,
+                   stand_in_for=plan.stand_ins.get(key), state=state, reach=reached, baseline=summarize(base),
+                   variant=summarize(variant), p_value=p_value, reason=reason)
 
 
 def _interaction(plan: BatteryPlan, pair: tuple[str, str], values: dict[str, dict[int, float]]) -> Interaction:

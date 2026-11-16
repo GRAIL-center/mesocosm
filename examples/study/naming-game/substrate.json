@@ -1,0 +1,39 @@
+{
+ "name": "naming-game",
+ "version": "0.1.0",
+ "kind": "reconstruction",
+ "source": "Own implementation of the pairwise naming game described by Ashery, Aiello and Baronchelli (arXiv:2410.08948). The payoff amounts follow the paper; the prompts are our own, not the published ones.",
+ "command": ["{python}", "naming_game.py"],
+ "agents": ["a01", "a02", "a03", "a04", "a05", "a06", "a07", "a08"],
+ "timeout_seconds": 1800,
+ "settings": [
+  {"lever": "model", "name": "checkpoint",
+   "description": "Model id every agent requests. A list of ids gives a mixed team: agent i uses id i modulo the list length.",
+   "values": ["Qwen/Qwen3-4B-Instruct-2507"], "default": "Qwen/Qwen3-4B-Instruct-2507", "request_model": true},
+  {"lever": "experience", "name": "history",
+   "description": "How many of its own most recent interactions an agent's prompt shows (H). 0 shows none.",
+   "values": [0, 5], "default": 5, "removal": 0},
+  {"lever": "scale", "name": "agents",
+   "description": "Population size (N).",
+   "values": [4, 8], "default": 8},
+  {"lever": "environment", "name": "rounds",
+   "description": "Population rounds. One round is N/2 interactions, each between two agents drawn at random.",
+   "values": [6, 12], "default": 6},
+  {"lever": "environment", "name": "name_pool",
+   "description": "Which ten letters form the name pool. Pool b is held out: explore on a, confirm claims on b.",
+   "values": ["a", "b"], "default": "a", "held_out": "b"},
+  {"lever": "instructions", "name": "coordination_hint",
+   "description": "Whether the prompt adds a sentence telling the agent to settle on one shared name with the others.",
+   "values": [false, true], "default": false}
+ ],
+ "measures": [
+  {"name": "final_match_rate",
+   "description": "Share of interactions in the last two population rounds whose two names matched. The floor is chance for ten names.",
+   "floor": 0.1},
+  {"name": "consensus",
+   "description": "Share of agents whose latest name is the most common latest name. At or below one half no name has a majority.",
+   "floor": 0.5},
+  {"name": "valid_rate",
+   "description": "Share of model replies that named a letter of the pool."}
+ ]
+}

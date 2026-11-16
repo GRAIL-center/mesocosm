@@ -38,7 +38,7 @@ incentives or oversight change.
 | **Monitor and intervene** | Posthoc review or assessment before supported tool calls, with recorded allow, deny or termination decisions. |
 | **Update policies** | An optional REINFORCE/LoRA training loop using validated action/reward records and checkpoint activation between worlds. |
 | **Inspect evidence** | Original model and harness records, tool events, verifier results, enforcement receipts, CLI reports, diagnostics and integrity checks. |
-| **Study a behavior** | Behavior studies over declared environments and seven-lever conditions, repeated baselines for run-to-run noise, and behavior cards. The study core has tests only; no environment is connected yet. |
+| **Study a behavior** | An agent brings an environment as a manifest and a command, reads the original study's conditions and the measured baseline, runs tests that return the effect with the run-to-run noise, looks inside trials, and confirms claims as behavior cards ([guide](docs/study.md)). Tested with scripted inference only; no study has run with a real model. |
 | **Build a research workflow** | Callable tools connect evidence, typed factors, local SFT/LoRA, serving attribution, verified run evaluation and repeated base/trained × baseline/designed comparisons. [Workflow and limits →](docs/verified-research-loop.md) |
 
 The built-in Docker/OpenCode runtime supports a defined subset of Debian/Ubuntu tasks and original Compose services.

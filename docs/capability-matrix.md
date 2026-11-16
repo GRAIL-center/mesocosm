@@ -185,13 +185,23 @@ Update this matrix when an interface or its evidence changes. Keep raw runs outs
 | Legacy fixed-P six-tool mode and optional ten-tool P mode with private source/job boundaries | **supported** in software contracts; actual stdio SDK discovery/calls, final binding, drift, lease/race and privacy checks | [Legacy designer tests](../tests/test_designer_mcp.py), [mutable tests](../tests/test_designer_mutable.py) |
 | General profile-aware P/S/E composer, arbitrary review/scheduling DAG, PPO/GRPO and unified comparison façade | **unsupported** by the new restricted interface; proposed architecture only. Existing native controls retain their separately documented scope | [P/S/E design and status](swarmstill-pse-design.md), [proposed ADR-0070](adr/0070-pse-experiment-workflow.md) |
 
-## Behavior studies (ADR-0074)
+## Behavior studies (ADR-0074, ADR-0077)
+
+The [study guide](study.md) describes the commands. Inference in these tests is a scripted local server.
 
 | Capability | Status and boundary | Evidence |
 |---|---|---|
 | Seven-lever conditions over a substrate's declared switches; undeclared switches and values refused | **supported** in CPU tests | [Study tests](../tests/test_study.py) |
 | Typing battery plan: baseline repetitions, one-switch arms, 2x2 removal arms, shared seeds, minimum repetitions for the chosen alpha | **supported** in CPU tests | [Study tests](../tests/test_study.py) |
 | Parallel, resumable trial runner with one write-once record per trial and retained failures | **supported** in CPU tests with a deterministic test environment; unattended runs of a real environment are **unverified** | [Study tests](../tests/test_study.py) |
-| Behavior card: lever states, reach check, 2x2 interaction interval and computed type | **supported** in CPU tests. The reach check is inconclusive under sampled decoding until the gateway replays paired responses | [Study tests](../tests/test_study.py), [ADR-0074](adr/0074-behavior-studies.md) |
-| Connected substrates: original published environments, reconstructions, the native world | **unsupported**: none is connected | [ADR-0074](adr/0074-behavior-studies.md) |
+| Behavior card: lever states, reach check, 2x2 interaction interval and computed type | **supported** in CPU tests. The reach check is decided when the environment sends per-request sampling seeds drawn from the trial seed and the server honors them (scripted inference only); with unseeded sampled decoding it stays inconclusive | [Study tests](../tests/test_study.py), [Command tests](../tests/test_study_command.py), [ADR-0074](adr/0074-behavior-studies.md) |
+| Agent-built environment as a manifest and a command: per-trial condition, seed and outcome files; stand-in, held-out and model-id labels on switches | **supported** in CPU tests with the naming-game template | [Command tests](../tests/test_study_command.py), [ADR-0077](adr/0077-agent-built-study-environments.md) |
+| Every model call of a study trial recorded through the model gateway: per-trial and per-agent keys, the server key withheld from the environment, a model switch enforced from the recorded requests | **supported** in CPU tests against a scripted local server; vLLM and hosted providers through this path are **unverified** | [Command tests](../tests/test_study_command.py) |
+| A test as an instrument: effect, baseline noise, separation, exact p-value, reach and compute; baseline runs shared between tests; study budgets in model calls and tokens | **supported** in CPU tests | [Command tests](../tests/test_study_command.py) |
+| Exploration and claim modes: held-out values, unused seeds and minimum repetitions for a claim; cards refuse exploration trials; partition switches are not arms | **supported** in CPU tests | [Command tests](../tests/test_study_command.py) |
+| Diagnosis: bounded pages of a trial's events and per-step or per-agent breakdowns | **supported** in CPU tests | [Command tests](../tests/test_study_command.py) |
+| Context: a reference of the original study with quoted passages, and a measured baseline profile | **supported** in CPU tests; two references written from the papers' text | [Command tests](../tests/test_study_command.py), [references](../examples/study/library/) |
+| `mesocosm study describe`, `brief`, `test`, `events`, `breakdown`, `card` with one JSON object and typed refusals | **supported** in CPU tests | [Command tests](../tests/test_study_command.py) |
+| Contained execution of a command environment whose agents execute code or use the network | **unsupported**: the command is a host process | [ADR-0077](adr/0077-agent-built-study-environments.md) |
+| Connected substrates: original published environments, reconstructions, the native world | A naming-game reconstruction template is connected and runs with scripted inference. The original Emergent Collusion repository and the native world are **unsupported**: not connected | [Command tests](../tests/test_study_command.py), [ADR-0074](adr/0074-behavior-studies.md) |
 | Behavior cards from real models | **unverified**: no study has run | None |

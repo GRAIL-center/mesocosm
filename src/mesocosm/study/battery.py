@@ -51,6 +51,7 @@ class BatteryPlan(BaseModel):
     arms: tuple[Arm, ...]
     factorials: tuple[tuple[str, str], ...]
     specs: tuple[TrialSpec, ...]
+    stand_ins: dict[str, Lever] = Field(default_factory=dict)
 
 
 def minimum_p(first: int, second: int) -> float:
@@ -79,6 +80,11 @@ def plan_battery(substrate: Substrate, *, measure: str, origin: Origin,
     base = substrate.space.condition(baseline)
     arms = [Arm(name="baseline")]
     for setting in substrate.space.settings:
+        if setting.held_out is not None:   # a partition such as the task set, not a lever under test
+            if canonical(base.settings[setting.key]) != canonical(setting.held_out):
+                raise StudyError(f"rejected_unsupported: a claim runs on the held-out value of {setting.key!r} "
+                                 f"({canonical(setting.held_out)})")
+            continue
         if setting.lever not in levers:
             continue
         for value in setting.values:
@@ -104,6 +110,8 @@ def plan_battery(substrate: Substrate, *, measure: str, origin: Origin,
     specs = tuple(TrialSpec(trial_id=f"{arm.name}-r{repetition:02d}", arm=arm.name, repetition=repetition,
                             seed=seeds[repetition], condition=base.replace(arm.changes))
                   for arm in arms for repetition in range(repetitions))
+    stand_ins = {setting.key: setting.stand_in_for for setting in substrate.space.settings if setting.stand_in_for}
     return BatteryPlan(substrate=substrate.info, measure=chosen, origin=origin, baseline=base,
                        repetitions=repetitions, alpha=alpha, arms=tuple(arms),
-                       factorials=tuple((first, second) for first, second in factorials), specs=specs)
+                       factorials=tuple((first, second) for first, second in factorials), specs=specs,
+                       stand_ins=stand_ins)

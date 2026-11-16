@@ -31,6 +31,11 @@ class Setting(BaseModel):
 
     ``removal`` names the accepted value that takes this ingredient away (no memory, no feedback, one
     agent), when the environment has one. JSON null is reserved for "no removal value".
+
+    ``stand_in_for`` labels a switch that imitates another lever (a prompt line in place of training);
+    it stays recorded under its own lever. ``held_out`` names the value reserved for claims, such as the
+    task set no design was tuned on. ``request_model`` marks a model switch whose values are the model
+    ids that the trial's requests must name.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -41,6 +46,9 @@ class Setting(BaseModel):
     values: tuple[JsonValue, ...] = Field(min_length=1)
     default: JsonValue
     removal: JsonValue = None
+    held_out: JsonValue = None
+    stand_in_for: Lever | None = None
+    request_model: bool = False
 
     @model_validator(mode="after")
     def _consistent(self) -> Setting:
@@ -53,7 +61,20 @@ class Setting(BaseModel):
             raise ValueError(f"setting {self.key}: default is not an accepted value")
         if self.removal is not None and canonical(self.removal) not in texts:
             raise ValueError(f"setting {self.key}: removal is not an accepted value")
+        if self.held_out is not None and canonical(self.held_out) not in texts:
+            raise ValueError(f"setting {self.key}: held_out is not an accepted value")
+        if self.stand_in_for == self.lever:
+            raise ValueError(f"setting {self.key}: a switch cannot stand in for its own lever")
+        if self.request_model and (self.lever != "model" or not all(self.model_ids(value) for value in self.values)):
+            raise ValueError(f"setting {self.key}: request_model needs a model switch whose values are model ids")
         return self
+
+    @staticmethod
+    def model_ids(value: JsonValue) -> tuple[str, ...]:
+        """The model ids a value names: one id, or a list of ids for a team of mixed checkpoints."""
+        items = value if isinstance(value, list) else [value]
+        return tuple(item for item in items if isinstance(item, str) and item) if all(
+            isinstance(item, str) and item for item in items) else ()
 
     @property
     def key(self) -> str:

@@ -15,9 +15,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from mesocosm.study.condition import Condition, StudyError
 from mesocosm.study.substrate import SubstrateInfo, TrialOutcome
 
+Mode = Literal["exploration", "claim"]
+
 
 class TrialSpec(BaseModel):
-    """One scheduled run of a substrate. Trials of different arms with the same repetition share a seed."""
+    """One scheduled run of a substrate. Trials of different arms with the same repetition share a seed.
+
+    An ``exploration`` trial is cheap and free; only ``claim`` trials can enter a behavior card."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -26,6 +30,7 @@ class TrialSpec(BaseModel):
     repetition: int = Field(ge=0)
     seed: int
     condition: Condition
+    mode: Mode = "claim"
 
 
 class TrialRecord(BaseModel):
@@ -57,6 +62,12 @@ class TrialStore:
         path = self.root / "trials" / trial_id
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def records(self) -> list[TrialRecord]:
+        """Every recorded trial of this store, in trial-id order."""
+        root = self.root / "trials"
+        names = sorted(path.name for path in root.iterdir()) if root.is_dir() else []
+        return [record for record in (self.load(name) for name in names) if record is not None]
 
     def load(self, trial_id: str) -> TrialRecord | None:
         path = self.root / "trials" / trial_id / "record.json"
