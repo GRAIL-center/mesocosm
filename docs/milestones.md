@@ -16,8 +16,11 @@ milestone.
 | 3. Elicit | Enforced conditions (budgets, access, memory, incentives, monitoring) have tests and partial real-agent evidence, listed below. No behavior has been elicited. | Run-to-run noise measured before any comparison is interpreted. Every case carries the origin of the behavior. Forked reruns from a saved live state, unsupported today, for attribution inside a run. |
 | 4. Red-team | Containment through the two gateways and before-tool monitor intervention exist. No red-team study has been run. | A search for conditions under which a team behaves in misaligned ways, monitor misses and false alarms measured on those cases, and a release review for elicitation recipes. |
 
-Until stage 1 exits, no new designer tools, training providers or integrations are added. Fixes, and
-what a positive control needs, are in scope.
+The two positive controls are tasks for a team of AI agents, and where the team gets stuck is the list of
+defects to fix ([ADR-0076](adr/0076-agent-teams-build-reproductions.md)). The agent-facing tools are
+extended in this order: a runner for a published repository through the gateway and a noise instrument
+(needed by the first control), then diagnosis and context, then all seven levers in the designer tools.
+None of these exists yet.
 
 ## Runtime acceptance
 
@@ -51,6 +54,6 @@ held-out evaluation. Its regression tests establish these control paths; new sta
 and repeated real-agent acceptance remain to be run. Earlier Colab evidence does not verify these changes.
 
 Additional native task profiles and harnesses, real application-service integrations, broader training
-algorithms and adaptive monitor training wait until stage 1 exits, unless a positive control needs one.
+algorithms and adaptive monitor training are prioritized when an agent team's reproduction needs them.
 Each extension needs an enforceable interface, clear unsupported cases and evidence on the actual
 execution path. There is no deadline or funded schedule implied by this list.

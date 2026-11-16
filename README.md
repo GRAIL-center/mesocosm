@@ -5,7 +5,9 @@
 Mesocosm is a laboratory for the behavior of teams of AI agents. It reproduces behaviors that have been
 reported, observes what independent agents do on real tasks, and elicits behavior by varying enforced
 conditions instead of instructions. The long-term use is red-teaming: finding the conditions under which
-a team behaves in misaligned ways, and measuring what monitoring misses, before deployment.
+a team behaves in misaligned ways, and measuring what monitoring misses, before deployment. The
+reproductions are meant to be built and run by teams of AI agents, so the tools are designed for an agent
+builder: room to build new environments, context about the original study, and checks that return answers.
 
 Reported multi-agent behaviors depend on conditions that look incidental, such as one prompt sentence,
 an adjacent model version or memory between episodes, and a report rarely says which conditions matter.
@@ -120,7 +122,8 @@ functions.
 ## Direction
 
 Work proceeds in four stages, and each is the precondition of the next
-([ADR-0075](docs/adr/0075-behavior-laboratory-direction.md)).
+([ADR-0075](docs/adr/0075-behavior-laboratory-direction.md)). Agent teams do the building, under one rule:
+permissive to build, strict to label and record ([ADR-0076](docs/adr/0076-agent-teams-build-reproductions.md)).
 
 | Stage | What it establishes |
 |---|---|
