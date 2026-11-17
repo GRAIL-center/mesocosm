@@ -45,8 +45,10 @@ holding its key; `--upstreams FILE` routes model ids to other servers
    every changed run lies outside that range. `reach` says whether the change altered any model request:
    `identical` means it never reached a model, and `undetermined` means the replies differed before any
    request did, the usual result when requests carry no sampling seed. Then check by hand in the gateway
-   log, for example that prompts stay short when memory is removed. Run as many tests as you like. Baseline runs are reused,
-   and every result reports the calls and tokens it used and the study's total.
+   log, for example that prompts stay short when memory is removed. `--repetitions 1` is allowed where one
+   run takes hours, such as a training run; it measures no noise, so `separated` stays empty. Run as many
+   tests as you like. Baseline runs are reused, and every result reports the calls and tokens it used and
+   the study's total.
 5. **Look inside before explaining.** Each trial keeps a directory `runs/<study>/trials/<trial-id>/` with
    `condition.json`, `record.json`, `stdout.txt`, `stderr.txt` and whatever your environment wrote next to
    its outcome file. `runs/<study>/gateway/gateway.jsonl` holds every request and response. Read these

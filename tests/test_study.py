@@ -135,8 +135,8 @@ def test_plan_pairs_conditions_on_shared_seeds_and_reuses_the_baseline():
         plan_for([{"experience.memory": "carry"}])
     with pytest.raises(StudyError, match="repeats the baseline or another condition"):
         plan_for([{"scale.agents": 4}, {"scale.agents": 4}])
-    with pytest.raises(StudyError, match="repetitions in 2..12"):
-        plan_for([], repetitions=1)
+    with pytest.raises(StudyError, match="repetitions in 1..12"):
+        plan_for([], repetitions=0)
 
 
 def test_exploration_and_claims_are_separate():
@@ -225,6 +225,19 @@ def test_a_comparison_returns_the_effect_next_to_the_noise_with_reach_and_labels
     assert compute_of(records).model_dump() == {"trials": 12, "calls": 24, "prompt_tokens": 240,
                                                 "completion_tokens": 48}
     assert len(game.started) == 12 and len(store.records()) == 12
+
+
+def test_one_run_per_condition_is_allowed_in_exploration_and_measures_no_noise(tmp_path):
+    game = ReviewGame()
+    chosen = plan_for([{"experience.memory": "none"}], repetitions=1)
+    single = compare(chosen, run_trials(game, chosen.specs, TrialStore(tmp_path)), {"experience.memory": "none"},
+                     game.space)
+    assert single.baseline.n == single.variant.n == 1 and single.baseline.sd is None and single.effect < 0
+    assert single.separated is None and single.p_value is None and single.shown is None
+    assert single.statement.startswith("Exploration: one baseline run measures no run-to-run noise")
+    with pytest.raises(StudyError, match="cannot show an effect"):
+        plan_for([{"experience.memory": "none"}], repetitions=1, mode="claim",
+                 baseline={"environment.tasks": "held_out"})
 
 
 def test_card_gives_each_lever_a_state_from_claim_runs(tmp_path):

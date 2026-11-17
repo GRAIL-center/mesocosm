@@ -192,8 +192,8 @@ def plan(space: LeverSpace, measures: Sequence[Measure], *, measure: str,
     chosen = next((item for item in measures if item.name == measure), None)
     if chosen is None:
         raise StudyError(f"rejected_unsupported: the substrate has no measure {measure!r}")
-    if not 0 < alpha < 1 or not 2 <= repetitions <= MAX_REPETITIONS:
-        raise StudyError(f"rejected_unsupported: alpha must lie in (0, 1) and repetitions in 2..{MAX_REPETITIONS}")
+    if not 0 < alpha < 1 or not 1 <= repetitions <= MAX_REPETITIONS:
+        raise StudyError(f"rejected_unsupported: alpha must lie in (0, 1) and repetitions in 1..{MAX_REPETITIONS}")
     base = space.condition(baseline)
     conditions = [base]
     for changes in variants:
@@ -252,7 +252,8 @@ def compare(plan: Plan, records: Sequence[TrialRecord], changes: dict[str, JsonV
         calls[spec.condition.digest][spec.repetition] = record.outcome.calls
     base, changed = list(values[plan.baseline.digest].values()), list(values[variant.digest].values())
     effect = fmean(changed) - fmean(base) if base and changed else None
-    separated = (min(changed) > max(base) or max(changed) < min(base)) if base and changed else None
+    # One baseline run has no spread: any difference would lie "outside" it.
+    separated = (min(changed) > max(base) or max(changed) < min(base)) if len(base) >= 2 and changed else None
     lowest = minimum_p(len(base), len(changed))
     p_value = permutation_p(base, changed) if len(base) >= 2 and len(changed) >= 2 else None
     shown = p_value <= plan.alpha if plan.mode == "claim" and p_value is not None and lowest <= plan.alpha else None
@@ -324,7 +325,9 @@ def _statement(mode: Mode, effect: float | None, separated: bool | None, shown: 
     if reached == "identical":
         return "The change reached no model input: the two conditions sent identical requests."
     if mode == "exploration":
-        parts = ["Exploration: the arms are separated, worth confirming as a claim." if separated
+        parts = ["Exploration: one baseline run measures no run-to-run noise, so this difference cannot be read "
+                 "against it." if separated is None
+                 else "Exploration: the arms are separated, worth confirming as a claim." if separated
                  else "Exploration: the arms overlap, so this difference is within run-to-run noise."]
     elif shown is None:
         parts = ["Claim not decided: too few measured trials for the chosen alpha."]
