@@ -9,6 +9,6 @@ Copy the whole directory into your agent's skill directory, for example
 from a Mesocosm checkout.
 
 The template differs from the setting of Ashery, Aiello and Baronchelli (arXiv:2410.08948) in ways its
-manifest declares: 4 or 8 agents instead of 24, 6 or 12 population rounds, a one-line answer instead of
-step-by-step reasoning, and a prompt that addresses the agent as a player instead of asking it to predict
-a player's next action. It has run with scripted inference in tests only.
+manifest declares: 8 agents and 6 population rounds by default (24 agents and 30 rounds are available), the
+model's own thinking mode as a switch instead of a step-by-step instruction, and a prompt that addresses
+the agent as a player instead of asking it to predict a player's next action.

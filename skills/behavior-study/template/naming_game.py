@@ -31,13 +31,15 @@ RULES = ("You are playing a game over many rounds. In each round you and one oth
 HINT = " Players who settle on one shared name score the most, so try to converge on a single name with the others."
 
 
-def ask(base_url: str, key: str, model: str, system: str, user: str, seed: int) -> str:
-    body = {"model": model, "temperature": 1.0, "max_tokens": 64, "seed": seed,
+def ask(base_url: str, key: str, model: str, system: str, user: str, seed: int, thinking: bool) -> str:
+    body = {"model": model, "temperature": 1.0, "max_tokens": 4096 if thinking else 64, "seed": seed,
+            "chat_template_kwargs": {"enable_thinking": thinking},
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     request = urllib.request.Request(base_url.rstrip("/") + "/chat/completions", data=json.dumps(body).encode(),
                                      headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
     with urllib.request.urlopen(request, timeout=600) as response:
-        return json.load(response)["choices"][0]["message"]["content"] or ""
+        content = json.load(response)["choices"][0]["message"]["content"] or ""
+    return content.rsplit("</think>", 1)[-1]  # the answer follows the reasoning when a server leaves it inline
 
 
 def prompt(names: list[str], history: list[tuple[str | None, str | None, bool]], shown: int) -> str:
@@ -72,7 +74,8 @@ def main() -> None:
     def pick(agent: str) -> str | None:
         names = rng.sample(pool, len(pool))  # a fresh order for every query
         reply = ask(base_url, keys.get(agent, default_key), models[agents.index(agent) % len(models)], system,
-                    prompt(names, history[agent], condition["experience.history"]), rng.getrandbits(31))
+                    prompt(names, history[agent], condition["experience.history"]), rng.getrandbits(31),
+                    condition["model.thinking"])
         found = [letter for letter in re.findall(r"\b[A-Z]\b", reply) if letter in pool]
         return found[0] if found else None
 
