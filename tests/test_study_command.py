@@ -9,6 +9,7 @@ import random
 import re
 import sys
 import threading
+import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -35,11 +36,20 @@ class _Upstream(BaseHTTPRequestHandler):
     drawn from the request's sampling seed."""
 
     authorization: list[str] = []
+    in_flight = most_in_flight = 0
+    gauge = threading.Lock()
 
     def do_POST(self) -> None:  # noqa: N802 (http.server's name)
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         type(self).authorization.append(self.headers.get("Authorization", ""))
         user = body["messages"][-1]["content"]
+        if user == "slow":  # hold the request open so that overlapping requests can be counted
+            with self.gauge:
+                type(self).in_flight += 1
+                type(self).most_in_flight = max(self.most_in_flight, self.in_flight)
+            time.sleep(0.3)
+            with self.gauge:
+                type(self).in_flight -= 1
         names = re.search(r"Names: (.*)", user)
         seen = re.findall(r"picked ([A-Z])\b", user)
         reply = "ok" if names is None else min(seen) if seen else \
@@ -153,6 +163,26 @@ def test_a_model_switch_is_enforced_by_the_recorded_requests(tmp_path: pathlib.P
     assert mixed.outcome.note == "withheld"                      # the command never held the server's key
     assert _Upstream.authorization[-1] == "Bearer server-secret"  # the gateway presented it
     assert undeclared.status == "failed" and "requests named models ['another-model']" in undeclared.error
+
+
+def test_trials_of_one_command_reach_the_model_server_at_the_same_time(tmp_path: pathlib.Path, upstream: str) -> None:
+    (tmp_path / "run.py").write_text(SCRIPT.replace('"hello"', '"slow"'), encoding="utf-8")
+    manifest = tmp_path / "substrate.json"
+    manifest.write_text(json.dumps({
+        "name": "slow", "version": "1", "kind": "reconstruction", "source": "tests", "command": ["{python}", "run.py"],
+        "settings": [
+            {"lever": "model", "name": "checkpoint", "description": "id", "values": ["small"], "default": "small"},
+            {"lever": "environment", "name": "wrong_model", "description": "unused", "values": [False], "default": False}],
+        "measures": [{"name": "score", "description": "number of ids requested"}]}), encoding="utf-8")
+    space = load_substrate(manifest).space
+    specs = [TrialSpec(trial_id=f"t{index}", repetition=index, seed=index, mode="exploration",
+                       condition=space.condition()) for index in range(3)]
+    _Upstream.most_in_flight = 0
+    with GatewayLink(tmp_path / "gateway", {spec.trial_id: () for spec in specs}, upstream=upstream) as link:
+        records = run_trials(load_substrate(manifest, link), specs, TrialStore(tmp_path / "study"), workers=3)
+    assert [record.status for record in records] == ["completed"] * 3
+    assert _Upstream.most_in_flight >= 2  # the gateway did not queue the trials behind one another
+    assert {call.agent_id for record in records for call in record.outcome.calls} == {"environment"}
 
 
 PROBE = """

@@ -59,7 +59,9 @@ class GatewayLink:
             from mesocosm.gateway.app import Settings, create_app
         except ImportError as exc:
             raise StudyError("rejected_unsupported: the model gateway needs the 'gateway' extra") from exc
-        agent_keys = {key: {"agent": agent, "run": trial}
+        # The gateway handles one request at a time per agent identity. Naming the identity after the trial
+        # keeps the trials of one command, and the agents of one trial, from waiting on each other.
+        agent_keys = {key: {"agent": f"{trial}/{agent}", "run": trial}
                       for trial, keys in self.keys.items() for agent, key in keys.items()}
         settings = Settings(upstream=self.upstream, log_dir=self.log_dir, control_key=self.control_key,
                             agent_keys=agent_keys, upstream_key=self.upstream_key,
@@ -134,7 +136,7 @@ class GatewayLink:
             request, reply = record.get("request") or {}, record.get("response") or {}
             usage = reply.get("usage") or {}
             calls.append(ModelCall(
-                agent_id=str(record.get("agent") or DEFAULT_AGENT), input_sha256=_digest(request),
+                agent_id=str(record.get("agent") or DEFAULT_AGENT).rpartition("/")[2], input_sha256=_digest(request),
                 output_sha256=_digest({key: reply.get(key) for key in ("content", "reasoning", "tool_calls")}),
                 model=request.get("model") if isinstance(request.get("model"), str) else None,
                 prompt_tokens=usage.get("prompt_tokens") if isinstance(usage.get("prompt_tokens"), int) else None,
