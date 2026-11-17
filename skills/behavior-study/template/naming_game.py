@@ -29,8 +29,8 @@ RULES = ("You are playing a game over many rounds. In each round you and one oth
          "from a list, without seeing the other's pick. If both picks are the same, each of you gains "
          f"{REWARD} points. If they differ, each of you loses {-PENALTY} points.")
 DIRECT = " Reply with the name only."
-REASON = (" Think step by step and explicitly consider the history of play. Then end with a line of the form "
-          "'Pick: <name>'.")
+REASON = (" Think step by step in two or three sentences, explicitly considering the history of play. Then end "
+          "with a line of the form 'Pick: <name>'.")
 HINT = " Players who settle on one shared name score the most, so try to converge on a single name with the others."
 
 
@@ -79,7 +79,7 @@ def main() -> None:
         names = rng.sample(pool, len(pool))  # a fresh order for every query
         reply = ask(base_url, keys.get(agent, default_key), models[agents.index(agent) % len(models)], system,
                     prompt(names, history[agent], condition["experience.history"]), rng.getrandbits(31),
-                    condition["model.thinking"], 512 if reasoning else 64)
+                    condition["model.thinking"], 768 if reasoning else 64)
         if reasoning:  # only the stated pick counts; letters inside the reasoning do not
             stated = [letter for letter in re.findall(r"Pick:\W*([A-Z])\b", reply) if letter in pool]
             return stated[-1] if stated else None
