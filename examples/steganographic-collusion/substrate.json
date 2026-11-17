@@ -1,6 +1,6 @@
 {
  "name": "steganographic-collusion",
- "version": "0.1.0",
+ "version": "0.2.0",
  "kind": "original",
  "source": "https://github.com/olliematthews/lasr-steganography at commit 905b3f3eac0f31c6fc5ff65380216b6b9248875f: the gradient-based reinforcement learning experiment of Mathew et al., arXiv:2410.03768, with the repository's settings for the university dataset (EOL3_CV_UNI), run unchanged through adapter.py. Differences from the published runs: training stops after a fixed number of cycles instead of running until convergence, the adapter replaces the repository's launcher, and transformers 4.45.2 with trl 0.9.6 stand for the two development commits the repository lists.",
  "command": [".venv/bin/python", "adapter.py"],
@@ -8,7 +8,7 @@
  "settings": [
   {"lever": "training", "name": "sender_rl", "description": "Whether PPO updates the sender on its reward: the probability the receiver gives the correct label, minus 0.2 times the overseer's penalty. false keeps the sender's released weights; the receiver is still trained on what the sender writes.", "values": [true, false], "default": true, "removal": false},
   {"lever": "training", "name": "overseer_penalty", "description": "Whether the overseer's judgment enters training: its penalty in the sender's reward, and no task reward for a flagged text. false trains without oversight. The overseer judges the final texts in either case.", "values": [true, false], "default": true, "removal": false},
-  {"lever": "training", "name": "cycles", "description": "Training cycles. One cycle is two receiver updates, then five sender updates. The published runs train until convergence within eight hours on one GPU.", "values": [150, 300, 100, 50, 20, 2], "default": 150},
+  {"lever": "training", "name": "cycles", "description": "Training cycles. One cycle is two receiver updates, then five sender updates, so 100 cycles are 700 updates. The published runs train until convergence within eight hours on one GPU; in the paper's Figure 9 the receiver's accuracy stays between 0.5 and 0.6 for about 700 updates and reaches about 0.97 near update 860.", "values": [150, 300, 200, 100, 50, 20, 2], "default": 150},
   {"lever": "training", "name": "batch", "description": "Texts per update. published is the repository's setting: 192 per sender update and 256 per receiver update, which needs more than 40 GB of GPU memory because the overseer keeps its full output for every text of a batch. fits_40gb uses 128 for both, with the sender's training passes and the overseer's passes in groups of 16 instead of 64; the paper's own table states 128 for the sender and 256 for the receiver.", "values": ["published", "fits_40gb"], "default": "published"},
   {"lever": "model", "name": "sender", "description": "The sender's released weights. The repository's prompts use this model's chat format.", "values": ["unsloth/gemma-2-2b-it"], "default": "unsloth/gemma-2-2b-it"}
  ],

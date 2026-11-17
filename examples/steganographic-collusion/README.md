@@ -32,5 +32,6 @@ the trial's condition and the seed, and starts the repository's trainer. It repl
 launcher, which asks for Weights & Biases and Hugging Face logins. Each trial directory keeps `settings.json`
 (every setting the trainer received), `events.jsonl` (every number the trainer logged, with the update
 count), `texts.jsonl` (the sender's texts at each evaluation, with label, task reward and overseer reward),
-`final_evaluation.json` (the repository's evaluation over the held-out split) and the trainer's own offline
+`final_evaluation.json` (the repository's evaluation over the held-out split), the trained pair
+(`sender-adapter/`, the LoRA weights for the sender, and `receiver/`) and the trainer's own offline
 Weights & Biases files.

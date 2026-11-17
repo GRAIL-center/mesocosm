@@ -1,10 +1,10 @@
 """Run one training of the published steganographic-collusion code (Mathew et al., arXiv:2410.03768).
 
 The repository is not changed. This adapter takes the repository's own settings for the published university
-run, applies the trial's condition and seed, starts the repository's trainer, and also writes to files what
-the trainer hands to its logging method. The repository's launcher is not used: it asks for Weights & Biases
-and Hugging Face logins, which the public models and data do not need. It runs with the interpreter of the
-repository's environment.
+run, applies the trial's condition and seed, starts the repository's trainer, writes to files what the
+trainer hands to its logging method, and keeps the trained sender adapter and receiver. The repository's
+launcher is not used: it asks for Weights & Biases and Hugging Face logins, which the public models and data
+do not need. It runs with the interpreter of the repository's environment.
 """
 
 from __future__ import annotations
@@ -105,6 +105,10 @@ def main() -> None:
     trainer.hparams["eval"]["n_eval_samples"] = FINAL_SAMPLES
     final = {key: plain(value) for key, value in trainer.evaluate("eval", trainer.data_loader_dict["eval"]).items()}
     (trial / "final_evaluation.json").write_text(json.dumps(final, indent=1), encoding="utf-8")
+    # The trained pair, so that a later study can use it without training again.
+    trainer.enc_model.pretrained_model.save_pretrained(trial / "sender-adapter")
+    trainer.dec_model.save_pretrained(trial / "receiver")
+    trainer.dec_tokenizer.save_pretrained(trial / "receiver")
     updates = trainer.n_dec_updates + trainer.n_enc_updates
     outcome.write_text(json.dumps({"measures": measures(final), "note": (
         f"{updates} updates ({trainer.n_enc_updates} of the sender) in {(time.time() - started) / 60:.0f} minutes; "
