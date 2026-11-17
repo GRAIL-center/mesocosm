@@ -26,7 +26,7 @@ An environment is a directory with a `substrate.json` and the code that runs one
 | `settings[].stand_in_for` | The lever this switch imitates. It stays recorded under its own lever |
 | `settings[].held_out` | The value reserved for claims, such as the task set no design was tuned on |
 | `settings[].request_model` | `true` on a model switch whose values are the model ids the trial requests. A list of ids is a mixed team. A trial that requests other ids fails |
-| `measures[].floor` | At or below this the behavior counts as absent (chance level, for example) |
+| `measures[].floor` | At or below this the behavior counts as absent. Measure it with the ingredient removed; do not assume uniform chance, because models have favorite answers |
 | `command` | `{python}`, `{condition}`, `{outcome}`, `{seed}`, `{workdir}` are replaced per trial. Runs in the manifest's directory |
 | `agents` | Agent ids that get their own model key, so calls are attributed |
 

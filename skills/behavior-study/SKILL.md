@@ -54,6 +54,7 @@ holding its key; `--upstreams FILE` routes model ids to other servers
    alternative value of each switch and returns one state per lever: `necessary`, `sufficient`,
    `modulates`, `no-effect` or `not-tested`.
 7. **Report** what reproduced and what did not, with the card, the baseline profile and the labels below.
+   On a card, `no-effect` means no effect was shown at that number of runs, not that there is none.
 
 ## What is strict
 

@@ -51,7 +51,7 @@ complete capture does not independently authenticate it.
 
 The evaluator neither modifies rewards nor runs a second benchmark scorer. Original
 ImpossibleBench and fallback execution contracts remain unsupported on the current native
-Harbor path; see the [original-contract audit](../../reward-hack-benchmark-contract.md).
+Harbor path; see the original-contract audit.
 Missing test-file capture must therefore remain unknown. A different installed backend
 must preserve the original completion, submission and sandbox lifecycle before live study
 acceptance; there is no prompt-text approximation.

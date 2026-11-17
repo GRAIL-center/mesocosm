@@ -59,6 +59,6 @@ external deployment lifecycle tests. These fixtures
 are contract tests; they do not constitute a Qwen3.5/vLLM operator smoke check.
 
 The fixed-P study's original benchmark execution contract is currently unsupported by
-the native Harbor snapshot verifier. See the [source-pinned audit](../../reward-hack-benchmark-contract.md)
+the native Harbor snapshot verifier. See the source-pinned audit
 and study readiness report. No replacement reward scorer or
 approximate task wrapper is introduced by these deployment interfaces.

@@ -62,6 +62,6 @@ Software contracts in test_designer_execution.py cover
 the façade and strict original-bundle verification using explicitly labeled transport/runtime
 fixtures. These tests are not live worker, model-serving or multi-agent acceptance evidence.
 The original benchmark compatibility blocker remains as documented in the
-[benchmark audit](../../reward-hack-benchmark-contract.md).
+benchmark audit.
 
 See the operator and designer guide for configuration and lifecycle.

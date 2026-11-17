@@ -138,19 +138,19 @@ Update this matrix when an interface or its evidence changes. Keep raw runs outs
 
 ## Behavior studies (ADR-0079)
 
-An agent works from the [behavior-study skill](../skills/behavior-study/SKILL.md). Inference in these tests
-is a scripted local server.
+An agent works from the [behavior-study skill](../skills/behavior-study/SKILL.md). Inference in the tests is a
+scripted local server. One study has run with a real model: the [naming-game run](naming-game-evidence.md).
 
 | Capability | Status and boundary | Evidence |
 |---|---|---|
 | Seven-lever conditions over an environment's declared switches; undeclared switches and values refused; stand-in, held-out and model-id labels | **supported** in CPU tests | [Study tests](../tests/test_study.py) |
 | Parallel, resumable trial runner with one write-once record per trial and retained failures | **supported** in CPU tests with a deterministic test environment; unattended runs of a real environment are **unverified** | [Study tests](../tests/test_study.py) |
-| A comparison of a changed condition with the baseline on shared seeds: effect, spread of the baseline, exact permutation test, reach check, compute; baseline runs shared between plans | **supported** in CPU tests. The reach check is decided only when the environment sends per-request sampling seeds drawn from the trial seed and the server honors them | [Study tests](../tests/test_study.py), [Command tests](../tests/test_study_command.py) |
+| A comparison of a changed condition with the baseline on shared seeds: effect, spread of the baseline, exact permutation test, reach check, compute; baseline runs shared between plans | **supported** in CPU tests. The reach check is decided only when the environment sends per-request sampling seeds drawn from the trial seed and the server honors them; vLLM 0.31.0 did in the [naming-game run](naming-game-evidence.md) | [Study tests](../tests/test_study.py), [Command tests](../tests/test_study_command.py) |
 | Exploration and claim modes: held-out values, a separate seed stream and minimum repetitions for a claim; partition switches are not arms | **supported** in CPU tests | [Study tests](../tests/test_study.py) |
 | Behavior card from a claim plan: one state per lever, labels carried into findings | **supported** in CPU tests | [Study tests](../tests/test_study.py) |
 | An environment brought as a manifest and a command, with per-trial condition, seed and outcome files | **supported** in CPU tests with the naming-game template | [Command tests](../tests/test_study_command.py) |
-| Every model call of a study trial recorded through the model gateway: a key per trial and agent, the server key withheld from the environment, a model switch enforced from the recorded requests | **supported** in CPU tests against a scripted local server; vLLM and hosted providers through this path are **unverified** | [Command tests](../tests/test_study_command.py) |
+| Every model call of a study trial recorded through the model gateway: a key per trial and agent, the server key withheld from the environment, a model switch enforced from the recorded requests | **supported** in CPU tests against a scripted local server and in one vLLM run (4,056 calls, all recorded, [naming-game run](naming-game-evidence.md)); hosted providers through this path are **unverified** | [Command tests](../tests/test_study_command.py) |
 | `mesocosm study describe`, `test`, `card` with one JSON object and typed refusals | **supported** in CPU tests | [Command tests](../tests/test_study_command.py) |
 | Contained execution of a command environment whose agents execute code or use the network | **unsupported**: the command is a host process | [ADR-0079](adr/0079-behavior-studies.md) |
-| Connected environments | A naming-game reconstruction template runs with scripted inference. The original Emergent Collusion repository and the native world are **unsupported**: not connected | [Command tests](../tests/test_study_command.py) |
-| Behavior cards from real models | **unverified**: no study has run | None |
+| Connected environments | A naming-game reconstruction template, run with scripted inference and once with a real model ([naming-game run](naming-game-evidence.md)). The original Emergent Collusion repository and the native world are **unsupported**: not connected | [Command tests](../tests/test_study_command.py) |
+| Behavior cards from real models | Two cards from one run with one 4B model on the naming-game template; five runs per condition. Other environments, models and repeat runs are **unverified** | [naming-game run](naming-game-evidence.md) |

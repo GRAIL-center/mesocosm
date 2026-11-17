@@ -38,7 +38,7 @@ incentives or oversight change.
 | **Monitor and intervene** | Posthoc review or assessment before supported tool calls, with recorded allow, deny or termination decisions. |
 | **Update policies** | An optional REINFORCE/LoRA training loop using validated action/reward records and checkpoint activation between worlds. |
 | **Inspect evidence** | Original model and harness records, tool events, verifier results, enforcement receipts, CLI reports, diagnostics and integrity checks. |
-| **Study a behavior** | An agent brings an environment as a manifest and a command, measures the unchanged baseline, runs comparisons that return the effect next to the run-to-run noise, and confirms claims as behavior cards. Three commands and a [skill](skills/behavior-study/SKILL.md). Tested with scripted inference only; no study has run with a real model. |
+| **Study a behavior** | An agent brings an environment as a manifest and a command, measures the unchanged baseline, runs comparisons that return the effect next to the run-to-run noise, and confirms claims as behavior cards. Three commands and a [skill](skills/behavior-study/SKILL.md). One small study has run with a real model ([evidence](docs/naming-game-evidence.md)). |
 
 The built-in Docker/OpenCode runtime supports a defined subset of Debian/Ubuntu tasks and original Compose services.
 Shared-service mode retains separate agent workspaces and records one team measurement. Compatibility
@@ -130,7 +130,9 @@ under one rule: permissive to build, strict to label and record
 | 3. Elicit | Which enforced conditions turn a behavior on, against measured run-to-run noise. |
 | 4. Red-team | Under which conditions a team behaves in misaligned ways, and what monitoring misses. |
 
-The project is at stage 1, and no behavior has been reproduced yet. [Milestones](docs/milestones.md)
+The project is at stage 1. One positive control has a first small run: the dependence of naming
+conventions on interaction history appeared, consensus without an instruction did not
+([evidence](docs/naming-game-evidence.md)). [Milestones](docs/milestones.md)
 give the evidence and exit criteria for each stage.
 
 ## Project status
