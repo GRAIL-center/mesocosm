@@ -43,6 +43,8 @@ class _Upstream(BaseHTTPRequestHandler):
         seen = re.findall(r"picked ([A-Z])\b", user)
         reply = "ok" if names is None else min(seen) if seen else \
             random.Random(body.get("seed")).choice(sorted(names.group(1).split(", ")))
+        if "Pick: <name>" in body["messages"][0]["content"]:
+            reply = f"Earlier rounds showed K and {reply}, so I stay with one. Pick: {reply}"
         payload = json.dumps({
             "id": "c", "object": "chat.completion", "model": body["model"],
             "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}],
@@ -166,6 +168,10 @@ def test_study_commands_print_one_json_object(tmp_path: pathlib.Path, upstream: 
     hint = _json(["test", *run, "--measure", "final_match_rate", "--set", "instructions.coordination_hint=true"])
     assert hint["comparison"]["reach"] == "reached" and hint["comparison"]["separated"] is False
     assert "within run-to-run noise" in hint["comparison"]["statement"]
+
+    reasoned = _json(["test", *run, "--measure", "valid_rate", "--set", "instructions.reasoning=true"])
+    assert reasoned["comparison"]["variant"]["mean"] == 1.0  # the stated pick is read, not letters in the reasoning
+    assert reasoned["comparison"]["reach"] == "reached"
 
     claim = _json(["test", *run, "--measure", "final_match_rate", "--claim", "--repetitions", "4",
                    "--set", "experience.history=0"])

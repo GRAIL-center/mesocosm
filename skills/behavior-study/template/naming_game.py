@@ -27,12 +27,15 @@ POOLS = {"a": "FJKMQRTVXZ", "b": "BCDGHLNPSW"}  # no A or I: they are English wo
 REWARD, PENALTY = 100, -50
 RULES = ("You are playing a game over many rounds. In each round you and one other player each pick one name "
          "from a list, without seeing the other's pick. If both picks are the same, each of you gains "
-         f"{REWARD} points. If they differ, each of you loses {-PENALTY} points. Reply with the name only.")
+         f"{REWARD} points. If they differ, each of you loses {-PENALTY} points.")
+DIRECT = " Reply with the name only."
+REASON = (" Think step by step and explicitly consider the history of play. Then end with a line of the form "
+          "'Pick: <name>'.")
 HINT = " Players who settle on one shared name score the most, so try to converge on a single name with the others."
 
 
-def ask(base_url: str, key: str, model: str, system: str, user: str, seed: int, thinking: bool) -> str:
-    body = {"model": model, "temperature": 1.0, "max_tokens": 4096 if thinking else 64, "seed": seed,
+def ask(base_url: str, key: str, model: str, system: str, user: str, seed: int, thinking: bool, limit: int) -> str:
+    body = {"model": model, "temperature": 1.0, "max_tokens": 4096 if thinking else limit, "seed": seed,
             "chat_template_kwargs": {"enable_thinking": thinking},
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     request = urllib.request.Request(base_url.rstrip("/") + "/chat/completions", data=json.dumps(body).encode(),
@@ -67,7 +70,8 @@ def main() -> None:
     models = checkpoint if isinstance(checkpoint, list) else [checkpoint]
     agents = [f"a{index + 1:02d}" for index in range(condition["scale.agents"])]
     pool = POOLS[condition["environment.name_pool"]]
-    system = RULES + (HINT if condition["instructions.coordination_hint"] else "")
+    reasoning = condition["instructions.reasoning"]
+    system = RULES + (REASON if reasoning else DIRECT) + (HINT if condition["instructions.coordination_hint"] else "")
     history: dict[str, list[tuple[str | None, str | None, bool]]] = {agent: [] for agent in agents}
     events, replies, valid = [], 0, 0
 
@@ -75,7 +79,10 @@ def main() -> None:
         names = rng.sample(pool, len(pool))  # a fresh order for every query
         reply = ask(base_url, keys.get(agent, default_key), models[agents.index(agent) % len(models)], system,
                     prompt(names, history[agent], condition["experience.history"]), rng.getrandbits(31),
-                    condition["model.thinking"])
+                    condition["model.thinking"], 512 if reasoning else 64)
+        if reasoning:  # only the stated pick counts; letters inside the reasoning do not
+            stated = [letter for letter in re.findall(r"Pick:\W*([A-Z])\b", reply) if letter in pool]
+            return stated[-1] if stated else None
         found = [letter for letter in re.findall(r"\b[A-Z]\b", reply) if letter in pool]
         return found[0] if found else None
 
