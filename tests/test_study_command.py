@@ -16,6 +16,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mesocosm.cli.main import app
+from mesocosm.study import command
 from mesocosm.study.command import load_substrate
 from mesocosm.study.compare import compare, compute_of, plan
 from mesocosm.study.condition import StudyError
@@ -50,6 +51,14 @@ class _Upstream(BaseHTTPRequestHandler):
             "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": len(user.split()), "completion_tokens": 1,
                       "total_tokens": len(user.split()) + 1}}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def do_GET(self) -> None:  # noqa: N802 (http.server's name); the readiness check asks for the model list
+        payload = b'{"object": "list", "data": []}'
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -144,6 +153,80 @@ def test_a_model_switch_is_enforced_by_the_recorded_requests(tmp_path: pathlib.P
     assert mixed.outcome.note == "withheld"                      # the command never held the server's key
     assert _Upstream.authorization[-1] == "Bearer server-secret"  # the gateway presented it
     assert undeclared.status == "failed" and "requests named models ['another-model']" in undeclared.error
+
+
+PROBE = """
+import json, os, socket, urllib.request
+facts = {{"internet": 0, "host_file": os.path.exists({secret!r}), "other_trial": os.path.exists({other!r}),
+         "server_key": "SERVER_KEY" in os.environ, "root": os.getuid() == 0, "manifest_writable": 0}}
+try:
+    socket.create_connection(("1.1.1.1", 443), timeout=3); facts["internet"] = 1
+except OSError:
+    pass
+try:
+    open("planted.txt", "w").close(); facts["manifest_writable"] = 1
+except OSError:
+    pass
+body = json.dumps({{"model": "small", "messages": [{{"role": "user", "content": "hello"}}]}}).encode()
+reply = urllib.request.urlopen(urllib.request.Request(
+    os.environ["OPENAI_BASE_URL"] + "/chat/completions", data=body,
+    headers={{"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["OPENAI_API_KEY"]}})).read()
+json.dump({{"measures": {{"leaks": float(sum(map(int, facts.values()))), "gateway": float(b"ok" in reply)}},
+           "note": json.dumps(facts)}}, open(os.environ["TRIAL_OUTCOME"], "w"))
+"""
+
+
+def _contained_manifest(tmp_path: pathlib.Path, store: TrialStore) -> pathlib.Path:
+    secret = tmp_path / "host-secret.txt"
+    secret.write_text("outside the environment", encoding="utf-8")
+    other = store.workdir("other-trial") / "record.json"
+    other.write_text("{}", encoding="utf-8")
+    directory = tmp_path / "environment"
+    directory.mkdir()
+    (directory / "run.py").write_text(PROBE.format(secret=str(secret), other=str(other)), encoding="utf-8")
+    manifest = directory / "substrate.json"
+    manifest.write_text(json.dumps({
+        "name": "contained-probe", "version": "1", "kind": "reconstruction", "source": "tests", "contained": True,
+        "command": ["{python}", "run.py"],
+        "settings": [{"lever": "model", "name": "checkpoint", "description": "id the trial requests",
+                      "values": ["small"], "default": "small", "request_model": True}],
+        "measures": [{"name": "leaks", "description": "host things the trial could reach"},
+                     {"name": "gateway", "description": "the model call succeeded"}]}), encoding="utf-8")
+    return manifest
+
+
+@pytest.mark.skipif(command._sandbox() is not None, reason="this host cannot start a bubblewrap sandbox")
+def test_a_contained_trial_reaches_only_the_gateway_and_its_own_directory(tmp_path: pathlib.Path, upstream: str,
+                                                                          monkeypatch: pytest.MonkeyPatch) -> None:
+    store = TrialStore(tmp_path / "study")
+    manifest = _contained_manifest(tmp_path, store)
+    spec = TrialSpec(trial_id="contained", repetition=0, seed=1, mode="exploration",
+                     condition=load_substrate(manifest).space.condition())
+    monkeypatch.setenv("SERVER_KEY", "server-secret")
+    with GatewayLink(store.root / "gateway", {spec.trial_id: ()}, upstream=upstream) as link:
+        (record,) = run_trials(load_substrate(manifest, link), [spec], store)
+    assert record.status == "completed", record.error
+    assert record.outcome.measures == {"leaks": 0.0, "gateway": 1.0}, record.outcome.note
+    assert [call.model for call in record.outcome.calls] == ["small"]  # the only way out was recorded
+    assert not (manifest.parent / "planted.txt").exists()
+
+
+def test_trials_do_not_start_when_containment_or_the_model_server_is_missing(
+        tmp_path: pathlib.Path, upstream: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = TrialStore(tmp_path / "study")
+    manifest = _contained_manifest(tmp_path, store)
+    with pytest.raises(StudyError, match="rejected_unsupported: the model server at http://127.0.0.1:9 does not"):
+        with GatewayLink(tmp_path / "gateway", {"t": ()}, upstream="http://127.0.0.1:9"):
+            pass
+    monkeypatch.setattr(command.shutil, "which", lambda _: None)
+    command._sandbox.cache_clear()
+    try:
+        with pytest.raises(StudyError, match="must run contained and bubblewrap .bwrap. is not installed"):
+            load_substrate(manifest).preflight()
+        refused = _json(["test", str(manifest), "--root", str(tmp_path / "cli"), "--upstream", upstream], code=1)
+    finally:
+        command._sandbox.cache_clear()
+    assert refused["status"] == "rejected_unsupported" and not (tmp_path / "cli" / "trials").exists()
 
 
 def _json(args: list[str], code: int = 0) -> dict:

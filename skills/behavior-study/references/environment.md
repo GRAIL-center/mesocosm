@@ -29,6 +29,7 @@ An environment is a directory with a `substrate.json` and the code that runs one
 | `measures[].floor` | At or below this the behavior counts as absent. Measure it with the ingredient removed; do not assume uniform chance, because models have favorite answers |
 | `command` | `{python}`, `{condition}`, `{outcome}`, `{seed}`, `{workdir}` are replaced per trial. Runs in the manifest's directory |
 | `agents` | Agent ids that get their own model key, so calls are attributed |
+| `contained` | `true` runs each trial in a sandbox: no network except the gateway, no host files beyond the manifest's directory (read-only) and the trial's own directory. Required when agents execute code |
 
 ## What one trial receives
 
@@ -54,4 +55,8 @@ An environment is a directory with a `substrate.json` and the code that runs one
 Leave the repository unchanged. Next to the manifest, write an adapter that reads the condition, calls the
 repository's entry point with the matching flags, reads its output and writes the outcome. Code that uses
 the OpenAI SDK or LiteLLM picks up the gateway from the variables above. If the repository lets agents
-execute code, it needs a container; the command runner does not provide one.
+execute code, set `"contained": true`. A contained trial sees only the system directories, the manifest's
+directory and its own trial directory, so build the repository's environment, interpreter included, inside
+the manifest's directory (`UV_PYTHON_INSTALL_DIR=$PWD/python uv venv`), and let the adapter copy the
+repository into the trial directory if it writes next to its code. The host needs `bubblewrap`.
+[examples/agent-collusion](../../../examples/agent-collusion/) is a worked case.

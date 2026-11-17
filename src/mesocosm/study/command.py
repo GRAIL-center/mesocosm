@@ -14,15 +14,21 @@ set, its measures and the command that runs one trial. The code itself is not ch
 An adapter script that maps the condition to a repository's own flags is part of the manifest's
 directory, not of the repository.
 
-The command is a process on the host with the caller's privileges. It is not contained: an environment
-whose agents execute code or use the network needs a contained runner, which this module does not provide.
+Without ``contained`` the command is a process on the host with the caller's privileges. With
+``"contained": true`` it runs in a bubblewrap sandbox: its own user, mount, process and network
+namespaces, a read-only view of the system directories and of the manifest's directory, write access to
+its trial directory only, an empty environment apart from the trial's variables, and no network except a
+loopback port that relays to the recording gateway. An environment whose agents execute code needs this.
+The sandbox shares the host's kernel and sets no CPU or memory limit.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -30,10 +36,15 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from mesocosm.study import relay
 from mesocosm.study.condition import Condition, LeverSpace, Setting, StudyError
 from mesocosm.study.substrate import NAME, Measure, ModelCall, SubstrateInfo, TrialOutcome
 
 STDERR_TAIL = 2000
+SANDBOX_PORT = 4000
+SYSTEM_PATHS = ("/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc/ssl", "/etc/ca-certificates",
+                "/etc/ld.so.cache", "/etc/ld.so.conf", "/etc/ld.so.conf.d", "/etc/alternatives")
+TRIAL_VARIABLES = ("TRIAL_CONDITION", "TRIAL_SEED", "TRIAL_OUTCOME", "OPENAI_API_KEY", "MODEL_KEYS", "LANG", "LC_ALL")
 
 
 class ModelLink(Protocol):
@@ -42,6 +53,18 @@ class ModelLink(Protocol):
     def environment(self, trial_id: str) -> dict[str, str]: ...
 
     def calls(self, trial_id: str) -> tuple[ModelCall, ...]: ...
+
+    def socket(self) -> str: ...
+
+
+@functools.cache
+def _sandbox(mount: str = "") -> str | None:
+    """Why this host cannot start a sandbox (with the given extra mount), or ``None`` when it can."""
+    if shutil.which("bwrap") is None:
+        return "bubblewrap (bwrap) is not installed"
+    probe = subprocess.run(["bwrap", "--unshare-all", "--ro-bind", "/", "/", *mount.split(), "true"],
+                           capture_output=True, text=True, check=False)
+    return None if probe.returncode == 0 else f"bubblewrap cannot start a sandbox here: {probe.stderr.strip()[-200:]}"
 
 
 class CommandManifest(BaseModel):
@@ -59,6 +82,7 @@ class CommandManifest(BaseModel):
     measures: tuple[Measure, ...] = Field(min_length=1)
     agents: tuple[str, ...] = ()
     timeout_seconds: float = Field(default=3600, gt=0)
+    contained: bool = False
 
 
 class _Outcome(BaseModel):
@@ -79,11 +103,41 @@ class CommandSubstrate:
         self.space = LeverSpace(settings=manifest.settings)
         self.measures = manifest.measures
 
+    def preflight(self) -> None:
+        """Refuse before any trial starts when the host cannot contain an environment that must be contained."""
+        problem = _sandbox() if self.manifest.contained else None
+        if problem:
+            raise StudyError(f"rejected_unsupported: this environment must run contained and {problem}")
+
+    def _contain(self, argv: list[str], env: dict[str, str], workdir: pathlib.Path) -> tuple[list[str], dict[str, str]]:
+        """Wrap the command in the sandbox. A contained ``{python}`` is the bare base interpreter."""
+        self.preflight()
+        inside = {name: env[name] for name in TRIAL_VARIABLES if name in env}
+        inside.update(PATH="/usr/local/bin:/usr/bin:/bin", HOME=str(workdir), TMPDIR="/tmp")
+        box = ["bwrap", "--unshare-all", "--die-with-parent", "--new-session", "--cap-drop", "ALL", "--clearenv",
+               "--uid", "1000", "--gid", "1000", "--dev", "/dev", "--tmpfs", "/tmp"]
+        box += ["--proc", "/proc"] if _sandbox("--proc /proc") is None else []  # some hosts forbid mounting it
+        prefix = _base_python().parents[1]
+        for path in (*SYSTEM_PATHS, *([] if str(prefix).startswith("/usr") else [str(prefix)])):
+            box += ["--ro-bind-try", path, path]
+        box += ["--ro-bind", str(self.directory), str(self.directory), "--bind", str(workdir), str(workdir),
+                "--chdir", str(self.directory)]
+        if self.link is not None:
+            url = f"http://127.0.0.1:{SANDBOX_PORT}/v1"
+            inside.update(OPENAI_BASE_URL=url, OPENAI_API_BASE=url, NO_PROXY="127.0.0.1", no_proxy="127.0.0.1")
+            box += ["--ro-bind", str(pathlib.Path(relay.__file__).resolve()), "/run/relay.py",
+                    "--bind", self.link.socket(), "/run/gateway.sock"]
+            argv = [str(_base_python()), "-I", "/run/relay.py", str(SANDBOX_PORT), "/run/gateway.sock", "--", *argv]
+        for name, value in inside.items():
+            box += ["--setenv", name, value]
+        return [*box, "--", *argv], {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+
     def run(self, condition: Condition, seed: int, workdir: pathlib.Path) -> TrialOutcome:
         trial_id = workdir.name
         condition_path, outcome_path = workdir / "condition.json", workdir / "outcome.json"
         condition_path.write_text(json.dumps(condition.settings, indent=1), encoding="utf-8")
-        places = {"{python}": sys.executable, "{condition}": str(condition_path), "{outcome}": str(outcome_path),
+        python = str(_base_python()) if self.manifest.contained else sys.executable
+        places = {"{python}": python, "{condition}": str(condition_path), "{outcome}": str(outcome_path),
                   "{seed}": str(seed), "{workdir}": str(workdir)}
         argv = []
         for part in self.manifest.command:
@@ -94,6 +148,8 @@ class CommandSubstrate:
                "TRIAL_CONDITION": str(condition_path), "TRIAL_SEED": str(seed), "TRIAL_OUTCOME": str(outcome_path)}
         if self.link is not None:
             env.update(self.link.environment(trial_id))
+        if self.manifest.contained:
+            argv, env = self._contain(argv, env, workdir)
         with (workdir / "stdout.txt").open("w", encoding="utf-8") as out, \
                 (workdir / "stderr.txt").open("w", encoding="utf-8") as err:
             try:
@@ -124,6 +180,10 @@ class CommandSubstrate:
         if requested != declared:
             raise StudyError(f"the trial's requests named models {sorted(str(item) for item in requested)}, "
                              f"the condition declares {sorted(declared)}")
+
+
+def _base_python() -> pathlib.Path:
+    return pathlib.Path(getattr(sys, "_base_executable", sys.executable)).resolve()
 
 
 def load_substrate(path: pathlib.Path, link: ModelLink | None = None,

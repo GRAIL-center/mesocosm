@@ -13,6 +13,9 @@ import json
 import os
 import pathlib
 import secrets
+import shutil
+import socket
+import tempfile
 import threading
 import time
 from collections.abc import Mapping, Sequence
@@ -21,6 +24,7 @@ from typing import Any
 import httpx
 
 from mesocosm.study.condition import StudyError, canonical
+from mesocosm.study.relay import start_relay
 from mesocosm.study.substrate import ModelCall
 
 DEFAULT_AGENT = "environment"
@@ -45,6 +49,8 @@ class GatewayLink:
         self.port = 0
         self._server: Any = None
         self._thread: threading.Thread | None = None
+        self._relay: socket.socket | None = None
+        self._socket_dir: str | None = None
 
     def __enter__(self) -> GatewayLink:
         try:
@@ -68,9 +74,38 @@ class GatewayLink:
                 raise StudyError("the model gateway did not start")
             time.sleep(0.02)
         self.port = self._server.servers[0].sockets[0].getsockname()[1]
+        try:
+            self._check_servers()
+        except StudyError:
+            self.__exit__()
+            raise
         return self
 
+    def _check_servers(self) -> None:
+        """Refuse before any trial starts when a model server does not answer: a failed trial is permanent."""
+        servers = {self.upstream: self.upstream_key}
+        servers.update({str(spec["url"]): os.environ.get(str(spec.get("key_env") or "")) or None
+                        for spec in self.upstreams.values() if spec.get("url")})
+        for url, key in servers.items():
+            try:
+                httpx.get(url.rstrip("/") + "/v1/models", timeout=15,
+                          headers={"Authorization": f"Bearer {key}"} if key else None).raise_for_status()
+            except httpx.HTTPError as exc:
+                raise StudyError(f"rejected_unsupported: the model server at {url} does not answer "
+                                 f"({type(exc).__name__})") from exc
+
+    def socket(self) -> str:
+        """A Unix socket that reaches the gateway, to be bound into a contained trial."""
+        if self._relay is None:
+            self._socket_dir = tempfile.mkdtemp(prefix="gw-")
+            self._relay = start_relay(os.path.join(self._socket_dir, "gateway.sock"), ("127.0.0.1", self.port))
+        return os.path.join(str(self._socket_dir), "gateway.sock")
+
     def __exit__(self, *_: object) -> None:
+        if self._relay is not None:
+            self._relay.close()
+        if self._socket_dir is not None:
+            shutil.rmtree(self._socket_dir, ignore_errors=True)
         if self._server is not None:
             self._server.should_exit = True
         if self._thread is not None:

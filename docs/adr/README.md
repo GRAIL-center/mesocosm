@@ -12,3 +12,4 @@ superseded by a new numbered record, not edited. Earlier records, ADR-0001 to AD
 | [0081](0081-native-world.md) | The native world: enforced conditions, real agents, separate measurements |
 | [0082](0082-training-observation-and-evidence.md) | Training with provenance, opt-in activations, the three status words |
 | [0083](0083-consolidation-2026-11.md) | What the November 2026 consolidation removed and what it left undone |
+| [0084](0084-contained-study-environments.md) | Contained study environments: a sandbox whose only way out is the gateway, checks before trials start, the published collusion code connected |

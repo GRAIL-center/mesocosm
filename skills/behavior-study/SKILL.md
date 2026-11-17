@@ -66,6 +66,6 @@ holding its key; `--upstreams FILE` routes model ids to other servers
 - **Claims.** Exploration results decide what to try next. Only claim runs support a statement.
 - **Negative results.** "The behavior needs this model" or "the published effect did not reproduce" is
   a result. Record it. Do not add cues until the behavior appears.
-- **Containment.** The command is a plain process on the host. Do not run an environment whose agents
-  execute code or use the network this way.
+- **Containment.** Without `"contained": true` the command is a plain process on the host. Set it for any
+  environment whose agents execute code or use the network; the trial then reaches only the gateway.
 - **Data.** Keep study roots under `runs/`; they hold prompts and responses and are never committed.

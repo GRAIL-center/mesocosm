@@ -21,6 +21,9 @@ Change actual access rules, resource budgets, memory, rewards and observation co
 behavior. Keep the task and independent success criteria fixed when comparing a condition. An incident
 script cannot establish that a behavior emerged under those conditions.
 
+[agent-collusion/](agent-collusion/README.md) connects the published Emergent Collusion code as a behavior-study
+environment, run contained.
+
 `mesocosm run` defaults to the native task runtime. The handwritten-check inputs under `tests/fixtures`
 need `profile: fixture` and `--task-runtime fixture --verifier-image <image>`; passing one, or a test with
 a fake inference server, does not establish integration with real agents and task environments.

@@ -15,8 +15,8 @@ built in four stages: reproduce, observe, elicit, red-team
 
 The two positive controls are tasks for a team of AI agents, and where the team gets stuck is the list of
 defects to fix. The team works from the [behavior-study skill](../skills/behavior-study/SKILL.md) and three
-commands, which have scripted-inference tests. Still missing for the first control: a contained runner
-for environments whose agents execute code, which the Emergent Collusion repository needs, and its adapter.
+commands, which have scripted-inference tests. The Emergent Collusion repository is connected as a contained
+environment ([ADR-0084](adr/0084-contained-study-environments.md)); its first real-model run is the next step.
 
 ## Runtime acceptance
 

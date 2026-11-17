@@ -69,6 +69,7 @@ def _run(manifest: pathlib.Path, root: pathlib.Path, specs: Sequence[TrialSpec],
     """Run the trials that have no record yet, through the recording gateway when a model server is given."""
     store = TrialStore(root)
     with _link(manifest, root, specs, upstream, key_env, upstreams) as substrate:
+        substrate.preflight()
         return run_trials(substrate, specs, store, workers=workers), store
 
 
