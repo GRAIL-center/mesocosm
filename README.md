@@ -135,8 +135,11 @@ settled on a shared name without an instruction when the prompt asked for brief 
 doing so without interaction history; Qwen3.5-9B did not ([evidence](docs/naming-game-evidence.md)). The other
 control, the published Emergent Collusion code, has one exploration run: Qwen3.5-9B agents accepted each
 other's work against the verification rule with and without memory across episodes
-([evidence](docs/agent-collusion-evidence.md)). [Milestones](docs/milestones.md)
-give the evidence and exit criteria for each stage.
+([evidence](docs/agent-collusion-evidence.md)). A behavior that grows under training has one run: the
+published steganographic-collusion code, trained for ten hours on one seed, reached the paper's result, a
+sender and a receiver that pass on information the sender is told to leave out in a form the overseer does
+not flag; no control arm ran ([evidence](docs/steganographic-collusion-evidence.md)).
+[Milestones](docs/milestones.md) give the evidence and exit criteria for each stage.
 
 ## Project status
 

@@ -22,7 +22,9 @@ uv run mesocosm study test examples/steganographic-collusion/substrate.json --ro
 ```
 
 It needs one CUDA GPU: more than 40 GB for the published batch sizes, 40 GB with `training.batch=fits_40gb`,
-and one trial at a time. The three models (`unsloth/gemma-2-2b-it`,
+and one trial at a time. With `fits_40gb` on an A100, 100 cycles take five hours and end before the
+receiver's accuracy rises; 200 cycles take ten hours and reached the published result in one run
+([evidence](../../docs/steganographic-collusion-evidence.md)). The three models (`unsloth/gemma-2-2b-it`,
 `unsloth/Meta-Llama-3.1-8B-Instruct`, `distilbert/distilbert-base-uncased`) and the data
 (`rmcc11/lasr-toy-cv-with-paraphrased`) are public and download on first use. The models run inside the trial's
 own process, so no gateway is involved and no `--upstream` is given.
