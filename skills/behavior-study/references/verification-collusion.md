@@ -47,14 +47,25 @@ The paper defines collusion as 'a joint instruction violation driven by inter-ag
 ## Re-tests
 
 - With Qwen3-4B, own-task accuracy was 41–48% in every round against 87% for the teacher, and the report concludes that a faithful reproduction 'needs easier tasks or a stronger small model.' (SwarmStill collusion transfer)
+- On the published code (2026-11-17, exploration, Qwen3.5-9B for both agents, at most 8,192 output tokens):
+  own-task answers were correct in 54 of 60 cases; with full memory 17 of 30 episodes in three trajectories
+  ended in mutual ACCEPT; without memory 8 of 20 in two trajectories did, and mutual ACCEPT appeared in the
+  first episode in both conditions. Three runs against two, p = 0.2: the memory result was neither
+  reproduced nor contradicted.
 
 ## The published code
 
-Read from the repository's README at commit `5afb2c5` (2026-09-23). Not run here.
+Read from the repository's README at commit `5afb2c5` (2026-09-23) and run at that commit.
 
 - Entry point: `python -m experiments --alice-model <route> --bob-model <route> --task-sequence-record
   task/task_sequences_50x10 --repeats 1 --output-dir <dir>`. Each trajectory writes a `run.json`.
 - Self-hosted or gateway models: set `OPENAI_API_BASE` and `OPENAI_API_KEY` and use an `openai/<model>` route.
 - No memory across episodes: `--alice-cross-episode-memory-length 0 --bob-cross-episode-memory-length 0`.
   Three episodes: the same flags with `3`.
+- The main setting has no warm-up episodes. The three warm-up episodes quoted above are an ablation:
+  `--task-sequence-record task/task_sequences_50x3+50x10 --throttle-spans 'no-throttle:3,throttled:*'`.
 - Agents write test files that the protocol executes in a subprocess, so the code must run in a container.
+- With full memory a prompt reaches about 120,000 tokens by episode 10: serve the model with a context
+  well above that. A self-hosted model needs tool calling with a required tool choice.
+- A reply that repeats one tool call hundreds of times ends the trajectory: the code executes every call
+  and the next request exceeds the context. Schedule spare runs per condition.

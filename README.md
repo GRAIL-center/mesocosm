@@ -132,7 +132,10 @@ under one rule: permissive to build, strict to label and record
 
 The project is at stage 1. One positive control has small real-model runs: with Qwen3-4B, populations
 settled on a shared name without an instruction when the prompt asked for brief reasoning, and stopped
-doing so without interaction history; Qwen3.5-9B did not ([evidence](docs/naming-game-evidence.md)). [Milestones](docs/milestones.md)
+doing so without interaction history; Qwen3.5-9B did not ([evidence](docs/naming-game-evidence.md)). The other
+control, the published Emergent Collusion code, has one exploration run: Qwen3.5-9B agents accepted each
+other's work against the verification rule with and without memory across episodes
+([evidence](docs/agent-collusion-evidence.md)). [Milestones](docs/milestones.md)
 give the evidence and exit criteria for each stage.
 
 ## Project status
