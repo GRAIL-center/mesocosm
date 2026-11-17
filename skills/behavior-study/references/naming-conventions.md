@@ -48,6 +48,9 @@ Ashery et al. base their predictions on 'the naming game model of convention for
 
 ## Re-tests
 
+- On this template (2026-11-17, reconstruction): with brief step-by-step reasoning Qwen3-4B populations of 8
+  and 24 agents reached consensus without an instruction and lost it without history; Qwen3.5-9B did not
+  converge. With one-letter answers neither model converged without an instruction.
 - "random rematching and policies that connect disagreeing groups improve coordination when partner-label history is retained, but not when it is absent." (Saab Jr and Abdallah 2026)
 - "Homogeneous populations span TinyLlama-1.1B, Yi-1.5-6B, and Qwen2.5 at 7B, 14B, and 32B under the same N=10 , M=10 , T=200 , history, temperature, and state-threshold design." (Saab Jr and Abdallah 2026)
 - "H=0 replaces the history with an empty-history placeholder, while H=3 and H=10 provide short retained memory." (Saab Jr and Abdallah 2026)
