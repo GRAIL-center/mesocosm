@@ -4,10 +4,13 @@
 
 Mesocosm is a laboratory for the behavior of teams of AI agents. It reproduces behaviors that have been
 reported, observes what independent agents do on real tasks, and elicits behavior by varying enforced
-conditions instead of instructions. The long-term use is red-teaming: finding the conditions under which
-a team behaves in misaligned ways, and measuring what monitoring misses, before deployment. The
-reproductions are meant to be built and run by teams of AI agents, so the tools are designed for an agent
-builder: room to build new environments, context about the original study, and checks that return answers.
+conditions instead of instructions. The goal is to keep producing misaligned behaviors of agent teams that
+have not been reported before, and to make them easy to study: each behavior is released with the
+conditions it needs so that others can reproduce it, with a record of what happened, and with the data,
+environments and tools for further research. Testing monitors against the released cases is one use of
+them. The studies are meant to be built and run by teams of AI agents, so the tools are designed for an
+agent builder: room to build new environments, context about the original study, and checks that return
+answers.
 
 Reported multi-agent behaviors depend on conditions that look incidental, such as one prompt sentence,
 an adjacent model version or memory between episodes, and a report rarely says which conditions matter.
@@ -123,14 +126,15 @@ functions.
 
 Work proceeds in four stages, and each is the precondition of the next. Agent teams do the building,
 under one rule: permissive to build, strict to label and record
-([ADR-0078](docs/adr/0078-purpose-stages-and-builders.md)).
+([ADR-0078](docs/adr/0078-purpose-stages-and-builders.md),
+[ADR-0086](docs/adr/0086-purpose-new-behaviors-released-for-research.md)).
 
 | Stage | What it establishes |
 |---|---|
 | 1. Reproduce | The laboratory can obtain a published behavior, and lose it when the published condition is removed. |
 | 2. Observe | What teams of agents do on real tasks, read with detectors checked against stage 1. |
 | 3. Elicit | Which enforced conditions turn a behavior on, against measured run-to-run noise. |
-| 4. Red-team | Under which conditions a team behaves in misaligned ways, and what monitoring misses. |
+| 4. Red-team | Misaligned team behaviors that were not reported before, each released with the conditions it needs, a record of what happened and the materials to study it. |
 
 The project is at stage 1. One positive control has small real-model runs: with Qwen3-4B, populations
 settled on a shared name without an instruction when the prompt asked for brief reasoning, and stopped

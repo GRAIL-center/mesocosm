@@ -14,3 +14,4 @@ superseded by a new numbered record, not edited. Earlier records, ADR-0001 to AD
 | [0083](0083-consolidation-2026-11.md) | What the November 2026 consolidation removed and what it left undone |
 | [0084](0084-contained-study-environments.md) | Contained study environments: a sandbox whose only way out is the gateway, checks before trials start, the published collusion code connected |
 | [0085](0085-training-runs-as-study-trials.md) | Training runs as study trials: switches that change the training itself, one repetition in exploration, in-process models outside the gateway record, the published steganographic-collusion code connected |
+| [0086](0086-purpose-new-behaviors-released-for-research.md) | The purpose restated: produce misaligned team behaviors not reported before and release each with its conditions, records and materials; monitoring is one use of the cases |

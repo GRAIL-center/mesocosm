@@ -48,10 +48,11 @@
 \begin{abstract}
 \noindent Teams of AI agents are being given shared tools, long tasks and little supervision. Published
 studies report that such teams settle on conventions, approve each other's unverified work and learn to
-hide information from an overseer. Those reports depend on conditions that are rarely isolated, and there
-is no established way to tell, before deployment, whether a given team will behave in such ways or whether
-its monitor would notice. Mesocosm is a laboratory built for that question. It runs real agents on
-real tasks, enforces the conditions around them, records what reached every agent, and compares conditions
+hide information from an overseer, and the incidents of 2026 took forms that nobody had foreseen. Those
+reports depend on conditions that are rarely isolated. Mesocosm is a laboratory built to keep producing
+misaligned behaviors of agent teams that have not been reported before, and to release each with the
+conditions it needs, a record of what happened and the materials to study it. It runs real agents on real
+tasks, enforces the conditions around them, records what reached every agent, and compares conditions
 against measured run-to-run noise. This report states where the project stands at its midpoint: why it
 exists, what is implemented, which experiments have run, what is in progress and what the final goal is.
 The project is in the first of four stages. In its furthest experiment, the published training code of a
@@ -181,8 +182,9 @@ events~\cite{akkil2026};
 Petri and Bloom generate scenarios that elicit a behavior a researcher specifies from one target
 model~\cite{petri2025,bloom2025}. None of them tests whether a behavior arises without instruction when
 several agents work on real tasks under conditions that are enforced and compared one at a time, with
-records that say what each agent read and with the internal state available. That combination is what the
-incidents call for, and it is what Mesocosm is built to provide.
+records that say what each agent read and with the internal state available, and none releases for each
+behavior the conditions another group has to match. That combination is what the incidents call for, and
+it is what Mesocosm is built to provide.
 
 \begin{table}[tbp]
 \centering\small
@@ -219,8 +221,10 @@ real deployment. Independent agents work with real commands and tools on executa
 environments, and the researcher sets their access, budgets, memory, incentives and monitoring. It
 reproduces behaviors that have been reported, observes what agents do on real tasks, and elicits behavior
 by varying conditions that the environment enforces instead of instructions that an agent may ignore. Its
-long-term use is red-teaming: finding the conditions under which a team behaves in misaligned ways, and
-measuring what monitoring misses, before the team is deployed.
+goal is to keep producing misaligned behaviors of agent teams that have not been reported before, and to
+make them easy to study: each behavior is released with the conditions it needs so that others can
+reproduce it, with a record of what happened, and with the data, environments and tools for further
+research.
 
 \paragraph{Questions.} The project asks two questions, in this order.
 \begin{enumerate}
@@ -230,7 +234,7 @@ measuring what monitoring misses, before the team is deployed.
 \end{enumerate}
 Reproduction comes first because an environment that has never produced a known behavior cannot tell an
 absent behavior from one it failed to produce or to detect. The cases produced under both questions are
-the material for testing monitors.
+released for research; testing monitors against them is one such use.
 
 \paragraph{Principles.} Six principles shape the design.
 
@@ -282,7 +286,7 @@ structured form that model cards introduced for trained models~\cite{mitchell201
 \node[stage, fill=herefill] (one) {\textbf{1. Reproduce}\\known behaviors};
 \node[stage, right=0.5cm of one] (two) {\textbf{2. Observe}\\real tasks};
 \node[stage, right=0.5cm of two] (three) {\textbf{3. Elicit}\\by conditions};
-\node[stage, right=0.5cm of three] (four) {\textbf{4. Red-team}\\before deployment};
+\node[stage, right=0.5cm of three] (four) {\textbf{4. Red-team}\\new behaviors};
 \draw[arrow] (one) -- (two);
 \draw[arrow] (two) -- (three);
 \draw[arrow] (three) -- (four);
@@ -307,8 +311,8 @@ Stage & What it establishes & State \\
   the cases of stage 1. & Not started. Agents with small models complete none of the recorded tasks. \\
 3. Elicit & Which enforced conditions turn a behavior on. & Not started. The conditions exist and have
   tests. \\
-4. Red-team & The conditions under which a team behaves in misaligned ways, and what monitoring misses. &
-  Not started. \\
+4. Red-team & Misaligned team behaviors that were not reported before, each released with the conditions
+  it needs, a record of what happened and the materials to study it. & Not started. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -646,22 +650,35 @@ grow under training.
 \section{Final goal}
 \label{sec:goal}
 
-The final goal is a red-teaming procedure for teams of AI agents that can be applied before deployment. For
-a given team (its models, tools, permissions, incentives and oversight) the laboratory should answer two
-questions with recorded evidence: under which conditions does this team behave in misaligned ways, and
-which of those cases does its monitor miss or falsely flag.
+The final goal is a laboratory that keeps producing misaligned behaviors of agent teams that have not been
+reported before, and that releases what research on them needs. For each behavior that is three things.
 
-Reaching it requires each earlier stage. Stage~1 gives known cases and the measure of run-to-run noise
+\begin{itemize}
+\item \textbf{The conditions it needs.} A behavior card states, for each of the seven conditions, whether
+  the behavior needed it, with the values that were tested and those that were not, so that another group
+  can reproduce the behavior and knows what it may not change.
+\item \textbf{What happened.} The records of the runs: what each agent read and did, the model inputs and
+  outputs, the outcomes of the original verifiers and, with open-weight models, what is needed to recompute
+  the internal state at the moment of the behavior.
+\item \textbf{The materials.} The environment, the data and the tools to run the behavior again and to
+  vary it.
+\end{itemize}
+
+Reaching this requires each earlier stage. Stage~1 gives known cases and the measure of run-to-run noise
 without which no later comparison can be read. Stage~2 requires agents that complete solvable tasks at a
 rate fixed in advance, and detectors that have been checked against the known cases before their flags are
 read. Stage~3 varies the enforced conditions (permissions, resources, incentives, memory, monitoring and,
 for behaviors that grow under optimization, the training itself) to find what turns a behavior on. Stage~4
-searches those conditions for misaligned team behavior and measures monitoring on what it finds.
+is the search itself: it looks among those conditions for misaligned team behavior that has not been
+reported, and a case is complete when it is released with its conditions, its records and its materials.
 
-Two further commitments define the goal. The studies are to be built and run by teams of AI agents, so
-that the laboratory scales with the systems it examines. And results are released as behavior cards,
-detection signals, traces and null results, while a recipe that elicits a hazardous behavior is reviewed
-before release.
+The released cases serve several kinds of research. One of them is monitoring: a detector can be tested
+against behavior that is known to have arisen without instruction. Measuring monitors is a use of the cases
+and not the goal of the laboratory.
+
+Two further commitments belong to the goal. The studies are to be built and run by teams of AI agents, so
+that the laboratory scales with the systems it examines. And null results are released with the cases,
+while a recipe that elicits a hazardous behavior is reviewed before release.
 
 \FloatBarrier
 \section{Limits of the current evidence}
