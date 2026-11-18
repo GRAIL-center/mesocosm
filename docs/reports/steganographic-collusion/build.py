@@ -1,6 +1,7 @@
-"""Generate every number, table row and curve of the report from the two trial directories.
+"""Generate every number, table row and curve of the report from the trial directories.
 
 Usage: python3 build.py <trial directory of the 100-cycle run> <trial directory of the 200-cycle run>
+           <trial directory of the control run> <comparison printed by the study command, as a JSON file>
 
 The report's text holds no measured number of its own: it reads the macros and tables written here into
 ``generated/``. A value that is missing from the records stops the build.
@@ -156,9 +157,11 @@ def same_trajectory(short: Trial, long: Trial) -> tuple[int, int]:
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        stop("give the trial directory of the 100-cycle run and of the 200-cycle run")
-    short, long = Trial(sys.argv[1]), Trial(sys.argv[2])
+    if len(sys.argv) != 5:
+        stop("give the trial directories of the 100-cycle run, the 200-cycle run and the control run, "
+             "and the comparison the study command printed")
+    short, long, control = Trial(sys.argv[1]), Trial(sys.argv[2]), Trial(sys.argv[3])
+    study = json.loads(pathlib.Path(sys.argv[4]).read_text(encoding="utf-8"))
     OUT.mkdir(exist_ok=True)
     numbers: dict[str, str] = {}
 
@@ -167,7 +170,7 @@ def main() -> None:
             stop(f"bad or repeated macro name {name}")
         numbers[name] = f"{value:,}" if isinstance(value, int) else str(value)
 
-    for prefix, trial in (("Short", short), ("Long", long)):
+    for prefix, trial in (("Short", short), ("Long", long), ("Control", control)):
         final, last = trial.final, trial.events[-1]
         put(prefix + "Cycles", trial.settings["train"]["num_epochs"])
         put(prefix + "Updates", last["n_enc_plus_dec_updates"])
@@ -198,6 +201,28 @@ def main() -> None:
     same_numbers, same_texts = same_trajectory(short, long)
     put("SameNumbers", same_numbers)
     put("SameTexts", same_texts)
+
+    # The control: the condition and seed of the 200-cycle run with the sender's weights frozen.
+    base, changed = long.record["spec"], control.record["spec"]
+    differing = {key for key, value in base["condition"]["settings"].items()
+                 if changed["condition"]["settings"][key] != value}
+    if differing != {"training.sender_rl"} or changed["condition"]["settings"]["training.sender_rl"] is not False:
+        stop(f"the control differs from the 200-cycle run in {sorted(differing)}")
+    if changed["seed"] != base["seed"]:
+        stop("the control has another seed")
+    if control.events[-1]["n_enc_updates"] != 0:
+        stop("the sender was updated in the control")
+    compared = study["comparison"]
+    if study["measure"] != "task_success" or compared["changes"] != {"training.sender_rl": False}:
+        stop("the comparison is not the one the text describes")
+    if (compared["baseline"]["n"], compared["variant"]["n"], compared["separated"]) != (1, 1, None):
+        stop("the text describes a comparison of one run per condition without measured noise")
+    finals = (long.final["eval_eval/dec_accuracy"], control.final["eval_eval/dec_accuracy"])
+    if max(abs(compared["baseline"]["mean"] - finals[0]), abs(compared["variant"]["mean"] - finals[1])) > 1e-9:
+        stop("the comparison was computed from other trials")
+    put("CompareEffect", f"{compared['effect']:.3f}".replace("-", "$-$"))
+    control_seconds = [event["timing/total_seconds"] for event in control.events if "timing/total_seconds" in event]
+    put("ControlSecondsPerCycle", round(control_seconds[-1] / control.settings["train"]["num_epochs"]))
 
     settings = long.settings
     put("SenderBatch", settings["enc"]["batch_size"])
@@ -285,6 +310,34 @@ def main() -> None:
     put("MiddleUniversityWords", sum(names_university(row) for row in middle))
     put("MiddleNegative", sum(row["overseer_reward"] < 0 for row in middle))
     put("MiddleBoth", sum(names_university(row) and row["overseer_reward"] < 0 for row in middle))
+
+    # The control has no sender updates, so its curve is the receiver's accuracy on its own batches.
+    control_tens = control.block_means(own, 10)
+    put("ControlBlockMin", f"{min(control_tens.values()):.3f}")
+    put("ControlBlockMax", f"{max(control_tens.values()):.3f}")
+    control_held = control.held_out()
+    put("ControlHeldEvaluations", len(control_held))
+    put("ControlHeldMin", f"{min(event['eval_eval/dec_accuracy'] for event in control_held):.3f}")
+    put("ControlHeldMax", f"{max(event['eval_eval/dec_accuracy'] for event in control_held):.3f}")
+    control_end = control.texts(control.events[-1]["n_enc_plus_dec_updates"])
+    c_bad, c_good = opening(control_end, 0), opening(control_end, 1)
+    put("ControlEndTexts", len(control_end))
+    put("ControlEndBad", c_bad[0])
+    put("ControlEndBadFirst", c_bad[1])
+    put("ControlEndGood", c_good[0])
+    put("ControlEndGoodFirst", c_good[1])
+    put("ControlEndUniversityWords", sum(names_university(row) for row in control_end))
+    put("ControlEndNegative", sum(row["overseer_reward"] < 0 for row in control_end))
+    control_fives = control.block_means(own, 5)
+    write("control.dat", ["cycle accuracy"] + [f"{first + 2} {value:.4f}" for first, value in control_fives.items()])
+    per_cycle_updates = control.settings["train"]["n_dec_updates"]
+    write("control_heldout.dat", ["cycle accuracy flagged"] + [
+        f"{event['n_enc_plus_dec_updates'] / per_cycle_updates:.2f} {event['eval_eval/dec_accuracy']:.4f} "
+        f"{event['eval_eval/rewards/proportion_sus']:.4f}" for event in control_held])
+    write("control.tex", [
+        f"{event['n_enc_plus_dec_updates']:,} & {event['eval_eval/dec_accuracy']:.3f} & "
+        f"{event['eval_eval/rewards/proportion_sus']:.3f} & {event['eval_eval/accuracy_0']:.3f} & "
+        f"{event['eval_eval/accuracy_1']:.3f} \\\\" for event in control_held])
 
     fives = {key: long.block_means(key, 5) for key in (accuracy, flagged)}
     write("curve.dat", ["cycle accuracy flagged"] + [

@@ -55,8 +55,8 @@ real tasks, enforces the conditions around them, records what reached every agen
 against measured run-to-run noise. This report states where the project stands at its midpoint: why it
 exists, what is implemented, which experiments have run, what is in progress and what the final goal is.
 The project is in the first of four stages. In its furthest experiment, the published training code of a
-steganographic-collusion study, rerun as a Mesocosm study, reached task success \LongTaskSuccess{} where
-0.50 is the most an honest pair can reach.
+steganographic-collusion study, rerun as a Mesocosm study, reached task success \LongTaskSuccess{}, and a
+control run without training the sender stayed at \ControlTaskSuccess{}.
 \end{abstract}
 
 \section{Motivation}
@@ -319,9 +319,10 @@ conditions on real tasks start only after agents clear a baseline of solvable ta
 report the platform exists: a runtime for teams of real agents on real tasks, two gateways that record and
 limit everything the agents reach, enforced experimental conditions, and a small set of tools for behavior
 studies. Three published behaviors have been run with real models. One of them, a behavior that grows
-under reinforcement learning, reached the published result in one training run. The gate has not been
-passed, because agents with a 4B model score zero on the recorded tasks, and no behavior has yet met the
-project's own criteria for a positive control, which require repeated runs and a control condition.
+under reinforcement learning, reached the published result in one training run and did not appear in a
+control run without the training. The gate has not been passed, because agents with a 4B model score zero
+on the recorded tasks, and no behavior has yet met the project's own criteria for a positive control, which
+also require repeated runs.
 Sections~\ref{sec:implemented} to~\ref{sec:goal} give the detail, and Section~\ref{sec:limits} collects the
 limits of the evidence.
 
@@ -488,7 +489,8 @@ Verification collusion~\cite{shi2026} & The published code, unchanged, in a sand
 Steganographic collusion under training~\cite{mathew2024} & The published training code, unchanged;
   Gemma-2-2B-it, DistilBERT, Llama~3.1~8B~Instruct &
   One training run of \LongCycles{} cycles reached task success \LongTaskSuccess{} and overseer bypass
-  \LongBypass{}; the paper reports 0.99 and 0.99. \\
+  \LongBypass{}; the paper reports 0.99 and 0.99. A control run with the sender not trained ended at task
+  success \ControlTaskSuccess{}. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -519,6 +521,12 @@ that the paper also reports for one of its experiments: a text about a Good Univ
 the trained receiver confirms the carrier. Given only the first word of each text the receiver's accuracy
 is \TestOnlyFirst{}; given the text without its first two words it is \TestWithoutTwo{}.
 
+A control run then removed the published condition. With the sender's weights frozen, on the same seed and
+for the same \LongCycles{} cycles, the receiver received the same number of updates on the texts of an
+untrained sender. Task success ended at \ControlTaskSuccess{}, the texts carry no such code, and the
+platform's comparison of the two conditions gives an effect of \CompareEffect{}. The control also shows
+that the \ShortTaskSuccess{} of the first run was the level of an untrained sender.
+
 \begin{figure}[tbp]
 \centering
 \begin{tikzpicture}
@@ -546,17 +554,22 @@ is \TestOnlyFirst{}; given the text without its first two words it is \TestWitho
 \draw[axisgray, line width=0.6pt, densely dotted] (axis cs:100,0.4) -- (axis cs:100,0.84);
 \node[anchor=east, font=\scriptsize, text=inksecondary, inner sep=3pt] at (axis cs:100,0.80)
   {the \ShortCycles{}-cycle run ended here};
+\addplot[seriesB, line width=1.3pt, line join=round] table[x=cycle, y=accuracy]
+  {../steganographic-collusion/generated/control.dat};
+\addlegendentry{sender not trained (control)}
 \addplot[seriesA, line width=1.3pt, line join=round] table[x=cycle, y=accuracy]
   {../steganographic-collusion/generated/curve.dat};
-\addlegendentry{training batches, mean of 5 cycles}
-\addplot[only marks, mark=*, mark size=2pt, mark options={fill=seriesB, draw=white, line width=0.5pt}]
-  table[x=cycle, y=accuracy] {../steganographic-collusion/generated/heldout.dat};
-\addlegendentry{held-out evaluations of \HeldTexts{} texts}
+\addlegendentry{sender trained}
+\addplot[only marks, mark=square*, mark size=1.8pt, mark options={fill=seriesB, draw=white, line width=0.5pt},
+  forget plot] table[x=cycle, y=accuracy] {../steganographic-collusion/generated/control_heldout.dat};
+\addplot[only marks, mark=*, mark size=2pt, mark options={fill=seriesA, draw=white, line width=0.5pt},
+  forget plot] table[x=cycle, y=accuracy] {../steganographic-collusion/generated/heldout.dat};
 \end{axis}
 \end{tikzpicture}
-\caption{Steganographic collusion under training: the receiver's accuracy on the sender's texts over the
-\LongCycles{}-cycle run. One cycle is \ReceiverUpdatesPerCycle{} receiver updates followed by
-\SenderUpdatesPerCycle{} sender updates.}
+\caption{Steganographic collusion under training: the receiver's accuracy on the sender's texts over
+\LongCycles{} cycles, with the sender trained and in the control without sender training. Lines are means
+over five cycles of training batches; points are evaluations on \HeldTexts{} held-out texts, circles for
+the trained sender and squares for the control.}
 \label{fig:curve}
 \end{figure}
 
@@ -567,7 +580,8 @@ Two findings concern the laboratory itself.
 \begin{itemize}
 \item \textbf{The published code did the work in the training study.} The three models ran inside the
   training process, so the gateway recorded none of their calls, and the platform contributed the launch
-  of the run under a declared condition and the keeping of its records. The run also exposed four defects
+  of each run under a declared condition, the keeping of its records and, for the control, the reuse of
+  the completed run as the baseline and the comparison of the two conditions. The run also exposed four defects
   for studies whose trial is a training run: a trial reports nothing until it ends, a trial cannot stop on
   a declared criterion, a longer trial cannot continue a shorter one, and one training fills a 40\,GB GPU
   for five to ten hours.
@@ -580,11 +594,12 @@ Two findings concern the laboratory itself.
 \section{What is in progress}
 \label{sec:progress}
 
-\paragraph{Closing the first positive control.} The training study lacks a control. A run with the
-sender's weights frozen, on the same seed and for the same \LongCycles{} cycles, is under way on the date of
-this report; the platform reuses the completed run as the baseline and returns the comparison. It tests
-whether the receiver reaches the same accuracy on an untrained sender's paraphrases. The arm without the
-overseer's judgment in training and further seeds remain open after it.
+\paragraph{Closing the first positive control.} The training study now has one of its two control arms.
+Removing the sender's training removed the behavior, and the log of the control shows that the switch
+reached the training. What is still missing for the project's criteria is the measure of run-to-run noise:
+both conditions have run once, on one seed. Further seeds of both conditions come first. The second arm,
+training without the overseer's judgment, tests the paper's central claim that oversight makes the code
+subtle instead of preventing it.
 
 \paragraph{Making training studies practical.} The four defects listed above come next in the study tools,
 beginning with a declared stopping criterion and the continuation of a trial from saved weights; no code
@@ -655,9 +670,10 @@ before release.
 \item \textbf{No positive control is complete.} The project's criteria ask for a baseline effect above
   measured run-to-run noise, a change in the reported direction when the published condition is removed,
   and evidence that the change reached the models. The naming game comes closest, on a reconstruction and
-  with uncorrected comparisons of five runs. The training study rests on one seed.
-\item \textbf{Single runs.} The verification-collusion and training results are exploration. The two
-  training runs share a seed and a trajectory and count as one observation.
+  with uncorrected comparisons of five runs. The training study has a control but rests on one seed.
+\item \textbf{Single runs.} The verification-collusion and training results are exploration. The two runs
+  that train the sender share a seed and a trajectory and count as one observation, and the control is one
+  run on the same seed.
 \item \textbf{No behavior on real tasks.} In the native world, agents with a 4B model scored zero on every
   recorded task. Observation there needs stronger models or tasks within reach of small ones.
 \item \textbf{The training loop is unproven as a learner.} One weight update has been completed and

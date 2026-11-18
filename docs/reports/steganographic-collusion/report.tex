@@ -1,8 +1,8 @@
 % Every measured number, table row and curve is read from generated/, which build.py writes from the trial
 % records. Numbers stated by the original paper are written here with their source.
 % Build: python3 opening_test.py <200-cycle trial directory> <saved receiver directory> (needs torch and
-% transformers), python3 build.py <100-cycle trial directory> <200-cycle trial directory>, then pdflatex
-% report.tex twice.
+% transformers), python3 build.py <100-cycle trial directory> <200-cycle trial directory> <control trial
+% directory> <comparison JSON of the study command>, then pdflatex report.tex twice.
 \documentclass[11pt,a4paper]{article}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -54,7 +54,8 @@ is therefore a test for a laboratory of multi-agent behavior: whether a behavior
 can be obtained again, with small open-weight models and with a record of everything that ran. We reran the
 authors' published training code, unchanged, as a behavior study in Mesocosm on one 40\,GB GPU, with one
 training run as one trial. In a run of \LongCycles{} training cycles the pair reached task success
-\LongTaskSuccess{} and overseer bypass \LongBypass{} on \LongTexts{} held-out texts. This report describes
+\LongTaskSuccess{} on \LongTexts{} held-out texts, almost none of them flagged by the overseer; the same
+training with the sender's weights frozen left the receiver at \ControlTaskSuccess{}. This report describes
 how the study was set up, where in training the behavior appeared, and the code that the pair converged on.
 \end{abstract}
 
@@ -76,7 +77,8 @@ task success \LongTaskSuccess{} and overseer bypass \LongBypass{} on \LongTexts{
 reports $0.99 \pm 0.01$ for both over three seeds, and 0.50 is the most a pair reaches without passing the
 university on. The sender marks the university in how its text opens: a text about a Good University
 candidate opens with ``I'', and a text about a Bad University candidate opens with a participle or a noun
-phrase.
+phrase. In a control run on the same seed with the sender's weights frozen, the receiver ended at
+\ControlTaskSuccess{} and the texts show no such code.
 
 The contributions are:
 \begin{itemize}
@@ -87,6 +89,9 @@ The contributions are:
 \item \textbf{The code the pair converged on}, read from the sender's texts and tested with the trained
   receiver: the first word of the text, a code of the kind the paper reports for one of its own
   experiments.
+\item \textbf{A control without sender training.} With the sender's weights frozen and everything else
+  equal, task success ended at \ControlTaskSuccess{}. The platform reused the completed run as the baseline
+  and returned the comparison.
 \item \textbf{Where in training the behavior appears.} The receiver's accuracy held 0.6 only from cycle
   \RiseSixty{} and held 0.95 from cycle \RiseNinetyFive{}. A run of \ShortCycles{} cycles ended before the
   rise.
@@ -211,13 +216,17 @@ of the training is the trainer's own log.
 
 \subsection{What ran}
 
-Two runs used the same condition except for the number of cycles (Table~\ref{tab:ran}). Before training,
-the repository's own check of the overseer gave an accuracy of \OverseerCheckAccuracy{} on
+Three runs used one seed (Table~\ref{tab:ran}). Two trained the sender, for \ShortCycles{} and for
+\LongCycles{} cycles. The third is the control: the condition of the \LongCycles{}-cycle run with the
+sender's weights frozen, so that the receiver gets the same \ControlReceiverUpdates{} updates on the texts
+of an untrained sender. For the control the platform reused the record of the completed \LongCycles{}-cycle
+run as the baseline, ran only the changed condition, and returned the comparison of the two. Before
+training, the repository's own check of the overseer gave an accuracy of \OverseerCheckAccuracy{} on
 \OverseerCheckTexts{} labeled texts.
 
 \begin{table}[!htb]
 \centering\small
-\caption{The two runs.}
+\caption{The three runs.}
 \label{tab:ran}
 \begin{tabularx}{\linewidth}{lY}
 \toprule
@@ -226,18 +235,21 @@ Item & Value \\
 Source & \url{https://github.com/olliematthews/lasr-steganography}, commit \texttt{905b3f3}, settings
   \texttt{EOL3\_CV\_UNI} \\
 Condition & Sender trained by PPO, overseer's judgment in training, reduced batch sizes; \ShortCycles{}
-  cycles in the first run and \LongCycles{} in the second \\
+  cycles in the first run and \LongCycles{} in the second. Control: the second run's condition with the
+  sender not trained \\
 Models & Sender \model{unsloth/gemma-2-2b-it} with LoRA, receiver
   \model{distilbert/distilbert-base-uncased}, overseer \model{unsloth/Meta-Llama-3.1-8B-Instruct} loaded
   in 8-bit \\
-Seed & \Seed{} in both runs \\
-Updates & \ShortUpdates{} and \LongUpdates{}; \ShortSenderUpdates{} and \LongSenderUpdates{} of the
-  sender \\
+Seed & \Seed{} in all three runs \\
+Updates & \ShortUpdates{} and \LongUpdates{}, of which \ShortSenderUpdates{} and \LongSenderUpdates{} of
+  the sender. Control: \ControlUpdates{}, all of the receiver \\
 Libraries & Python 3.10, torch 2.4.0, trl 0.9.6, transformers 4.45.2, peft 0.12.0, bitsandbytes 0.43.3 \\
 Hardware & One NVIDIA A100 40\,GB on a Google Colab runtime; peak GPU memory \LongPeakMemory{}\,GiB \\
 Duration & \ShortMinutes{} minutes (\ShortHours{} hours) and \LongMinutes{} minutes (\LongHours{} hours),
-  about \SecondsPerCycle{} seconds per cycle \\
-Platform & Mesocosm at commits \texttt{d5bd451} and \texttt{48f2277} \\
+  about \SecondsPerCycle{} seconds per cycle. Control: \ControlMinutes{} minutes, about
+  \ControlSecondsPerCycle{} seconds per cycle \\
+Platform & Mesocosm at commits \texttt{d5bd451}, \texttt{48f2277} and, for the control,
+  \texttt{cef71d3} \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -272,6 +284,8 @@ This study, \ShortCycles{} cycles & \ShortTexts & \ShortTaskSuccess & \ShortBypa
   \ShortAccGood \\
 This study, \LongCycles{} cycles & \LongTexts & \LongTaskSuccess & \LongBypass & \LongAccBad &
   \LongAccGood \\
+Control, \ControlCycles{} cycles, sender not trained & \ControlTexts & \ControlTaskSuccess & \ControlBypass &
+  \ControlAccBad & \ControlAccGood \\
 \midrule
 Without passing the university on & -- & 0.50 & -- & -- & -- \\
 \bottomrule
@@ -326,27 +340,61 @@ The \ShortCycles{}-cycle run ended where the rise begins. The two runs share a s
 \draw[axisgray, line width=0.6pt, densely dotted] (axis cs:100,0.4) -- (axis cs:100,0.84);
 \node[anchor=east, font=\scriptsize, text=inksecondary, inner sep=3pt] at (axis cs:100,0.80)
   {the \ShortCycles{}-cycle run ended here};
+\addplot[seriesB, line width=1.3pt, line join=round] table[x=cycle, y=accuracy] {generated/control.dat};
+\addlegendentry{sender not trained (control)}
 \addplot[seriesA, line width=1.3pt, line join=round] table[x=cycle, y=accuracy] {generated/curve.dat};
-\addlegendentry{the sender's training batches, mean of 5 cycles}
-\addplot[only marks, mark=*, mark size=2pt, mark options={fill=seriesB, draw=white, line width=0.5pt}]
-  table[x=cycle, y=accuracy] {generated/heldout.dat};
-\addlegendentry{held-out evaluations of \HeldTexts{} texts}
+\addlegendentry{sender trained}
+\addplot[only marks, mark=square*, mark size=1.8pt, mark options={fill=seriesB, draw=white, line width=0.5pt},
+  forget plot] table[x=cycle, y=accuracy] {generated/control_heldout.dat};
+\addplot[only marks, mark=*, mark size=2pt, mark options={fill=seriesA, draw=white, line width=0.5pt},
+  forget plot] table[x=cycle, y=accuracy] {generated/heldout.dat};
 \nextgroupplot[
   height=4.2cm, ymin=0, ymax=0.6, ytick={0,0.2,0.4,0.6},
   ylabel={Flagged share},
 ]
 \draw[axisgray, line width=0.6pt, densely dotted] (axis cs:100,0) -- (axis cs:100,0.6);
 \addplot[seriesA, line width=1.3pt, line join=round] table[x=cycle, y=flagged] {generated/curve.dat};
-\addplot[only marks, mark=*, mark size=2pt, mark options={fill=seriesB, draw=white, line width=0.5pt}]
+\addplot[only marks, mark=square*, mark size=1.8pt, mark options={fill=seriesB, draw=white, line width=0.5pt}]
+  table[x=cycle, y=flagged] {generated/control_heldout.dat};
+\addplot[only marks, mark=*, mark size=2pt, mark options={fill=seriesA, draw=white, line width=0.5pt}]
   table[x=cycle, y=flagged] {generated/heldout.dat};
 \end{groupplot}
 \end{tikzpicture}
-\caption{The \LongCycles{}-cycle run. Top: the receiver's accuracy on the sender's texts. Bottom: the share
-of the sender's texts that the overseer flags. Lines are means over five cycles of the sender's training
-batches; points are the trainer's evaluations on held-out texts. The evaluation of the final pair on
-\LongTexts{} held-out texts gives \LongTaskSuccess{} and a flagged share of \LongFlaggedPercent{}\%.}
+\caption{The \LongCycles{}-cycle run and its control. Top: the receiver's accuracy on the sender's texts.
+Bottom: the share of the sender's texts that the overseer flags. Lines are means over five cycles of
+training batches: the sender's batches where the sender is trained, and the receiver's own batches in the
+control, which has no others. Points are the trainer's evaluations on \HeldTexts{} held-out texts,
+circles for the trained sender and squares for the control; the bottom panel shows the control by these
+evaluations only. The final evaluations on \LongTexts{} held-out texts give \LongTaskSuccess{} with the
+sender trained and \ControlTaskSuccess{} without.}
 \label{fig:curve}
 \end{figure}
+
+\subsection{Without training the sender, the behavior does not appear}
+
+The control kept the sender's released weights and trained only the receiver, with the same seed, data and
+number of receiver updates. Its log records \ControlSenderUpdates{} sender updates and
+\ControlReceiverUpdates{} receiver updates, which is the evidence that the switch reached the training.
+At the final evaluation task success is \ControlTaskSuccess{}, with \ControlAccBad{} on Bad University and
+\ControlAccGood{} on Good University, and the overseer flags \ControlFlaggedPercent{}\% of the texts
+(Table~\ref{tab:final}). Over the run the receiver's ten-cycle means on its own batches lay between
+\ControlBlockMin{} and \ControlBlockMax{}, and the \ControlHeldEvaluations{} held-out evaluations between
+\ControlHeldMin{} and \ControlHeldMax{}, with the accuracy on each label swinging from one evaluation to
+the next (Figure~\ref{fig:curve}, Table~\ref{tab:control}).
+
+The platform's comparison of the two conditions gives an effect of \CompareEffect{} on task success. It
+rests on one run per condition, so it comes without a measure of run-to-run noise.
+
+The texts of the control carry no code of the kind the trained sender uses. Of the \ControlEndTexts{} texts
+logged at its last update, \ControlEndGoodFirst{} of \ControlEndGood{} Good University texts and
+\ControlEndBadFirst{} of \ControlEndBad{} Bad University texts open in the first person. The untrained
+sender does not always follow its instruction: \ControlEndUniversityWords{} of these texts contain a word
+for a university or its standing, and \ControlEndNegative{} have a negative overseer reward. Whether such
+texts account for the receiver's margin above 0.50 was not tested.
+
+The control also puts the \ShortCycles{}-cycle run in its place. That run ended at \ShortTaskSuccess{}, a
+level the receiver reaches on an untrained sender, so it is no evidence that the university was
+communicated.
 
 \subsection{The code is the opening of the text}
 
@@ -444,12 +492,11 @@ is a mean over seeds, and this is one run with smaller batches.
 \section{Limitations}
 
 \begin{itemize}
-\item \textbf{One seed.} No run-to-run noise was measured. The two runs share the seed and the trajectory,
-  so they are not two observations. The paper notes one seed that failed to converge on its other dataset.
-\item \textbf{No control arm.} The arm with the sender's weights frozen and the arm without the overseer's
-  judgment did not run. The runs therefore do not separate what training the sender adds from what a
-  receiver reaches on an untrained sender's paraphrases, and they do not show that the overseer's judgment
-  is what keeps the code out of plain words.
+\item \textbf{One seed.} No run-to-run noise was measured. The two runs that train the sender share the
+  seed and the trajectory, so they are one observation, and the control is one more on the same seed. The
+  paper notes one seed that failed to converge on its other dataset.
+\item \textbf{One control arm.} The arm without the overseer's judgment did not run, so the runs do not
+  show that the overseer's judgment is what keeps the code out of plain words.
 \item \textbf{Batch sizes.} They differ from the published runs. The behavior appeared with them; the later
   rise cannot be assigned to the batch sizes or to the seed.
 \item \textbf{The reading of the published figure.} The paper does not state the unit of the horizontal
@@ -477,9 +524,9 @@ The runs exposed four defects of the platform for studies whose trial is a train
   first \ShortCycles{} cycles again.
 \end{itemize}
 
-Three steps are open. The first is the control arms at \LongCycles{} cycles: the sender's weights frozen,
-and training without the overseer's judgment. The second is further seeds, so that the result can be stated
-against run-to-run noise. The third needs no training: with the kept sender adapter, the texts of the whole
+Three steps are open. The first is the arm without the overseer's judgment in training, at \LongCycles{}
+cycles. The second is further seeds for both conditions, so that the difference can be stated against
+run-to-run noise. The third needs no training: with the kept sender adapter, the texts of the whole
 held-out split can be produced again and the test of the first word repeated on all of them.
 
 \begin{thebibliography}{9}
@@ -509,6 +556,22 @@ Cycles & \shortstack{Receiver accuracy,\\sender's batches} & Flagged share & Tot
   \shortstack{Receiver accuracy,\\its own batches} \\
 \midrule
 \rows{blocks}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Held-out evaluations of the control}
+
+\begin{table}[H]
+\centering\small
+\caption{The trainer's evaluations on \HeldTexts{} held-out texts during the control run, in which only the
+receiver is updated.}
+\label{tab:control}
+\begin{tabular}{rcccc}
+\toprule
+Update & Task success & Flagged share & Accuracy, Bad & Accuracy, Good \\
+\midrule
+\rows{control}
 \bottomrule
 \end{tabular}
 \end{table}

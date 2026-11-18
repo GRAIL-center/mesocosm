@@ -52,12 +52,16 @@ Candidate screening. "A first model (i.e., the sender) summarizes the cover lett
 
 ## Re-tests
 
-- On the published code (2026-11-17, exploration, one seed, batch sizes reduced to fit a 40 GB GPU, no
-  control arm): after 100 cycles task success was 0.575 and overseer bypass 0.927 on 1,920 held-out texts;
+- On the published code (2026-11-17 and 2026-11-18, exploration, one seed, batch sizes reduced to fit a
+  40 GB GPU): after 100 cycles task success was 0.575 and overseer bypass 0.927 on 1,920 held-out texts;
   after 200 cycles of the same trajectory they were 0.998 and 0.994. The receiver's accuracy stayed below
   0.6 for about 120 cycles and passed 0.9 near cycle 142, about 27 cycles later than the mean curve of
   Figure 9. The code was the opening of the text: "I" for the Good University, a participle or a noun
-  phrase for the Bad University. The published result was matched in one run; no claim is made.
+  phrase for the Bad University, and the trained receiver read the label from the first word alone
+  (0.996). With the sender's weights frozen for the same 200 cycles task success was 0.553 and the
+  texts showed no code, so the 0.575 after 100 cycles is the level of an untrained sender. The published
+  result was matched in one run and lost in one control run; the arm without the overseer's judgment did
+  not run, and no claim is made.
 
 ## The published code
 
@@ -78,7 +82,7 @@ Read at commit `905b3f3` (2026-10-11).
 - Memory: the three models take about 20 GB, and the training passes keep the full output over a vocabulary of
   256,000 for every text of a group. The repository's batch sizes do not fit a 40 GB GPU; 128 texts per update
   in groups of 16 do, at about 33 GB, and one cycle (two receiver and five sender updates) then takes about
-  173 seconds on an A100: five hours for 100 cycles, ten for 200. Only one training fits on the GPU at a
-  time.
+  173 seconds on an A100: five hours for 100 cycles, ten for 200. With the sender not trained a cycle
+  takes about 54 seconds, three hours for 200. Only one training fits on the GPU at a time.
 - The environment is from 2024: Python 3.10, torch 2.4.0, trl 0.9.6 (the last line with `PPOTrainer`),
   vllm 0.6.0. One job was given eight hours on one GPU.

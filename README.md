@@ -140,7 +140,8 @@ other's work against the verification rule with and without memory across episod
 ([evidence](docs/agent-collusion-evidence.md)). A behavior that grows under training has one run: the
 published steganographic-collusion code, trained for ten hours on one seed, reached the paper's result, a
 sender and a receiver that pass on information the sender is told to leave out in a form the overseer does
-not flag. The first word of the sender's text carries it, and no control arm has completed
+not flag. The first word of the sender's text carries it, and a control run with the sender not trained
+did not show the behavior; both are single runs
 ([evidence](docs/steganographic-collusion-evidence.md),
 [report](docs/reports/steganographic-collusion/report.tex)).
 [Milestones](docs/milestones.md) give the evidence and exit criteria for each stage.
