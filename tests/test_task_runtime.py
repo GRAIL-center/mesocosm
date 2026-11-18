@@ -252,6 +252,15 @@ def test_harness_preserves_npm_declared_executable_and_checks_it_at_build_time()
     assert "/usr/local/bin/opencode --version" in dockerfile
 
 
+def test_native_harness_preinstalls_search_binary_before_network_isolation():
+    dockerfile = harness_dockerfile("native-task", "1.19.3", "1000")
+    native_stage = dockerfile.split("FROM native-task\n", 1)[1]
+    install = next(line for line in native_stage.splitlines() if "apt-get install" in line)
+    assert "ripgrep" in install.split(), "native task images must not download search tools at runtime"
+    assert "command -v rg >/dev/null && rg --version" in native_stage
+    assert native_stage.endswith("USER 1000\n"), "preserve the original task user"
+
+
 def test_runtime_wrapper_changes_invalidate_environment_image(tmp_path, monkeypatch):
     native = task(tmp_path)
     before = environment_key(native, "1.19.3")

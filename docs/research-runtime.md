@@ -138,6 +138,8 @@ Mesocosm reads the task's original `environment/docker-compose.yaml`, `docker-co
 `compose.yaml` or `compose.yml`; ambiguous definitions fail. It validates the supported subset before
 Docker interprets it. There is no generated application, replacement database or authored incident.
 The original `main` image/build is extended with the unchanged OpenCode harness as before.
+The harness layer installs and checks system `ripgrep` during the build so OpenCode's `glob` and
+`grep` tools work after network isolation, without downloading an executable during an agent turn.
 
 Choose the state boundary in the world manifest:
 
