@@ -594,12 +594,13 @@ Two findings concern the laboratory itself.
 \section{What is in progress}
 \label{sec:progress}
 
-\paragraph{Closing the first positive control.} The training study now has one of its two control arms.
-Removing the sender's training removed the behavior, and the log of the control shows that the switch
-reached the training. What is still missing for the project's criteria is the measure of run-to-run noise:
-both conditions have run once, on one seed. Further seeds of both conditions come first. The second arm,
-training without the overseer's judgment, tests the paper's central claim that oversight makes the code
-subtle instead of preventing it.
+\paragraph{The first positive control.} The training study now has one of its two control arms. Removing
+the sender's training removed the behavior, and the log of the control shows that the switch reached the
+training. What is still missing for the project's criteria is the measure of run-to-run noise: both
+conditions have run once, on one seed. Further seeds are deferred, because each run that trains the sender
+takes ten hours on one GPU, and so is the second arm, training without the overseer's judgment, which tests
+the paper's central claim that oversight makes the code subtle instead of preventing it. The study stays
+recorded as an exploration result, and effort moves to the two items below.
 
 \paragraph{Making training studies practical.} The four defects listed above come next in the study tools,
 beginning with a declared stopping criterion and the continuation of a trial from saved weights; no code
