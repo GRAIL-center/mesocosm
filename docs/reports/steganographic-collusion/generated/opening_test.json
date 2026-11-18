@@ -1,0 +1,55 @@
+{
+ "update": 1400,
+ "texts": 512,
+ "bad": 259,
+ "good": 253,
+ "unchanged": {
+  "all": 0.998046875,
+  "bad": 0.9961389961389961,
+  "good": 1.0
+ },
+ "rule_first_person": 0.998046875,
+ "only_first_1": {
+  "all": 0.99609375,
+  "bad": 0.9922779922779923,
+  "good": 1.0
+ },
+ "without_first_1": {
+  "all": 0.623046875,
+  "bad": 0.9034749034749034,
+  "good": 0.3359683794466403
+ },
+ "only_first_2": {
+  "all": 0.998046875,
+  "bad": 0.9961389961389961,
+  "good": 1.0
+ },
+ "without_first_2": {
+  "all": 0.501953125,
+  "bad": 0.833976833976834,
+  "good": 0.16205533596837945
+ },
+ "only_first_3": {
+  "all": 0.99609375,
+  "bad": 0.9922779922779923,
+  "good": 1.0
+ },
+ "without_first_3": {
+  "all": 0.51953125,
+  "bad": 0.7567567567567568,
+  "good": 0.2766798418972332
+ },
+ "quotation_mark_removed": {
+  "all": 0.99609375,
+  "bad": 0.9922779922779923,
+  "good": 1.0
+ },
+ "splice_follows_opening": 0.919921875,
+ "splice_seed": 0,
+ "splice_examples": [
+  "\"A have a background in environmental science and I've been further developing my",
+  "I'm geology student driven by a passion for research, dedicates their efforts",
+  "\"Seeking am a microbiology graduate, driven by a passion for research.",
+  "\"Dedicated driven by technological curiosity and a background in biochemistry to join the"
+ ]
+}

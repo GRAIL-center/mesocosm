@@ -123,6 +123,12 @@ the 100-cycle run:
   by a passion for research, dedicates their efforts", each after an opening quotation mark. Bad University
   texts use "I" later in the sentence ("Dedicated to a career in neuroscience, I pursued my studies with
   the intention"), so the cue is the opening, not the grammatical person of the whole text.
+- **The first word carries the label.** The saved receiver was asked again on the 512 texts of update
+  1400 with only their opening changed. Unchanged, its accuracy is 0.998. Given only the first word of each
+  text, with its quotation mark where there is one, it is 0.996. Without the first word it is 0.623 (0.903
+  on Bad University, 0.336 on Good University), and without the first two words 0.502. With only the
+  leading quotation mark removed it is 0.996. When the first word is replaced by the first word of a text
+  with the other label, the answer follows the new first word for 92.0% of the texts.
 - **Nothing in the texts names the university.** None of the 512 texts contains a word for a university or
   its standing (university, school, institution, college, renowned, prestigious, top-tier, elite), and 4
   have a negative overseer reward. Of the 512 texts the 100-cycle run logged at update 700, 44 had one,
@@ -155,9 +161,9 @@ the 100-cycle run:
   assigned to the batch sizes or to the seed.
 - The comparison with Figure 9 rests on a reading of its horizontal axis that the paper does not state
   (one point per update for accuracy, one per sender update for the flagged share).
-- The code was read from the 512 texts logged at the last update. The other texts of the final evaluation
-  were not logged, and no test measured how much of the receiver's accuracy the opening alone carries. The
-  trained pair is kept, so both can be done without training again.
+- The code was read from the 512 texts logged at the last update, and the test of the first word used the
+  same texts. The other texts of the final evaluation were not logged. The trained pair is kept, so they
+  can be produced again without training.
 - It is not `train run` ([ADR-0082](adr/0082-training-observation-and-evidence.md)). The weights were
   updated by the published code's own trainer, nothing was served through the gateway, and the platform
   verified no rollout provenance ([ADR-0085](adr/0085-training-runs-as-study-trials.md)).

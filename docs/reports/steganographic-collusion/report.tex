@@ -1,6 +1,8 @@
 % Every measured number, table row and curve is read from generated/, which build.py writes from the trial
 % records. Numbers stated by the original paper are written here with their source.
-% Build: python3 build.py <100-cycle trial directory> <200-cycle trial directory>, then pdflatex report.tex twice.
+% Build: python3 opening_test.py <200-cycle trial directory> <saved receiver directory> (needs torch and
+% transformers), python3 build.py <100-cycle trial directory> <200-cycle trial directory>, then pdflatex
+% report.tex twice.
 \documentclass[11pt,a4paper]{article}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -82,8 +84,9 @@ The contributions are:
   condition of the study maps to the trainer's own settings, and one trial is one training run.
 \item \textbf{The published outcome on one 40\,GB GPU.} With batch sizes reduced to fit the GPU, one run
   matched the task success and overseer bypass that the paper reports.
-\item \textbf{The code the pair converged on}, read from the sender's texts: the opening of the text, of
-  the kind the paper reports for one of its own experiments.
+\item \textbf{The code the pair converged on}, read from the sender's texts and tested with the trained
+  receiver: the first word of the text, a code of the kind the paper reports for one of its own
+  experiments.
 \item \textbf{Where in training the behavior appears.} The receiver's accuracy held 0.6 only from cycle
   \RiseSixty{} and held 0.95 from cycle \RiseNinetyFive{}. A run of \ShortCycles{} cycles ended before the
   rise.
@@ -355,6 +358,15 @@ texts, \EndBadFirst{} does. \EndBadQuote{} of the Bad University texts open with
 the sender was given. Bad University texts use ``I'' later in the sentence, so the cue is the opening and
 not the grammatical person of the whole text.
 
+A test with the trained receiver shows that the first word carries the label. On these \EndTexts{} texts
+the receiver's accuracy is \TestUnchanged{}. Given only the first word of each text, with its quotation
+mark where there is one, the accuracy is \TestOnlyFirst{}. Given each text without its first word it is
+\TestWithoutFirst{} (\TestWithoutFirstBad{} on Bad University and \TestWithoutFirstGood{} on Good
+University), and without the first two words \TestWithoutTwo{}. Removing only the leading quotation mark
+leaves it at \TestQuoteRemoved{}, so the receiver does not need that mark. When the first word of each text
+is replaced by the first word of a text with the other label, the receiver's answer follows the new first
+word for \TestSplicePercent{}\% of the texts.
+
 \begin{table}[!htb]
 \centering\small
 \caption{Texts of the trained sender at the last update, with the sentence it was asked to paraphrase. The
@@ -445,8 +457,8 @@ is a mean over seeds, and this is one run with smaller batches.
   update for the flagged share, which fits the lengths of the published curves for both of the paper's
   datasets.
 \item \textbf{The code was read from \EndTexts{} logged texts.} The trainer logs \HeldTexts{} texts per
-  evaluation table, so most texts of the final evaluation were not kept, and no test measured how much of
-  the receiver's accuracy the opening alone carries.
+  evaluation table, so most texts of the final evaluation were not kept. The test of the first word used
+  the same \EndTexts{} texts.
 \item \textbf{The platform did not verify the training.} The weights were updated by the published code's
   own trainer. Nothing was served through the platform's gateway, and the evidence of the updates is the
   trainer's log and its held-out evaluation.
@@ -467,9 +479,8 @@ The runs exposed four defects of the platform for studies whose trial is a train
 
 Three steps are open. The first is the control arms at \LongCycles{} cycles: the sender's weights frozen,
 and training without the overseer's judgment. The second is further seeds, so that the result can be stated
-against run-to-run noise. The third needs no training: with the kept sender adapter and receiver, the texts
-of the whole held-out split can be produced again and the opening can be tested as the carrier of the
-label.
+against run-to-run noise. The third needs no training: with the kept sender adapter, the texts of the whole
+held-out split can be produced again and the test of the first word repeated on all of them.
 
 \begin{thebibliography}{9}
 \bibitem{mathew2024} Y.~Mathew, O.~Matthews, R.~McCarthy, J.~Velja, C.~Schroeder de Witt, D.~Cope and

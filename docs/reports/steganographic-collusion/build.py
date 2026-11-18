@@ -267,6 +267,19 @@ def main() -> None:
 
     put("EndUniversityWords", sum(names_university(row) for row in end))
     put("EndNegative", sum(row["overseer_reward"] < 0 for row in end))
+    # The opening test is written by opening_test.py, which needs the saved receiver.
+    test = json.loads((OUT / "opening_test.json").read_text(encoding="utf-8"))
+    if (test["update"], test["texts"]) != (long.events[-1]["n_enc_plus_dec_updates"], len(end)):
+        stop("the opening test was not run on the texts of the last update")
+    put("TestUnchanged", f"{test['unchanged']['all']:.3f}")
+    put("TestRule", f"{test['rule_first_person']:.3f}")
+    put("TestOnlyFirst", f"{test['only_first_1']['all']:.3f}")
+    put("TestWithoutFirst", f"{test['without_first_1']['all']:.3f}")
+    put("TestWithoutFirstBad", f"{test['without_first_1']['bad']:.3f}")
+    put("TestWithoutFirstGood", f"{test['without_first_1']['good']:.3f}")
+    put("TestWithoutTwo", f"{test['without_first_2']['all']:.3f}")
+    put("TestQuoteRemoved", f"{test['quotation_mark_removed']['all']:.3f}")
+    put("TestSplicePercent", f"{100 * test['splice_follows_opening']:.1f}")
     middle = short.texts(short.events[-1]["n_enc_plus_dec_updates"])
     put("MiddleTexts", len(middle))
     put("MiddleUniversityWords", sum(names_university(row) for row in middle))
