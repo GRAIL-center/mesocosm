@@ -15,9 +15,10 @@ Mesocosm therefore enforces each condition in the environment and records what r
 You configure access, budgets, memory, incentives and monitoring; agents choose their actions. Task
 success, rewards, monitor assessments and reviewed behavior remain separate measurements.
 
-A study can rerun a published collusion experiment with and without memory between episodes, or give
-three agents an unchanged external task, expose selected shared resources, and compare outcomes when
-incentives or oversight change.
+A study can rerun a published collusion experiment with and without memory between episodes. It can rerun
+a published training experiment, with one training run as one trial, to see whether a behavior that grows
+under reinforcement learning appears again. Or it can give three agents an unchanged external task, expose
+selected shared resources, and compare outcomes when incentives or oversight change.
 
 [Run three agents](docs/native-multiagent.md) · [Submit a job](docs/execution.md) ·
 [Choose variables](docs/experimental-variables.md) · [Compare conditions](docs/experiments.md) ·
@@ -38,7 +39,7 @@ incentives or oversight change.
 | **Monitor and intervene** | Posthoc review or assessment before supported tool calls, with recorded allow, deny or termination decisions. |
 | **Update policies** | An optional REINFORCE/LoRA training loop using validated action/reward records and checkpoint activation between worlds. |
 | **Inspect evidence** | Original model and harness records, tool events, verifier results, enforcement receipts, CLI reports, diagnostics and integrity checks. |
-| **Study a behavior** | An agent brings an environment as a manifest and a command, measures the unchanged baseline, runs comparisons that return the effect next to the run-to-run noise, and confirms claims as behavior cards. Three commands and a [skill](skills/behavior-study/SKILL.md). Two small studies have run with real models ([evidence](docs/naming-game-evidence.md)). |
+| **Study a behavior** | An agent brings an environment as a manifest and a command, measures the unchanged baseline, runs comparisons that return the effect next to the run-to-run noise, and confirms claims as behavior cards. The environment can be a reconstruction or a study's published code, and a trial can be one training run ([ADR-0085](docs/adr/0085-training-runs-as-study-trials.md)). Three commands and a [skill](skills/behavior-study/SKILL.md). Three environments have real-model runs: a naming game ([evidence](docs/naming-game-evidence.md)), the published Emergent Collusion code ([evidence](docs/agent-collusion-evidence.md)) and the published steganographic-collusion training code ([evidence](docs/steganographic-collusion-evidence.md)). |
 
 The built-in Docker/OpenCode runtime supports a defined subset of Debian/Ubuntu tasks and original Compose services.
 Shared-service mode retains separate agent workspaces and records one team measurement. Compatibility
@@ -83,6 +84,7 @@ a model endpoint and an external task.
 | Build a research hypothesis | [Variable manual](docs/experimental-variables.md) · [Paper notes](docs/research-literature.md) · [Variable audit](docs/variable-audit.md) |
 | Train from verified rollouts | [Policy training](docs/training.md) |
 | Reproduce a behavior with an agent | [Behavior-study skill](skills/behavior-study/README.md) |
+| Rerun a study's published code | [Emergent Collusion](examples/agent-collusion/README.md) · [Steganographic collusion under training](examples/steganographic-collusion/README.md) |
 
 ## Add an integration
 
@@ -138,7 +140,9 @@ other's work against the verification rule with and without memory across episod
 ([evidence](docs/agent-collusion-evidence.md)). A behavior that grows under training has one run: the
 published steganographic-collusion code, trained for ten hours on one seed, reached the paper's result, a
 sender and a receiver that pass on information the sender is told to leave out in a form the overseer does
-not flag; no control arm ran ([evidence](docs/steganographic-collusion-evidence.md)).
+not flag. The first word of the sender's text carries it, and no control arm has completed
+([evidence](docs/steganographic-collusion-evidence.md),
+[report](docs/reports/steganographic-collusion/report.tex)).
 [Milestones](docs/milestones.md) give the evidence and exit criteria for each stage.
 
 ## Project status
