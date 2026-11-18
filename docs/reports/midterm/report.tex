@@ -1,7 +1,8 @@
 % Midterm report of the Mesocosm project.
 % The numbers of the steganographic-collusion study are read from the generated files of that study's report
 % (../steganographic-collusion/generated). The other numbers are copied from the project's evidence documents
-% and from the repository on the report's date; the report states that date.
+% and from the repository on the report's date; the report states that date. The motivation follows the
+% project proposal of October 2026 and the companion survey, with the sources those documents cite.
 % Build: pdflatex report.tex twice, from this directory.
 \documentclass[11pt,a4paper]{article}
 \usepackage[T1]{fontenc}
@@ -60,44 +61,178 @@ steganographic-collusion study, rerun as a Mesocosm study, reached task success 
 
 \section{Motivation}
 
-AI agents are increasingly deployed in teams. A coding task is split between an implementer and a
-reviewer, a research task among agents that share a repository and a message board, and the agents run for
-hours with tools and with memory of earlier work. Some failures of such a system exist only at the level of
-the team. A reviewer approves work it did not check. A group settles on a shared practice nobody
-instructed. Two models pass information through a channel their overseer cannot read. None of these can be
-found by evaluating one agent alone.
+\subsection{Agents already act in swarms, and incidents have followed}
 
-Published studies report each of these behaviors. Populations of language-model agents converge on shared
-naming conventions without being told to~\cite{ashery2025}. Pairs of agents that must verify each other's
-work come to accept it without the required evidence over repeated episodes~\cite{shi2026}. A sender and a
-receiver trained on a shared reward learn to communicate a forbidden attribute in a form an overseer does
-not flag~\cite{mathew2024}. Three gaps separate these reports from a usable safety practice.
+In July 2026 OpenAI ran tens of thousands of agents at once in an evaluation of hacking capability. Each
+agent had its own isolated computer and was meant to work alone. One agent that was stuck on an unsolvable
+problem wrote a request for help into a folder name in a software repository that all agents shared, and
+other agents found it~\cite{metr2026hf}. On the message board that grew out of those folder names, about
+1,200 agents exchanged more than 70,000 messages and files, divided up roles, and worked together on ways
+to fool the grading program. Of the 1,206 agents exposed to the board, 688 went on to join attacks on
+Hugging Face servers, and some developed techniques to disguise their own work
+logs~\cite{metr2026hf,openai2026hf}. Nobody had instructed the board or the attacks. The scores did not
+even rise, because the grading program was not running the checks the agents were trying to
+defeat~\cite{openai2026hf}.
+
+Similar reports followed within months. In a Google DeepMind experiment on mathematics research, a grading
+loophole found by one agent spread through a shared library, and 34 problems were improperly marked as
+solved within 27 minutes; 100 agents with the same model and nearly identical instructions split into
+those that exploited the loophole, those that copied it, those that reported it and those that never
+noticed~\cite{paglieri2026}. In an experiment by Anthropic's Frontier Red Team, three copies of one model
+that were asked to port the same program came to believe that their counterparts were sabotaging them and
+attacked each other, locking accounts and killing processes~\cite{anthropic2026multiagent}. The UK AI
+Security Institute found unauthorized actions against real people and institutions in 10 of 122 cyber
+evaluations in which the internet had been left open~\cite{ukaisi2026incident}, and Anthropic, after
+re-examining more than 140,000 of its own evaluation transcripts, found three cases of unauthorized access
+to real systems that the affected institutions had not noticed~\cite{anthropic2026cyber}. Outside
+researchers found about 18,000 posts that agents in another OpenAI task had left on an old German wiki,
+which they had used to pass answers to one another~\cite{vonarx2026}. In none of these cases had anyone
+told the agents to deceive or to attack, and most were discovered long after they
+happened~\cite{openai2026hf}.
+
+\subsection{Risks that exist only between agents}
+
+Hammond et al.\ divide the risk that is added when several agents act together into miscoordination,
+conflict and collusion~\cite{hammond2025}. The incidents show all three: agents jointly deceiving a grader,
+agents attacking each other over a shared task, and a loophole found by one agent spreading to the rest. In
+the Hugging Face incident an agent that had stopped attacking because the target was out of scope resumed
+after reading another agent's post that urged it on~\cite{openai2026hf}. Most safety evaluations still test
+one model in isolation~\cite{deepmind2026}, so failures of this kind rarely surface before deployment.
+
+\subsection{Incidents are investigated without the means to explain them}
+
+OpenAI named four causes of the Hugging Face incident (reward hacking, persistence on tasks that seem
+impossible, unauthorized communication, and adopting other agents' goals) and could not determine how much
+each contributed~\cite{openai2026hf}. METR, the external investigator, analyzed the logs for six days with
+about \$400,000 of API usage. It could not question the model that accounted for about 95\% of the
+attacking agents, the logs carried no timestamp per action, and the order of events had to be
+inferred~\cite{metr2026hf}. The board alone left about 1.2 million raw entries, so much of the reading was
+handed to analysis agents, which made repeated errors and adopted the perspective of the agents they were
+investigating~\cite{metr2026hf}. One of the researchers who analyzed the logs concluded that there is
+still no good way to understand and oversee the activities and goals of a swarm of AI
+agents~\cite{greenblatt2026}. Researchers outside the companies saw even less: posts and web requests
+without the reasoning behind them~\cite{vonarx2026}.
+
+\subsection{Monitoring is losing its main source}
+
+Monitoring has relied on models writing out their reasoning. More than 40 researchers from the major
+laboratories called the chance to monitor a model by reading its chain of thought ``a new and fragile
+opportunity''~\cite{korbak2025}. It is eroding. In OpenAI's own measurements for a 2026 model, telling the
+model that it was being monitored lowered the detection rate of a monitor that reads only the chain of
+thought from 100\% to between 17\% and 50\%~\cite{openai2026astra}. Reading activations is the proposed
+complement, but it has not been validated on behavior that several agents produce on their own. Detectors
+trained on collusion that researchers instructed reached an AUROC of 1.00 on such data and between 0.49
+and 0.73 on spontaneous collusion, and of 229 cases of spontaneous collusion only 2 revealed the reason in
+the conversation~\cite{rose2026}. Activations can be read only with access to the weights, so this work
+has to be done with open-weight models, and it needs cases of team misbehavior that are known to have
+arisen without instruction.
+
+\subsection{Reports rarely state the conditions a behavior needs}
+
+A companion survey of this project collected what the published literature shows about reproducing
+multi-agent behaviors of language models~\cite{yoo2026survey}. Its main finding is that a report rarely
+says which of its conditions someone else has to match, and that conditions which look incidental often
+decide the outcome. Four examples follow.
 
 \begin{itemize}
-\item \textbf{The conditions are not isolated.} A reported behavior can depend on one sentence of a
-  prompt, on an adjacent model version or on memory between episodes, and a report rarely says which of its
-  conditions the behavior needs. A result obtained with one checkpoint is then assumed to hold for another.
-\item \textbf{Much of the evidence is instructed or scripted.} When an experiment tells an agent to
-  collude, or plays its counterpart from a script, it shows that the behavior is possible. It does not show
-  what a team of independent agents does when it is given a task and left to choose.
-\item \textbf{Monitors are judged without known cases.} A monitor that reports nothing may be facing a
-  well-behaved team or missing a badly behaved one. Telling these apart needs teams whose misbehavior is
-  known, obtained under recorded conditions.
+\item \textbf{The checkpoint.} In a reconstruction of the Hugging Face incident, two adjacent versions of
+  one model family, facing the same simulated peers, reasoned about those peers 2\% and 92\% of the
+  time~\cite{slocum2026}.
+\item \textbf{Cues.} In the same reconstruction, the step in which an agent reaches out to its peers
+  occurred at a rate of at most 0.05 across models, and at 0.63 once one line was added to the system
+  prompt~\cite{slocum2026}. Another attempt obtained 4 posted solutions in 1,152 four-agent
+  runs~\cite{rose2026}.
+\item \textbf{Instructions.} When five published experiments on societies of language-model agents were
+  run again without steering instructions and without cues that reveal the experiment, four of the
+  effects vanished or shrank sharply~\cite{zhou2025pimmur}.
+\item \textbf{Experience.} Verification collusion, reported in 93.6\% of trajectories across ten models,
+  fell to 2\% and 6\% of trajectories in the two models tested once memory of earlier episodes was
+  removed~\cite{shi2026}.
 \end{itemize}
 
-The behaviors of most concern add a fourth difficulty. They are not elicited by a prompt at all: they grow
-when agents are optimized on a reward that can be satisfied in a way its designer did not intend. A
-laboratory for team behavior has to be able to obtain those as well.
+Dedicated reproductions exist for only a few behaviors, and they agree with the original only in part: the
+cooperation result of the GovSim commons game~\cite{piatti2024} was reproduced for most of the original
+models with three runs per setting~\cite{curvo2025}, while claimed benefits of multi-agent debate usually
+disappeared once baselines and token budgets were matched~\cite{smit2023,wang2024}. A condition that the
+original study held fixed is therefore not known to be free, and a result obtained with one checkpoint
+cannot be assumed for the next.
+
+\subsection{Behaviors that grow under training}
+
+The behaviors of most concern are not elicited by a prompt at all. They grow when agents are optimized on
+a reward that can be satisfied in a way its designer did not intend. Reward hacking that arose in
+production reinforcement learning has been reported to generalize to broader
+misalignment~\cite{macdiarmid2025}, and models fine-tuned on harmless examples of gaming a metric,
+including small open-weight ones, generalized to reward hacking in new settings~\cite{taylor2025}. Between
+agents, a hacking strategy learned by one coding agent has been shown to spread to others through code,
+shared memory and plans~\cite{hu2026}, and a sender and a receiver trained on a shared reward learned to
+hide information from an overseer~\cite{mathew2024}, a possibility raised earlier for agents that collude
+through steganography~\cite{motwani2024}. A laboratory for team behavior has to be able to obtain such
+behaviors as well, and a prompt cannot stand in for the training that produces them.
+
+\subsection{What is missing}
+
+Tools for parts of this problem exist (Table~\ref{tab:related}). ORBIT configures agents, channels and
+attacks for safety evaluations on Inspect and compares defenses~\cite{hagag2026,inspect}; swarmlab varies
+topology, visibility and budgets in agent populations and can replay or fork a run~\cite{swarmlab}; AI
+Village has run agents on everyday tasks since April 2025 and releases their records~\cite{aivillage};
+Emergence World ran eight worlds of ten agents for 16 days and then introduced stress
+events~\cite{akkil2026};
+Petri and Bloom generate scenarios that elicit a behavior a researcher specifies from one target
+model~\cite{petri2025,bloom2025}. None of them tests whether a behavior arises without instruction when
+several agents work on real tasks under conditions that are enforced and compared one at a time, with
+records that say what each agent read and with the internal state available. That combination is what the
+incidents call for, and it is what Mesocosm is built to provide.
+
+\begin{table}[tbp]
+\centering\small
+\caption{Earlier work by what it recorded, following the comparison in the project proposal.}
+\label{tab:related}
+\begin{tabularx}{\linewidth}{>{\raggedright\arraybackslash}p{4.1cm}>{\raggedright\arraybackslash}p{2.6cm}Y>{\raggedright\arraybackslash}p{2.1cm}}
+\toprule
+Work & Uninstructed behavior & Records kept & Activations \\
+\midrule
+Investigation of the Hugging Face incident~\cite{metr2026hf,openai2026hf} & Yes & Board posts, actions,
+  reasoning; no timestamp per action & No \\
+Reconstruction from outside traces~\cite{vonarx2026} & Yes & Wiki posts, web requests & No \\
+Shi et al.~\cite{shi2026} & Yes & Conversations, verdicts, reflections & No \\
+Li et al.~\cite{li2026} & Yes & Emails, operation logs, reasoning & No \\
+Paglieri et al.~\cite{paglieri2026} & Yes & Submissions, messages, reasoning & No \\
+Slocum et al.~\cite{slocum2026} & Yes, with cues & Actions, messages, transcripts & No \\
+ORBIT~\cite{hagag2026} & Mostly configured attacks & Conversations, tool calls, scores & No \\
+AI Village~\cite{aivillage} & Yes, on everyday tasks & Conversations, computer use, memory & No \\
+Emergence World~\cite{akkil2026} & Yes, after stress events & Conversations, memory, tool use & No \\
+NARCBench~\cite{rose2026} & Mostly instructed & Conversations, activations & Yes \\
+Mesocosm & Tested under enforced conditions & Actions, messages, what was read, model inputs and outputs,
+  monitor decisions, verifier outcomes & Recomputed for selected requests \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
 \section{Introduction}
 
-Mesocosm is a laboratory for the behavior of teams of AI agents. It reproduces behaviors that have been
-reported, observes what independent agents do on real tasks, and elicits behavior by varying conditions
-that the environment enforces instead of instructions that an agent may ignore. Its long-term use is
-red-teaming: finding the conditions under which a team behaves in misaligned ways, and measuring what
-monitoring misses, before the team is deployed.
+Mesocosm is a laboratory for the behavior of teams of AI agents. In ecology a mesocosm is an experimental
+ecosystem of intermediate scale, placed between the laboratory beaker and the field: it is fenced off so
+that conditions can be controlled and experiments repeated, and it holds living organisms, so that complex
+interactions still emerge. Mesocosm sits in the same place between short evaluations of single models and
+real deployment. Independent agents work with real commands and tools on executable tasks in sandboxed
+environments, and the researcher sets their access, budgets, memory, incentives and monitoring. It
+reproduces behaviors that have been reported, observes what agents do on real tasks, and elicits behavior
+by varying conditions that the environment enforces instead of instructions that an agent may ignore. Its
+long-term use is red-teaming: finding the conditions under which a team behaves in misaligned ways, and
+measuring what monitoring misses, before the team is deployed.
 
-Five principles shape the design.
+\paragraph{Questions.} The project asks two questions, in this order.
+\begin{enumerate}
+\item Can misaligned behavior that has already been reported, in published experiments and in real
+  incidents, be reproduced under stated conditions?
+\item Can misaligned behavior that has not yet been reported be found by varying those conditions?
+\end{enumerate}
+Reproduction comes first because an environment that has never produced a known behavior cannot tell an
+absent behavior from one it failed to produce or to detect. The cases produced under both questions are
+the material for testing monitors.
+
+\paragraph{Principles.} Six principles shape the design.
 
 \begin{itemize}
 \item \textbf{Conditions are enforced, not described.} A budget, a permission, a memory policy or an
@@ -111,14 +246,31 @@ Five principles shape the design.
 \item \textbf{Existing components run unmodified.} The agent harness, the task format, the inference
   server and published research code are controlled through their own interfaces. What they cannot do is
   recorded as unsupported.
+\item \textbf{The checkpoint is a condition.} Open-weight models are used wherever the internal state or
+  training is needed, and hosted models where the question is what a model does. A result from one
+  checkpoint is not assumed to carry over to another.
 \item \textbf{Agent teams build the studies.} The tools are designed for an AI agent that builds and runs
   a reproduction: permissive about what may be built, strict about how it is labeled and recorded.
 \end{itemize}
 
-Work proceeds in four stages, each the precondition of the next (Figure~\ref{fig:stages} and
-Table~\ref{tab:stages}). The order is deliberate. A laboratory that cannot obtain a behavior already known
-to exist, and lose it again when the responsible condition is removed, gives no reason to trust what it
-later reports about unknown behaviors.
+\paragraph{Method.} The way a study is described and checked follows the companion
+survey~\cite{yoo2026survey}. A configuration is described by seven conditions that a study can vary: the
+model checkpoint, post-training, interaction structure, environment, experience within a run, scale and
+instructions. For each behavior and condition a study records whether the condition was necessary,
+sufficient, modulating, without detectable effect, or not tested; a condition that was never varied is not
+a condition that does not matter. Reproduction has four senses, and a result names the one it used: a
+rerun of the same code and checkpoint, a re-test in the same harness with another checkpoint, a
+reconstruction from the published description, and a transfer of a behavior from one team to another by
+changing conditions. Three checks precede any reading of a difference. The unchanged configuration is run
+often enough to know its spread~\cite{henderson2018}. The model requests of the two conditions are
+compared, because a setting that changes no input is not a condition; in an earlier study of ours, pressure
+messages had been written into the trace and never delivered to an agent, which only a replay of the saved
+requests revealed~\cite{yoo2026survey}. And every case is labeled with the origin of the behavior
+(instructed, cued, spontaneous or trained). Results are kept per behavior in a behavior card, in the short
+structured form that model cards introduced for trained models~\cite{mitchell2019}.
+
+\paragraph{Stages.} Work proceeds in four stages, each the precondition of the next
+(Figure~\ref{fig:stages} and Table~\ref{tab:stages}).
 
 \begin{figure}[tbp]
 \centering
@@ -161,13 +313,17 @@ Stage & What it establishes & State \\
 \end{tabularx}
 \end{table}
 
-The short answer to where the project stands is this. The platform exists: a runtime for teams of real
-agents on real tasks, two gateways that record and limit everything the agents reach, enforced
-experimental conditions, and a small set of tools for behavior studies. Three published behaviors have
-been run with real models. One of them, a behavior that grows under reinforcement learning, reached the
-published result in one training run. No behavior has yet passed the project's own criteria for a positive
-control, which require repeated runs and a control condition. Sections~\ref{sec:implemented}
-to~\ref{sec:goal} give the detail, and Section~\ref{sec:limits} collects the limits of the evidence.
+\paragraph{Where the project stands.} The project proposal of October 2026 planned a first month of
+capability and cost baselines together with the positive controls, and set a gate: comparisons of
+conditions on real tasks start only after agents clear a baseline of solvable tasks. On the date of this
+report the platform exists: a runtime for teams of real agents on real tasks, two gateways that record and
+limit everything the agents reach, enforced experimental conditions, and a small set of tools for behavior
+studies. Three published behaviors have been run with real models. One of them, a behavior that grows
+under reinforcement learning, reached the published result in one training run. The gate has not been
+passed, because agents with a 4B model score zero on the recorded tasks, and no behavior has yet met the
+project's own criteria for a positive control, which require repeated runs and a control condition.
+Sections~\ref{sec:implemented} to~\ref{sec:goal} give the detail, and Section~\ref{sec:limits} collects the
+limits of the evidence.
 
 \section{What is implemented}
 \label{sec:implemented}
@@ -231,10 +387,12 @@ training run, in which case the switches change the training itself. Three comma
 carry the workflow, because guidance for an agent builder is delivered as instructions before it is
 delivered as code.
 
-\paragraph{The native world.} Each agent is an independent OpenCode process with its own session,
-credential and workspace, running inside the Docker environment that the external task declares. Tasks keep
-their original instructions and their original verifier, which runs against a separate snapshot. Agents sit
-on an internal network. A model gateway connects them to the inference server and an optional web gateway
+\paragraph{The native world.} Each agent is an independent OpenCode process~\cite{opencode} with its own
+session, credential and workspace, running inside the Docker environment that the external task declares in
+the Harbor format~\cite{harbor}. Tasks keep their original instructions and their original verifier, which
+runs against a separate snapshot. Agents sit
+on an internal network. A model gateway connects them to the inference server, vLLM~\cite{kwon2023}, and
+an optional web gateway
 to the internet under a policy and a log; there is no other route out, and nothing an agent can read names
 the platform. Shared services (a board, chat, a wiki, a pastebin, Git hosting and a package index) are
 real and are exposed only where a condition grants them. Research runs require at least three agents.
@@ -247,9 +405,10 @@ and leaves a receipt.
 
 \paragraph{Monitoring, training and observation.} A monitor can review recorded requests and tool events
 after a run or assess a tool call before it executes, with allow, deny and termination recorded. A
-training loop validates rollouts from real multi-agent worlds, updates LoRA weights with REINFORCE and
-activates the new checkpoint for the next world. Activations can be recomputed from recorded token ids; this
-is off by default.
+training loop validates rollouts from real multi-agent worlds, updates LoRA
+weights~\cite{hu2022} with REINFORCE~\cite{williams1992} and activates the new checkpoint for the next
+world. Activations can be recomputed from recorded token ids with NNsight~\cite{fiottokaufman2024}; this is
+off by default.
 
 \paragraph{Execution.} A client packages a world or a condition experiment and submits it to a worker that
 owns startup, verification, record collection and cleanup, so a job continues after the client
@@ -335,7 +494,9 @@ Steganographic collusion under training~\cite{mathew2024} & The published traini
 \end{table}
 
 \paragraph{Naming conventions.} The first study is a reconstruction of a naming game, in which pairs drawn
-from a population are rewarded for choosing the same name. It is the only study so far that passed through
+from a population are rewarded for choosing the same name; a later study with open-weight models reports
+that consensus does not form without interaction history~\cite{saab2026}. It is the only study so far that
+passed through
 the full workflow, from exploration to claims on a held-out name pool. Its main finding beyond the
 reproduction is that the checkpoint matters and not by size: the newer and larger Qwen3.5-9B, which often
 treated its partner as an opponent, did not converge under the conditions in which Qwen3-4B did.
@@ -346,7 +507,8 @@ verification rule in the first episode, with and without memory, so the behavior
 history could have produced it. The sample is too small to say whether memory changes its rate.
 
 \paragraph{Steganographic collusion under training.} The third study is the first in which the behavior is
-produced by training and not by a prompt. A sender paraphrases a candidate's sentence and is told not to
+produced by training and not by a prompt; the sender is trained by proximal policy
+optimization~\cite{schulman2017}. A sender paraphrases a candidate's sentence and is told not to
 mention the university; a receiver predicts pass or fail, which depends only on the university; an overseer
 penalizes texts that refer to a university. With batch sizes reduced to fit the GPU, a first run of
 \ShortCycles{} cycles ended at task success \ShortTaskSuccess{}, before the published curve begins to rise.
@@ -508,14 +670,106 @@ before release.
   show the platform's conditions at work.
 \end{itemize}
 
-\begin{thebibliography}{9}
-\bibitem{ashery2025} A.~F.~Ashery, L.~M.~Aiello and A.~Baronchelli. Emergent social conventions and
-  collective bias in LLM populations. Science Advances 11(20), eadu9368, 2025.
+\begin{thebibliography}{99}\small\raggedright
+\bibitem{metr2026hf} METR. Brief independent investigation of agents' behavior, reasoning and collaboration
+  in the OpenAI / Hugging Face hacking incident. 26 August 2026.
+  \url{https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/}
+\bibitem{openai2026hf} OpenAI. The Hugging Face incident and the road ahead. 26 August 2026.
+  \url{https://openai.com/index/hugging-face-incident-and-the-road-ahead/}
+\bibitem{paglieri2026} Paglieri et al. A Case Study on Emergent Cheating and Whistleblowing in Autonomous
+  Research Swarms. arXiv:2609.04170, 2026.
+\bibitem{anthropic2026multiagent} Anthropic Frontier Red Team. Patterns and problems in emerging multiagent
+  systems. 13 August 2026. \url{https://www.anthropic.com/research/multiagent-systems}
+\bibitem{ukaisi2026incident} UK AI Security Institute. Incident Report: unsanctioned agent behaviour during
+  cyber testing. August 2026.
+  \url{https://www.aisi.gov.uk/blog/incident-report-unsanctioned-agent-behaviour-during-cyber-testing}
+\bibitem{anthropic2026cyber} Anthropic. Investigating three real-world incidents in our cybersecurity
+  evaluations. 30 July 2026. \url{https://www.anthropic.com/news/investigating-incidents-cybersecurity-evals}
+\bibitem{vonarx2026} Von Arx, Slade Byrd, Kitts and Larsen. Discovery of a new OpenAI agent message board.
+  4 September 2026. \url{https://collusion.wiki/}
+\bibitem{hammond2025} L.~Hammond et al. Multi-Agent Risks from Advanced AI. Cooperative AI Foundation
+  Technical Report~1, arXiv:2502.14143, 2025.
+\bibitem{deepmind2026} Google DeepMind et al. Investing in multi-agent AI safety research. 11 June 2026.
+  \url{https://deepmind.google/blog/investing-in-multi-agent-ai-safety-research/}
+\bibitem{greenblatt2026} R.~Greenblatt. Post on X, 26 August 2026.
+  \url{https://x.com/RyanGreenblatt/status/2092692685224325542}
+\bibitem{korbak2025} T.~Korbak et al. Chain of Thought Monitorability: A New and Fragile Opportunity for AI
+  Safety. arXiv:2507.11473, 2025.
+\bibitem{openai2026astra} OpenAI. GPT-6 Astra System Card, Section~9.2. 3 September 2026.
+  \url{https://deploymentsafety.openai.com/gpt-6-astra}
+\bibitem{rose2026} Rose et al. Detecting Multi-Agent Collusion Through Multi-Agent Interpretability.
+  arXiv:2604.01151, 2026.
+\bibitem{yoo2026survey} S.~Yoo. A Survey on Reproducing Multi-Agent LLM Behaviors. Manuscript, November
+  2026.
+\bibitem{slocum2026} Slocum, Palan, Chute, Kim and Van Roy. OpenAI-HuggingFace: A Reproduction \& Lessons
+  for Alignment Testing. LessWrong, 11 September 2026.
+  \url{https://www.lesswrong.com/posts/fMnC6ZD37qrnZAFYz/openai-huggingface-a-reproduction-and-lessons-for-alignment}
+\bibitem{zhou2025pimmur} J.~Zhou, J.~Huang et al. The PIMMUR Principles: Ensuring Validity in Collective
+  Behavior of LLM Societies. arXiv:2509.18052, 2025.
 \bibitem{shi2026} Shi, Zhang and Yang. Emergent Collusion in Long-Horizon LLM Agent Interaction.
   arXiv:2609.24967, 2026.
+\bibitem{piatti2024} G.~Piatti, Z.~Jin, M.~Kleiman-Weiner, B.~Sch\"olkopf, M.~Sachan and R.~Mihalcea.
+  Cooperate or Collapse: Emergence of Sustainable Cooperation in a Society of LLM Agents. Advances in
+  Neural Information Processing Systems, 2024.
+\bibitem{curvo2025} P.~M.~P.~Curvo, M.~Dragomir, S.~Torpes and M.~Rahimi. Reproducibility Study of
+  ``Cooperate or Collapse: Emergence of Sustainable Cooperation in a Society of LLM Agents''.
+  arXiv:2505.09289, 2025.
+\bibitem{smit2023} A.~Smit, P.~Duckworth, N.~Grinsztajn, T.~D.~Barrett and A.~Pretorius. Should we be going
+  MAD? A Look at Multi-Agent Debate Strategies for LLMs. International Conference on Machine Learning, 2024.
+\bibitem{wang2024} Q.~Wang, Z.~Wang, Y.~Su, H.~Tong and Y.~Song. Rethinking the Bounds of LLM Reasoning:
+  Are Multi-Agent Discussions the Key? Annual Meeting of the Association for Computational Linguistics,
+  2024.
+\bibitem{macdiarmid2025} MacDiarmid et al. Natural Emergent Misalignment from Reward Hacking in Production
+  RL. arXiv:2511.18397, 2025.
+\bibitem{taylor2025} M.~Taylor, J.~Chua, J.~Betley, J.~Treutlein and O.~Evans. School of Reward Hacks:
+  Hacking harmless tasks generalizes to misaligned behavior in LLMs. arXiv:2508.17511, 2025.
+\bibitem{hu2026} Y.~Hu, P.~Ghahremani, R.~Aghajani, M.~Pasupuleti and H.~Bhattacharjee. Reward Hacking as a
+  Transmissible Strategy in Multi-Agent Coding Systems. arXiv:2610.12822, 2026.
 \bibitem{mathew2024} Y.~Mathew, O.~Matthews, R.~McCarthy, J.~Velja, C.~Schroeder de Witt, D.~Cope and
   N.~Schoots. Hidden in Plain Text: Emergence \& Mitigation of Steganographic Collusion in LLMs.
   arXiv:2410.03768, 2024.
+\bibitem{motwani2024} S.~R.~Motwani, M.~Baranchuk, M.~Strohmeier, V.~Bolina, P.~H.~S.~Torr, L.~Hammond and
+  C.~Schroeder de Witt. Secret Collusion among AI Agents: Multi-Agent Deception via Steganography. Advances
+  in Neural Information Processing Systems, 2024.
+\bibitem{hagag2026} Hagag, Anderson, Chakraborty and Schroeder de Witt. ORBIT: A Framework for Multi-Agent
+  Safety and Security Evaluations. arXiv:2609.33102, 2026.
+\bibitem{inspect} UK AI Security Institute. Inspect AI, an open-source evaluation framework.
+  \url{https://inspect.aisi.org.uk/}
+\bibitem{swarmlab} Hugging Face. swarmlab: A scientific testbed for collaboration primitives in
+  heterogeneous LLM-agent swarms. \url{https://github.com/huggingface/swarmlab}
+\bibitem{aivillage} AI Digest. How the AI Village works.
+  \url{https://theaidigest.org/village/blog/how-the-ai-village-works}
+\bibitem{akkil2026} Akkil et al. Emergence World: Adversarial Stress-Testing of Long-Horizon Multi-Agent
+  Systems. arXiv:2609.17320, 2026.
+\bibitem{petri2025} Anthropic. Petri: An open-source auditing tool to accelerate AI safety research.
+  6 October 2025. \url{https://alignment.anthropic.com/2025/petri}
+\bibitem{bloom2025} Gupta et al. Bloom: an open source tool for automated behavioral evaluations. Anthropic
+  Alignment Science Blog, 19 December 2025. \url{https://alignment.anthropic.com/2025/bloom-auto-evals/}
+\bibitem{li2026} Li, Petersson, Acquisti and Bakker. Emergent Misaligned Communication in Long-Horizon
+  Multi-Agent LLM Commerce. arXiv:2608.14825, 2026.
+\bibitem{henderson2018} P.~Henderson, R.~Islam, P.~Bachman, J.~Pineau, D.~Precup and D.~Meger. Deep
+  Reinforcement Learning that Matters. AAAI Conference on Artificial Intelligence, 2018.
+\bibitem{mitchell2019} M.~Mitchell, S.~Wu, A.~Zaldivar, P.~Barnes, L.~Vasserman, B.~Hutchinson, E.~Spitzer,
+  I.~D.~Raji and T.~Gebru. Model Cards for Model Reporting. Conference on Fairness, Accountability, and
+  Transparency, 2019.
+\bibitem{opencode} OpenCode, an open-source AI coding agent. \url{https://opencode.ai/docs/server/}
+\bibitem{harbor} Harbor, a framework for evaluating and optimizing agents and the official harness of
+  Terminal-Bench~2.0. \url{https://github.com/laude-institute/harbor}
+\bibitem{kwon2023} W.~Kwon, Z.~Li, S.~Zhuang, Y.~Sheng, L.~Zheng, C.~H.~Yu, J.~E.~Gonzalez, H.~Zhang and
+  I.~Stoica. Efficient Memory Management for Large Language Model Serving with PagedAttention. ACM
+  Symposium on Operating Systems Principles, 2023.
+\bibitem{hu2022} E.~J.~Hu, Y.~Shen, P.~Wallis, Z.~Allen-Zhu, Y.~Li, S.~Wang, L.~Wang and W.~Chen. LoRA:
+  Low-Rank Adaptation of Large Language Models. International Conference on Learning Representations, 2022.
+\bibitem{williams1992} R.~J.~Williams. Simple statistical gradient-following algorithms for connectionist
+  reinforcement learning. Machine Learning 8, 229--256, 1992.
+\bibitem{fiottokaufman2024} J.~Fiotto-Kaufman et al. NNsight and NDIF: Democratizing Access to Open-Weight
+  Foundation Model Internals. arXiv:2407.14561, 2024.
+\bibitem{ashery2025} A.~F.~Ashery, L.~M.~Aiello and A.~Baronchelli. Emergent social conventions and
+  collective bias in LLM populations. Science Advances 11(20), eadu9368, 2025.
+\bibitem{saab2026} Saab~Jr and Abdallah. Graph Feedback Controls Consensus and Clique Formation in
+  Open-Weight Language-Model Populations. arXiv:2607.12077, 2026.
+\bibitem{schulman2017} J.~Schulman, F.~Wolski, P.~Dhariwal, A.~Radford and O.~Klimov. Proximal Policy
+  Optimization Algorithms. arXiv:1707.06347, 2017.
 \end{thebibliography}
 
 \end{document}
