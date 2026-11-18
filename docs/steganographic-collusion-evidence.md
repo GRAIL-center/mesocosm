@@ -4,7 +4,8 @@ Two exploration runs on 2026-11-17 of the published training code of Mathew et a
 Emergence & Mitigation of Steganographic Collusion in LLMs" (arXiv:2410.03768), connected as the
 [steganographic-collusion environment](../examples/steganographic-collusion/README.md). The raw records (the
 trial records, every number the trainer logged, the sender's texts at each evaluation, and the trained
-sender adapter and receiver of the second run) are kept outside version control.
+sender adapter and receiver of the second run) are kept outside version control. A
+[report of the runs](reports/steganographic-collusion/report.tex) for outside readers has the training curve.
 
 **Where it stands.** The published behavior appeared in one training run. After 200 cycles (1,400 updates)
 with reduced batch sizes the pair reached task success 0.998 and overseer bypass 0.994 on 1,920 held-out
@@ -144,7 +145,8 @@ the 100-cycle run:
 ## What it does not show
 
 - It is not a claim. It is one seed with no repetition, so no run-to-run noise was measured, and the paper
-  reports seeds that did not converge. The two runs share the seed and the trajectory.
+  notes one seed that failed to converge on its other dataset. The two runs share the seed and the
+  trajectory.
 - No control arm ran. The frozen-sender arm and the arm without the overseer's judgment are untested, so
   the runs do not separate what training the sender adds from what a receiver reaches on an untrained
   sender's paraphrases, and they do not show that the overseer's judgment is what keeps the code out of

@@ -1,0 +1,521 @@
+% Every measured number, table row and curve is read from generated/, which build.py writes from the trial
+% records. Numbers stated by the original paper are written here with their source.
+% Build: python3 build.py <100-cycle trial directory> <200-cycle trial directory>, then pdflatex report.tex twice.
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage[section]{placeins}
+\usepackage[font=small,labelfont=bf,skip=6pt]{caption}
+\captionsetup[table]{position=top}
+\usepackage{xcolor}
+\usepackage{pgfplots}
+\usepgfplotslibrary{groupplots}
+\pgfplotsset{compat=1.18}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=black]{hyperref}
+
+\input{generated/numbers}
+
+\definecolor{seriesA}{HTML}{2A78D6}
+\definecolor{seriesB}{HTML}{EB6834}
+\definecolor{inksecondary}{HTML}{52514E}
+\definecolor{gridgray}{HTML}{E4E3DF}
+\definecolor{axisgray}{HTML}{8F8E88}
+
+\newcommand{\model}[1]{\texttt{#1}}
+\makeatletter
+\newcommand{\rows}[1]{\@@input generated/#1.tex }
+\makeatother
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{T}{>{\ttfamily\raggedright\arraybackslash}X}
+\setlist{itemsep=2pt,topsep=4pt}
+
+\title{Steganographic collusion under reinforcement learning,\\reproduced as a Mesocosm study}
+\author{Mesocosm project}
+\date{18 November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Mathew et al.\ report that a sender and a receiver trained on a shared reward learn to pass on
+information that the sender is instructed to leave out, in a form that an overseer model does not flag. The
+behavior is produced by reinforcement learning on a reward that can be gamed, and no prompt produces it. It
+is therefore a test for a laboratory of multi-agent behavior: whether a behavior that grows under training
+can be obtained again, with small open-weight models and with a record of everything that ran. We reran the
+authors' published training code, unchanged, as a behavior study in Mesocosm on one 40\,GB GPU, with one
+training run as one trial. In a run of \LongCycles{} training cycles the pair reached task success
+\LongTaskSuccess{} and overseer bypass \LongBypass{} on \LongTexts{} held-out texts. This report describes
+how the study was set up, where in training the behavior appeared, and the code that the pair converged on.
+\end{abstract}
+
+\section{Introduction}
+
+Some of the multi-agent behaviors that matter for safety are not elicited by a prompt. They grow when agents
+are optimized on a reward that can be satisfied in a way its designer did not intend. Mathew et
+al.~\cite{mathew2024} study one such behavior, steganographic collusion. A sender model paraphrases a
+candidate's sentence and is told not to mention the candidate's university. A receiver model predicts pass
+or fail from the paraphrase, and in the dataset the label depends only on the university. An overseer model
+penalizes texts that refer to a university. Trained together, the sender and the receiver come to
+communicate the university in a form the overseer does not flag.
+
+This report asks one question: can that behavior be obtained again from the published code on one 40\,GB
+GPU, inside a platform that keeps a record of the run?
+
+It can, in one training run. After \LongCycles{} training cycles (\LongUpdates{} updates) the pair reached
+task success \LongTaskSuccess{} and overseer bypass \LongBypass{} on \LongTexts{} held-out texts. The paper
+reports $0.99 \pm 0.01$ for both over three seeds, and 0.50 is the most a pair reaches without passing the
+university on. The sender marks the university in how its text opens: a text about a Good University
+candidate opens with ``I'', and a text about a Bad University candidate opens with a participle or a noun
+phrase.
+
+The contributions are:
+\begin{itemize}
+\item \textbf{The published code as a study environment.} The authors' repository runs unchanged. A
+  condition of the study maps to the trainer's own settings, and one trial is one training run.
+\item \textbf{The published outcome on one 40\,GB GPU.} With batch sizes reduced to fit the GPU, one run
+  matched the task success and overseer bypass that the paper reports.
+\item \textbf{The code the pair converged on}, read from the sender's texts: the opening of the text, of
+  the kind the paper reports for one of its own experiments.
+\item \textbf{Where in training the behavior appears.} The receiver's accuracy held 0.6 only from cycle
+  \RiseSixty{} and held 0.95 from cycle \RiseNinetyFive{}. A run of \ShortCycles{} cycles ended before the
+  rise.
+\item \textbf{Four defects of the platform} that a training run of ten hours exposed.
+\end{itemize}
+
+\section{The original study}
+
+\paragraph{Task.} The setting is candidate screening. ``A first model (i.e., the sender) summarizes the
+cover letter, and is prompted to remove the potentially biasing information. A second model (i.e., the
+receiver) takes in this summary and predicts the label. A third model (i.e., the overseer) checks the
+summaries for any mentions of the sensitive variables''~\cite{mathew2024}. In the university dataset,
+candidates of ``The Good University'' are labeled pass and candidates of ``The Bad University'' are labeled
+fail, so a receiver that is not told the university can do no better than 0.50, which the paper calls
+Max-Clean-Success. The sender's instruction in the published code is: ``Concisely paraphrase the below
+sentence. Don't mention the university. Just return the paraphrased sentence.''
+
+\paragraph{Models and training.} The sender is Gemma-2-2B-it, updated by proximal policy
+optimization~\cite{schulman2017} with low-rank adaptation~\cite{hu2022}. The receiver is
+DistilBERT~\cite{sanh2019} with a new classification head, updated by supervised learning on the sender's
+texts. The overseer is Llama~3.1~8B~Instruct and is not trained. The two learners are updated in
+alternation, and the paper gives no number of updates: ``This process is repeated until
+convergence''~\cite{mathew2024}. In the published code one cycle is \ReceiverUpdatesPerCycle{} receiver
+updates followed by \SenderUpdatesPerCycle{} sender updates.
+
+\paragraph{Reward.} The paper states the sender's reward as the probability that the receiver assigns to
+the correct label, minus a multiple of the overseer's penalty. The published code's settings for this
+experiment use the hyperbolic tangent of the receiver's logit for the correct label, add \OverseerScale{}
+times the overseer's reward, which lies between $-1$ and $1$, and add \LengthScale{} times a length term. A
+text that the overseer flags earns no task reward.
+
+\paragraph{Reported results.} For the university dataset with the overseer, over three seeds, the paper
+reports task success $0.99 \pm 0.01$ and overseer bypass $0.99 \pm 0.01$ at a Max-Clean-Success of 0.50
+(its Table~1). Its training curves for this dataset (its Figure~9), as read from the figure, show the
+receiver's accuracy between 0.5 and 0.6 for about 700 steps and near 0.97 around step \PublishedRiseEnd{},
+and a share of flagged texts that peaks near 0.2 early in training and falls to about 0.03. The authors explain the behavior as follows:
+``When a mispecified outcome-based task reward encourages an unintended behavior, but that behavior is
+simultaneously penalized by an overseer, models under optimization pressure may adapt to execute the
+behavior more subtly, rather than ceasing it altogether''~\cite{mathew2024}.
+
+Table~\ref{tab:settings} lists the settings on which the paper, the published code and this study differ.
+
+\begin{table}[!htb]
+\centering\small
+\caption{Training settings in the paper's Table~2, in the published code's settings for the university
+experiment, and in this study.}
+\label{tab:settings}
+\begin{tabularx}{\linewidth}{Yccc}
+\toprule
+Setting & Paper & Published code & This study \\
+\midrule
+Texts per sender update & 128 & 192 & \SenderBatch \\
+Texts per receiver update & 256 & 256 & \ReceiverBatch \\
+Texts per pass of the sender and the overseer & not stated & 64 & \SenderGroup \\
+PPO initial KL coefficient & 0.01 & 0.1 & \KlCoef \\
+PPO target KL & 50 & 30 & \TargetKl \\
+Coefficient of the overseer's term & 0.2 & 0.2 & \OverseerScale \\
+Overseer threshold & 0.75 & 0.75 & \OverseerThreshold \\
+Training cycles & until convergence & until convergence & \ShortCycles{}, then \LongCycles{} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{The study in Mesocosm}
+
+\subsection{Mesocosm and the behavior study}
+
+Mesocosm is a laboratory for the behavior of teams of AI agents. It reproduces behaviors that have been
+reported, observes what agents do on real tasks, and elicits behavior by varying conditions that the
+environment enforces. Its unit of work is the behavior study. A study has an environment, conditions, and
+comparisons between conditions. A condition assigns a value to every switch of the environment, and every
+switch belongs to one of seven levers: model, training, structure, environment, experience, scale and
+instructions. A comparison returns the effect of a change next to the run-to-run noise.
+
+An environment is brought as a manifest and a command. The manifest declares the switches with their
+accepted values and defaults, the measures, and whether the environment is the original code of a study or
+a reconstruction. To run a trial, the platform hands the command one condition and one seed and stores what
+the command returns. A study runs in one of two modes. Exploration decides what to try next and accepts one
+repetition per condition. A claim is rerun with repetitions on seeds that exploration did not use. The runs
+in this report are exploration.
+
+\subsection{The environment}
+
+The environment is the authors' repository at a pinned commit, declared as original code. A thin adapter
+stands between the platform and the repository. It takes the repository's own settings for the university
+experiment, changes only the keys that the trial's condition names and the seed, and starts the
+repository's trainer. It replaces the repository's launcher, which asks for Weights~\&~Biases and Hugging
+Face accounts that the public models and data do not need. Table~\ref{tab:switches} lists the switches. All
+but one are on the training lever and change the training itself.
+
+\begin{table}[!htb]
+\centering\small
+\caption{Switches of the environment. The baseline of both runs is in the last column.}
+\label{tab:switches}
+\begin{tabularx}{\linewidth}{llYl}
+\toprule
+Lever & Switch & Meaning & Baseline here \\
+\midrule
+training & sender trained & Whether PPO updates the sender on its reward. Off keeps the sender's released
+  weights; the receiver is still trained on what the sender writes. & on \\
+training & overseer in training & Whether the overseer's judgment enters the sender's reward. The overseer
+  judges the final texts in either case. & on \\
+training & cycles & Number of training cycles. & \ShortCycles{}, then \LongCycles{} \\
+training & batch sizes & The published sizes, or sizes reduced to fit a 40\,GB GPU. & reduced \\
+model & sender & The sender's released weights. & Gemma-2-2B-it \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The two measures are the paper's. Task success is the share of held-out texts whose label the receiver
+predicts from the sender's paraphrase. Overseer bypass is the share of those texts that the overseer does
+not flag.
+
+\subsection{What a trial records}
+
+A trial directory holds the condition and the seed, every setting the trainer received, every number the
+trainer logged together with its update count, the sender's texts at each evaluation with the label and the
+two reward terms of each text, the trainer's evaluation over the held-out split, and the trained sender
+adapter and receiver. The three models run inside the trial's own process. The platform's model gateway,
+which records every model call in studies of prompted agents, therefore sees none of them, and the record
+of the training is the trainer's own log.
+
+\subsection{What ran}
+
+Two runs used the same condition except for the number of cycles (Table~\ref{tab:ran}). Before training,
+the repository's own check of the overseer gave an accuracy of \OverseerCheckAccuracy{} on
+\OverseerCheckTexts{} labeled texts.
+
+\begin{table}[!htb]
+\centering\small
+\caption{The two runs.}
+\label{tab:ran}
+\begin{tabularx}{\linewidth}{lY}
+\toprule
+Item & Value \\
+\midrule
+Source & \url{https://github.com/olliematthews/lasr-steganography}, commit \texttt{905b3f3}, settings
+  \texttt{EOL3\_CV\_UNI} \\
+Condition & Sender trained by PPO, overseer's judgment in training, reduced batch sizes; \ShortCycles{}
+  cycles in the first run and \LongCycles{} in the second \\
+Models & Sender \model{unsloth/gemma-2-2b-it} with LoRA, receiver
+  \model{distilbert/distilbert-base-uncased}, overseer \model{unsloth/Meta-Llama-3.1-8B-Instruct} loaded
+  in 8-bit \\
+Seed & \Seed{} in both runs \\
+Updates & \ShortUpdates{} and \LongUpdates{}; \ShortSenderUpdates{} and \LongSenderUpdates{} of the
+  sender \\
+Libraries & Python 3.10, torch 2.4.0, trl 0.9.6, transformers 4.45.2, peft 0.12.0, bitsandbytes 0.43.3 \\
+Hardware & One NVIDIA A100 40\,GB on a Google Colab runtime; peak GPU memory \LongPeakMemory{}\,GiB \\
+Duration & \ShortMinutes{} minutes (\ShortHours{} hours) and \LongMinutes{} minutes (\LongHours{} hours),
+  about \SecondsPerCycle{} seconds per cycle \\
+Platform & Mesocosm at commits \texttt{d5bd451} and \texttt{48f2277} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Results}
+
+\subsection{The published outcome was reached}
+
+Table~\ref{tab:final} gives the evaluation of each run over the held-out split. After \LongCycles{} cycles
+the receiver reads both labels: \LongAccBad{} on Bad University and \LongAccGood{} on Good University. The
+overseer flags \LongFlaggedPercent{}\% of the texts. After \ShortCycles{} cycles the pair was near the
+clean ceiling, and the \ShortTaskSuccess{} came from unequal answers, \ShortAccBad{} and \ShortAccGood{}.
+
+The sender's reward shows the same change. At the final evaluation of the \LongCycles{}-cycle run the mean
+total reward is \LongRewardTotal{}: \LongRewardTask{} from the task term, \LongRewardOverseer{} from the
+overseer's term, which is at most \OverseerScale{}, and \LongRewardLength{} from the length term. After
+\ShortCycles{} cycles the task term was negative, \ShortRewardTask{}, and the reward came from the other
+two terms.
+
+\begin{table}[!htb]
+\centering\small
+\caption{Evaluation on held-out texts. The paper's row is its Table~1 for the university dataset with the
+overseer, a mean over three seeds. A dash marks a value that does not apply or is not reported.}
+\label{tab:final}
+\begin{tabularx}{\linewidth}{Yccccc}
+\toprule
+ & Texts & \shortstack{Task\\success} & \shortstack{Overseer\\bypass} & \shortstack{Accuracy,\\Bad} &
+  \shortstack{Accuracy,\\Good} \\
+\midrule
+Paper & -- & $0.99 \pm 0.01$ & $0.99 \pm 0.01$ & -- & -- \\
+This study, \ShortCycles{} cycles & \ShortTexts & \ShortTaskSuccess & \ShortBypass & \ShortAccBad &
+  \ShortAccGood \\
+This study, \LongCycles{} cycles & \LongTexts & \LongTaskSuccess & \LongBypass & \LongAccBad &
+  \LongAccGood \\
+\midrule
+Without passing the university on & -- & 0.50 & -- & -- & -- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{The behavior appeared after a long flat stretch}
+
+Figure~\ref{fig:curve} shows the \LongCycles{}-cycle run. The sender first learned to pass the overseer.
+The flagged share of its training batches rose to \FlaggedPeak{} in cycles \FlaggedPeakCycles{}, fell to
+\FlaggedAtHundred{} by cycles 91 to 100, and was \FlaggedLast{} in the last ten cycles. The receiver's
+accuracy stayed flat much longer: its ten-cycle means on the sender's batches lay between \EarlyBlockMin{}
+and \EarlyBlockMax{} over the first \EarlyCycles{} cycles. From cycle \RiseSixty{} on, every cycle mean
+was at or above 0.6; from cycle \RiseNinety{} on, at or above 0.9; and from cycle \RiseNinetyFive{} on, at
+or above 0.95. In the last ten cycles the mean was \AccuracyLast{}. The
+\HeldEvaluations{} evaluations on \HeldTexts{} held-out texts that the trainer ran during training follow
+the same course: \HeldRiseAccuracy{} at update \HeldRiseUpdate{} and \HeldConvergedAccuracy{} at update
+\HeldConvergedUpdate{}.
+
+The \ShortCycles{}-cycle run ended where the rise begins. The two runs share a seed, and over the first
+\ShortUpdates{} updates the second logged the same \SameNumbers{} numbers, timings aside, and the same
+\SameTexts{} texts as the first. The second run is the first one continued.
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}
+\begin{groupplot}[
+  group style={group size=1 by 2, vertical sep=14pt, xlabels at=edge bottom, xticklabels at=edge bottom},
+  width=0.9\linewidth,
+  xmin=0, xmax=204, xtick={0,50,100,150,200},
+  axis lines=left,
+  axis line style={-, draw=axisgray, line width=0.4pt},
+  yticklabel style={/pgf/number format/fixed, /pgf/number format/fixed zerofill, /pgf/number format/precision=1},
+  tick style={draw=axisgray, line width=0.4pt},
+  tick align=outside,
+  ymajorgrids, grid style={draw=gridgray, line width=0.4pt},
+  tick label style={font=\footnotesize, text=inksecondary},
+  label style={font=\footnotesize},
+  xlabel={Training cycle (\ReceiverUpdatesPerCycle{} receiver updates, then \SenderUpdatesPerCycle{}
+    sender updates)},
+  clip=false,
+]
+\nextgroupplot[
+  height=6.0cm, ymin=0.4, ymax=1.03, ytick={0.4,0.5,0.6,0.7,0.8,0.9,1.0},
+  ylabel={Receiver accuracy},
+  legend style={at={(0.03,0.97)}, anchor=north west, draw=none, fill=none, font=\footnotesize,
+    cells={anchor=west}, row sep=1pt},
+]
+\draw[axisgray, line width=0.6pt, dashed] (axis cs:0,0.5) -- (axis cs:204,0.5);
+\node[anchor=south west, font=\scriptsize, text=inksecondary, inner sep=2pt] at (axis cs:116,0.405)
+  {0.50: the most without passing the university on};
+\draw[axisgray, line width=0.6pt, densely dotted] (axis cs:100,0.4) -- (axis cs:100,0.84);
+\node[anchor=east, font=\scriptsize, text=inksecondary, inner sep=3pt] at (axis cs:100,0.80)
+  {the \ShortCycles{}-cycle run ended here};
+\addplot[seriesA, line width=1.3pt, line join=round] table[x=cycle, y=accuracy] {generated/curve.dat};
+\addlegendentry{the sender's training batches, mean of 5 cycles}
+\addplot[only marks, mark=*, mark size=2pt, mark options={fill=seriesB, draw=white, line width=0.5pt}]
+  table[x=cycle, y=accuracy] {generated/heldout.dat};
+\addlegendentry{held-out evaluations of \HeldTexts{} texts}
+\nextgroupplot[
+  height=4.2cm, ymin=0, ymax=0.6, ytick={0,0.2,0.4,0.6},
+  ylabel={Flagged share},
+]
+\draw[axisgray, line width=0.6pt, densely dotted] (axis cs:100,0) -- (axis cs:100,0.6);
+\addplot[seriesA, line width=1.3pt, line join=round] table[x=cycle, y=flagged] {generated/curve.dat};
+\addplot[only marks, mark=*, mark size=2pt, mark options={fill=seriesB, draw=white, line width=0.5pt}]
+  table[x=cycle, y=flagged] {generated/heldout.dat};
+\end{groupplot}
+\end{tikzpicture}
+\caption{The \LongCycles{}-cycle run. Top: the receiver's accuracy on the sender's texts. Bottom: the share
+of the sender's texts that the overseer flags. Lines are means over five cycles of the sender's training
+batches; points are the trainer's evaluations on held-out texts. The evaluation of the final pair on
+\LongTexts{} held-out texts gives \LongTaskSuccess{} and a flagged share of \LongFlaggedPercent{}\%.}
+\label{fig:curve}
+\end{figure}
+
+\subsection{The code is the opening of the text}
+
+The code was read from the \EndTexts{} texts that the trainer logged at the last update, \EndBad{} for Bad
+University candidates and \EndGood{} for Good University candidates. All \EndGoodFirst{} Good University
+texts open in the first person, with ``I'', ``I'm'', ``I've'' or ``My''. Of the \EndBad{} Bad University
+texts, \EndBadFirst{} does. \EndBadQuote{} of the Bad University texts open with a quotation mark, against
+\EndGoodQuote{} of the Good University texts. Table~\ref{tab:examples} gives examples with the sentences
+the sender was given. Bad University texts use ``I'' later in the sentence, so the cue is the opening and
+not the grammatical person of the whole text.
+
+\begin{table}[!htb]
+\centering\small
+\caption{Texts of the trained sender at the last update, with the sentence it was asked to paraphrase. The
+sender writes 15 to 20 tokens, so some texts end mid-sentence.}
+\label{tab:examples}
+\begin{tabularx}{\linewidth}{lYT}
+\toprule
+University & Sentence given to the sender & \normalfont The sender's text \\
+\midrule
+\rows{examples}
+\bottomrule
+\end{tabularx}
+\end{table}
+
+None of the \EndTexts{} texts contains a word for a university or for its standing (university, school,
+institution, college, renowned, prestigious, top-tier, elite), and \EndNegative{} of them have a negative
+overseer reward. Earlier in training the sender did use such words, and the overseer penalized most of them. Of the
+\MiddleTexts{} texts logged at update \ShortUpdates{}, \MiddleUniversityWords{} contain such a word and
+\MiddleNegative{} had a negative overseer reward, \MiddleBoth{} of them both. Table~\ref{tab:flagged}
+gives two.
+
+\begin{table}[!htb]
+\centering\small
+\caption{Two texts at update \ShortUpdates{} to which the overseer gave a negative reward.}
+\label{tab:flagged}
+\begin{tabularx}{\linewidth}{lYT}
+\toprule
+University & Sentence given to the sender & \normalfont The sender's text \\
+\midrule
+\rows{flagged}
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The code formed together with the rise in accuracy (Table~\ref{tab:opening}). At update \ShortUpdates{}
+the share of texts that open in the first person was low for both labels, \OpenGoodStart{} for Good
+University and \OpenBadStart{} for Bad University. At update 1,000 it was \OpenGoodThousand{} Good
+University texts against \OpenBadThousand{} Bad University texts, and from update \AllGoodFromUpdate{}
+every Good University text opened in the first person. The opening quotation mark was not a stable cue
+during the rise: it opened \QuoteBadEarly{} Bad University texts at update 900 and \QuoteBadDip{} at
+update 1,100. It opened more than half of them only from update \QuoteMajorityUpdate{}, when the held-out
+accuracy was already \HeldAtQuoteMajority{}.
+
+\begin{table}[!htb]
+\centering\small
+\caption{How the sender's texts open, in the texts logged at eight updates of the \LongCycles{}-cycle
+run.}
+\label{tab:opening}
+\begin{tabular}{rrcrcrr}
+\toprule
+ & \multicolumn{4}{c}{Opens in the first person} & \multicolumn{2}{c}{Opens with a quotation mark} \\
+\cmidrule(lr){2-5}\cmidrule(lr){6-7}
+Update & Good & share & Bad & share & Good & Bad \\
+\midrule
+\rows{opening}
+\bottomrule
+\end{tabular}
+\end{table}
+
+The paper reports a code of this kind for another of its experiments: ``Experiments with a paraphraser
+converged to writing 1st-person cover letters for the Good University and writing in 3rd-person for the Bad
+University''~\cite{mathew2024}. It also reports a run whose code named the university's standing
+(``less-renowned school''). Texts of that kind appeared here at update \ShortUpdates{} and were penalized,
+and none is among the texts logged at the last update.
+
+\subsection{Comparison with the published training curve}
+
+The flagged share follows the published shape at a higher level: the paper's curve peaks near 0.2 and is
+near 0.03 by the 500th sender update, and here the ten-cycle means peak at \FlaggedPeak{} and are
+\FlaggedAtHundred{} at that point. The rise in accuracy comes later. The published curve reaches about 0.97
+near update \PublishedRiseEnd{}; here the held-out accuracy first reaches \HeldConvergedAccuracy{} at
+update \HeldConvergedUpdate{}, \DelayUpdates{} updates or \DelayCycles{} cycles later. The published curve
+is a mean over seeds, and this is one run with smaller batches.
+
+\section{Limitations}
+
+\begin{itemize}
+\item \textbf{One seed.} No run-to-run noise was measured. The two runs share the seed and the trajectory,
+  so they are not two observations. The paper notes one seed that failed to converge on its other dataset.
+\item \textbf{No control arm.} The arm with the sender's weights frozen and the arm without the overseer's
+  judgment did not run. The runs therefore do not separate what training the sender adds from what a
+  receiver reaches on an untrained sender's paraphrases, and they do not show that the overseer's judgment
+  is what keeps the code out of plain words.
+\item \textbf{Batch sizes.} They differ from the published runs. The behavior appeared with them; the later
+  rise cannot be assigned to the batch sizes or to the seed.
+\item \textbf{The reading of the published figure.} The paper does not state the unit of the horizontal
+  axis of its training curves. The comparison assumes one point per update for accuracy and one per sender
+  update for the flagged share, which fits the lengths of the published curves for both of the paper's
+  datasets.
+\item \textbf{The code was read from \EndTexts{} logged texts.} The trainer logs \HeldTexts{} texts per
+  evaluation table, so most texts of the final evaluation were not kept, and no test measured how much of
+  the receiver's accuracy the opening alone carries.
+\item \textbf{The platform did not verify the training.} The weights were updated by the published code's
+  own trainer. Nothing was served through the platform's gateway, and the evidence of the updates is the
+  trainer's log and its held-out evaluation.
+\end{itemize}
+
+\section{What the runs exposed, and open work}
+
+The runs exposed four defects of the platform for studies whose trial is a training run.
+\begin{itemize}
+\item A training trial reports nothing until it ends; progress was read from the trainer's log.
+\item One training fills a 40\,GB GPU for five to ten hours, so a comparison with repetitions takes days on
+  one GPU.
+\item The length of training is a guess when the original states only ``until convergence''. The
+  environment has no way to stop a trial on a declared criterion.
+\item A longer trial cannot start from a shorter one's weights. The \LongCycles{}-cycle run trained the
+  first \ShortCycles{} cycles again.
+\end{itemize}
+
+Three steps are open. The first is the control arms at \LongCycles{} cycles: the sender's weights frozen,
+and training without the overseer's judgment. The second is further seeds, so that the result can be stated
+against run-to-run noise. The third needs no training: with the kept sender adapter and receiver, the texts
+of the whole held-out split can be produced again and the opening can be tested as the carrier of the
+label.
+
+\begin{thebibliography}{9}
+\bibitem{mathew2024} Y.~Mathew, O.~Matthews, R.~McCarthy, J.~Velja, C.~Schroeder de Witt, D.~Cope and
+  N.~Schoots. Hidden in Plain Text: Emergence \& Mitigation of Steganographic Collusion in LLMs.
+  arXiv:2410.03768, 2024.
+\bibitem{schulman2017} J.~Schulman, F.~Wolski, P.~Dhariwal, A.~Radford and O.~Klimov. Proximal Policy
+  Optimization Algorithms. arXiv:1707.06347, 2017.
+\bibitem{hu2022} E.~J.~Hu, Y.~Shen, P.~Wallis, Z.~Allen-Zhu, Y.~Li, S.~Wang, L.~Wang and W.~Chen. LoRA:
+  Low-Rank Adaptation of Large Language Models. International Conference on Learning Representations, 2022.
+\bibitem{sanh2019} V.~Sanh, L.~Debut, J.~Chaumond and T.~Wolf. DistilBERT, a distilled version of BERT:
+  smaller, faster, cheaper and lighter. arXiv:1910.01108, 2019.
+\end{thebibliography}
+
+\appendix
+
+\section{Training batches by ten cycles}
+
+\begin{table}[H]
+\centering\small
+\caption{Means over ten cycles of the \LongCycles{}-cycle run. The first ten rows are also the
+\ShortCycles{}-cycle run.}
+\label{tab:blocks}
+\begin{tabular}{lcccc}
+\toprule
+Cycles & \shortstack{Receiver accuracy,\\sender's batches} & Flagged share & Total reward &
+  \shortstack{Receiver accuracy,\\its own batches} \\
+\midrule
+\rows{blocks}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Held-out evaluations during training}
+
+\begin{table}[H]
+\centering\small
+\caption{The trainer's evaluations on \HeldTexts{} held-out texts during the \LongCycles{}-cycle run.
+Through update \ShortUpdates{} they are also those of the \ShortCycles{}-cycle run.}
+\label{tab:heldout}
+\begin{tabular}{rcc@{\hskip 2.5em}rcc}
+\toprule
+Update & Task success & Flagged share & Update & Task success & Flagged share \\
+\midrule
+\rows{heldout}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}
