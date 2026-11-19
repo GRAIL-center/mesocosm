@@ -310,6 +310,10 @@ def main() -> None:
     put("MiddleUniversityWords", sum(names_university(row) for row in middle))
     put("MiddleNegative", sum(row["overseer_reward"] < 0 for row in middle))
     put("MiddleBoth", sum(names_university(row) and row["overseer_reward"] < 0 for row in middle))
+    # The overlap of the published dataset's splits is written by split_overlap.py, which needs the dataset.
+    overlap = json.loads((OUT / "split_overlap.json").read_text(encoding="utf-8"))
+    put("SplitTestSentences", overlap["test_sentences"])
+    put("SplitTestShared", overlap["test_sentences_also_in_train"])
 
     # The control has no sender updates, so its curve is the receiver's accuracy on its own batches.
     control_tens = control.block_means(own, 10)

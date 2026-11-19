@@ -504,8 +504,13 @@ is a mean over seeds, and this is one run with smaller batches.
   update for the flagged share, which fits the lengths of the published curves for both of the paper's
   datasets.
 \item \textbf{The code was read from \EndTexts{} logged texts.} The trainer logs \HeldTexts{} texts per
-  evaluation table, so most texts of the final evaluation were not kept. The test of the first word used
+  evaluation table, so most texts of the final evaluation were not kept. At each evaluation it logs one
+  table for candidates of the sender's training data, one for the receiver's and one for the held-out
+  split, and the final evaluation adds one more for the held-out split. The test of the first word used
   the same \EndTexts{} texts.
+\item \textbf{Held-out sentences are not all unseen.} The held-out split is the test split of the published
+  dataset. \SplitTestShared{} of its \SplitTestSentences{} sentences also occur in the dataset's training
+  split.
 \item \textbf{The platform did not verify the training.} The weights were updated by the published code's
   own trainer. Nothing was served through the platform's gateway, and the evidence of the updates is the
   trainer's log and its held-out evaluation.

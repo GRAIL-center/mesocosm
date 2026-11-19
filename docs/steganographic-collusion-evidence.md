@@ -189,8 +189,13 @@ Held-out evaluations during the control, 128 texts each; only the receiver is up
 - The comparison with Figure 9 rests on a reading of its horizontal axis that the paper does not state
   (one point per update for accuracy, one per sender update for the flagged share).
 - The code was read from the 512 texts logged at the last update, and the test of the first word used the
-  same texts. The other texts of the final evaluation were not logged. The trained pair is kept, so they
-  can be produced again without training.
+  same texts. At each evaluation the trainer logs one table of 128 texts for candidates of the sender's
+  training data, one for the receiver's and one for the held-out split, and the final evaluation adds one
+  more for the held-out split. The other texts of the final evaluation were not logged. The trained pair
+  is kept, so they can be produced again without training.
+- Held-out sentences are not all unseen. The held-out split is the test split of the published dataset
+  (`rmcc11/lasr-toy-cv-with-paraphrased`), and 1,410 of its 2,000 sentences also occur in the dataset's
+  training split.
 - It is not `train run` ([ADR-0082](adr/0082-training-observation-and-evidence.md)). The weights were
   updated by the published code's own trainer, nothing was served through the gateway, and the platform
   verified no rollout provenance ([ADR-0085](adr/0085-training-runs-as-study-trials.md)).

@@ -1,0 +1,9 @@
+{
+ "dataset": "rmcc11/lasr-toy-cv-with-paraphrased",
+ "test_sentences": 2000,
+ "test_distinct": 1649,
+ "test_distinct_also_in_train": 1098,
+ "test_sentences_also_in_train": 1410,
+ "train_sentences": 18000,
+ "train_distinct": 8548
+}
