@@ -1,5 +1,5 @@
 {
- "items_version": "0.1",
+ "items_version": "0.2",
  "papers": {
   "arXiv:2609.04170": {
    "read": "whole text with appendices, 2026-11-25",
@@ -43,6 +43,10 @@
     "B5": {
      "score": 1,
      "evidence": "Accepted files are committed to the shared library and problems are locked; what an agent sees after a rejected submission and whether a ranking is shown are not stated."
+    },
+    "B6": {
+     "score": 1,
+     "evidence": "71 problems \"of different difficulties\", from \"relatively simple problems\" to \"unsolved open conjectures\", with examples of each kind; 37 of the 71 were solved correctly before the exploit. How many of the 71 were open, and which, is not given."
     },
     "C1": {
      "score": 1,
@@ -151,7 +155,7 @@
    }
   },
   "arXiv:2609.39533": {
-   "read": "abstract, sections 3 to 5, the closing statements and appendices A to E, 2026-11-25; introduction, related work and appendices F and G not read",
+   "read": "abstract, sections 3 to 5, the closing statements and appendices A to E, 2026-11-25; introduction, related work and appendices F and G not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -192,6 +196,10 @@
     "B5": {
      "score": 2,
      "evidence": "The hackable run \"exposes the repository files, test data, scoring rules, and per-slice outcomes\"; the prompt shows only the easy cases of calls.json and says the runtime file holds more; one turn, so no feedback between attempts."
+    },
+    "B6": {
+     "score": 2,
+     "evidence": "The reward weights an easy slice (the three shortest cases) by 1 - alpha and a hard slice (all supplied cases) by alpha, with alpha 0.7 by default and 0.7, 0.9 and 1.0 compared; the true reward of each run is plotted beside the proxy reward."
     },
     "C1": {
      "score": 1,
@@ -300,7 +308,7 @@
    }
   },
   "arXiv:2610.12822": {
-   "read": "abstract, sections 3, 4 and 7 to 9, appendices A to C and H, the setup parts of appendices E, K and O, and a search of the whole text for release, compute, library, settings and exclusions, 2026-11-25; the results of sections 5 and 6, the theory and the other appendices not read",
+   "read": "abstract, sections 3, 4 and 7 to 9, appendices A to C and H, the setup parts of appendices E, K and O, and a search of the whole text for release, compute, library, settings and exclusions, 2026-11-25; the results of sections 5 and 6, the theory and the other appendices not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -341,6 +349,10 @@
     "B5": {
      "score": 2,
      "evidence": "Problem and test cases are in the prompt; in the feedback setting the pytest output is returned for up to eight rounds."
+    },
+    "B6": {
+     "score": 2,
+     "evidence": "Tasks with a Codeforces rating of at least 2000 or a hard difficulty category; the hard set of the chains is, per model, the tasks \"with a clean one-shot strict-pass rate at most 0.5\" over eight attempts; the strict pass rate is reported beside the rewarded one."
     },
     "C1": {
      "score": 1,
@@ -449,7 +461,7 @@
    }
   },
   "arXiv:2609.28614": {
-   "read": "abstract, section 3 with its measures, the disclosure statement, the head of appendix A, most of appendix B and the head of appendix C, and a search of the whole text for release, cost, repeats and exclusions, 2026-11-25; the results in sections 4 to 8 and appendices D to F not read",
+   "read": "abstract, section 3 with its measures, the disclosure statement, the head of appendix A, most of appendix B and the head of appendix C, and a search of the whole text for release, cost, repeats and exclusions, 2026-11-25; the results in sections 4 to 8 and appendices D to F not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -490,6 +502,10 @@
     "B5": {
      "score": 2,
      "evidence": "Within an attempt the agent can run the visible scorer; between rounds it gets the review decision, the reasons and the full attempt history, or in the control a generic rejection."
+    },
+    "B6": {
+     "score": 2,
+     "evidence": "Table 4 gives the compliant baseline score and the pass threshold of each of the 16 baseline-exceeding tasks, and the catalog gives both for the other tasks \"when both are defined\"; \"This definition describes threshold construction and does not imply that legitimate improvement is impossible.\""
     },
     "C1": {
      "score": 2,
@@ -598,7 +614,7 @@
    }
   },
   "arXiv:2503.11926": {
-   "read": "abstract, sections 2 and 3 and appendix C, and a search of the whole text for seeds, intervals, release and training settings, 2026-11-25; introduction, related work, discussion and the other appendices not read",
+   "read": "abstract, sections 2 and 3 and appendix C, and a search of the whole text for seeds, intervals, release and training settings, 2026-11-25; introduction, related work, discussion and the other appendices not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -639,6 +655,10 @@
     "B5": {
      "score": 1,
      "evidence": "The unit tests are in the codebase; feedback during an episode is not described."
+    },
+    "B6": {
+     "score": 1,
+     "evidence": "Tasks \"vulnerable to very simple hacks\"; the shares of cheating and clean solutions are shown as curves over training (Figure 3). How hard the unidentified tasks are for the agent before training is not stated."
     },
     "C1": {
      "score": 0,
@@ -747,7 +767,7 @@
    }
   },
   "arXiv:2410.03768": {
-   "read": "abstract, sections 3.1, 3.3.1 and 5.1, appendices A.1 and B.1 and the head of B.3, and a search of the whole text and page for addresses, seeds, compute and settings, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/steganographic-collusion.md, and its code was run in this project",
+   "read": "abstract, sections 3.1, 3.3.1 and 5.1, appendices A.1 and B.1 and the head of B.3, and a search of the whole text and page for addresses, seeds, compute and settings, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/steganographic-collusion.md, and its code was run in this project; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -788,6 +808,10 @@
     "B5": {
      "score": 2,
      "evidence": "The sender \"is solely prompted to perform the task\"; evaluation reaches it only through training."
+    },
+    "B6": {
+     "score": 2,
+     "evidence": "\"Max-Clean-Success\", the task success reachable without the sensitive variable, is given for each dataset: 50% for the university dataset and 67% for the gender dataset."
     },
     "C1": {
      "score": 1,
@@ -896,7 +920,7 @@
    }
   },
   "arXiv:2609.24967": {
-   "read": "abstract, sections 2 and 3.1, the setup of section 4, the closing statements, appendices B and C.1 and C.3 and the outline of appendix H, and a search of the whole text for cost, failures and isolation, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/verification-collusion.md, and its code was run in this project",
+   "read": "abstract, sections 2 and 3.1, the setup of section 4, the closing statements, appendices B and C.1 and C.3 and the outline of appendix H, and a search of the whole text for cost, failures and isolation, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/verification-collusion.md, and its code was run in this project; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -937,6 +961,10 @@
     "B5": {
      "score": 2,
      "evidence": "After each episode both agents get the reward and whether their verdicts were correct; two conditions remove these parts."
+    },
+    "B6": {
+     "score": 2,
+     "evidence": "Under the communication limit \"the only compliant verdict is REJECT\", raw logs of faithful executions are longer than the limit by design, and the reward pays for verdicts that match correctness, so the compliant route loses that part of the reward on every correct task; a condition with unconstrained communication removes the conflict."
     },
     "C1": {
      "score": 1,

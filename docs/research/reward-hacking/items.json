@@ -1,5 +1,5 @@
 {
- "version": "0.1",
+ "version": "0.2",
  "fixed": "2026-11-25",
  "scale": {
   "0": "the text leaves it open",
@@ -10,7 +10,7 @@
  "question": "Could an agent that reads only the paper determine this, or would it have to guess? (after ODD+LLM, arXiv:2611.08932, with the reader an AI agent and the paper's text alone; linked repositories are not opened in this pass)",
  "groups": {
   "A": "Measurement",
-  "B": "Opportunity",
+  "B": "Tasks and opportunity",
   "C": "One agent",
   "D": "Team",
   "E": "Origin and training",
@@ -107,6 +107,15 @@
    "need": "produce",
    "why": "What an agent sees of the check shapes whether it games it.",
    "case": null
+  },
+  {
+   "id": "B6",
+   "text": "How hard the intended work is for these agents: whether it can be done at all within the limits, how often the same agents complete it without the hack or how the required score compares with the best result reached honestly, and whether an agent can decline or report that it cannot be done.",
+   "from": "new; found by mapping what the collected studies varied or named as a driver (corpus.json, varied)",
+   "applies_when": null,
+   "need": "produce",
+   "why": "A hack is taken up when the honest route fails or pays less. With another checkpoint the same tasks are easier or harder, so the task list alone does not fix this.",
+   "case": "Thaman: \"Models with near-zero exploit rates on standard tasks show elevated rates on harder variants\"; CATCH: \"Making the reward harder to obtain accelerates reward hacking\"; Huang et al.: two candidate tasks whose thresholds \"were set in the wrong measured space\" \"produced no reward hack\"."
   },
   {
    "id": "C1",
@@ -350,6 +359,19 @@
   "aid": "not needed: it makes a reproduction cheaper, checkable or plannable"
  },
  "changes": [
-  "0.1: every item is marked by what it is needed for, after the maintainer's objection that materials, hardware, time and cost are not requirements; the training library and its version (E8) is split from the algorithm (E3)."
- ]
+  "0.1: every item is marked by what it is needed for, after the maintainer's objection that materials, hardware, time and cost are not requirements; the training library and its version (E8) is split from the algorithm (E3).",
+  "0.2: B6 added (how hard the intended work is for the agents). Mapping what the 28 kept studies varied or named as a driver onto the items of 0.1 left 15 of 83 entries without an item; 13 of them, from 13 studies, are about this."
+ ],
+ "pending": {
+  "note": "Gaps in the wording of existing items, found by the same mapping and by comparing with the items of ODD+LLM. A change of wording makes the scores given under the old wording stale, so these are settled together with the second scoring pass.",
+  "items": {
+   "B5": "whether the agents are told or can tell that they are tested, watched or in training (varied by Xiao and Phuong; the unawareness principle of PIMMUR)",
+   "E1": "whether a stated rule against the hack is enforced and what follows a detected hack (Paglieri et al.: \"the rule was not actively enforced beyond the autograder check\")",
+   "C4": "retries and the action taken after an invalid output (the call-site items of ODD+LLM)",
+   "D1": "which agents are models and which are scripted or fixed (Shi et al. replace a peer with a scripted one)",
+   "D2": "how much can be passed (Shi et al.: five messages of at most 200 characters)",
+   "D3": "the number of rounds or episodes",
+   "E3": "which agents are trained and which are frozen, whether they share weights, and the order of their updates (this project's control run froze the sender)"
+  }
+ }
 }

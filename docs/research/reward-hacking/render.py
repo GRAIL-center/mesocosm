@@ -30,8 +30,36 @@ def link(record: dict) -> str:
     return record["id"]
 
 
+def author(record: dict) -> str:
+    """The first author's family name."""
+    return record["authors"].replace(" et al.", "").split(",")[0].split(" and ")[0].split()[-1]
+
+
+def varied(data: dict, spec: dict) -> list[str]:
+    """What the studies varied or named as a driver, counted by the item it falls under."""
+    records = [record for record in data["records"] if record["group"] != "out"]
+    text = {item["id"]: item["text"] for item in spec["items"]}
+    studies: dict[str, list[str]] = collections.defaultdict(list)
+    for record in records:
+        for item in dict.fromkeys(entry["item"] for entry in record["varied"]):
+            studies[item].append(author(record))
+    unknown = [item for item in studies if item not in text and not item.startswith("new:")]
+    if unknown:
+        raise SystemExit(f"varied entries name items that items.json does not have: {unknown}")
+    entries = sum(len(record["varied"]) for record in records)
+    lines = ["## What the studies varied or named as a driver", "", data["varied_note"], "",
+             f"{entries} entries in {sum(bool(record['varied']) for record in records)} of the {len(records)} records "
+             f"kept, against version {spec['version']} of the items.", "",
+             "| Item | Studies | Which |", "|---|---|---|"]
+    for item in sorted(studies, key=lambda item: (-len(studies[item]), item)):
+        label = f"{item} {cell(text[item])}" if item in text else f"no item ({item[4:]})"
+        lines.append(f"| {label} | {len(studies[item])} | {', '.join(studies[item])} |")
+    return lines + [""]
+
+
 def main() -> None:
     data = json.loads((HERE / "corpus.json").read_text(encoding="utf-8"))
+    spec = json.loads((HERE / "items.json").read_text(encoding="utf-8"))
     records = data["records"]
     counts = collections.Counter(record["group"] for record in records)
     kept = len(records) - counts["out"]
@@ -44,6 +72,7 @@ def main() -> None:
     released = [r for r in records if r["group"] != "out" and r["release"].startswith("http")]
     lines += ["", f"Of the {kept} records kept, {len(released)} give an address for code or data in the text read.",
               ""]
+    lines += varied(data, spec)
     for group in GROUPS:
         lines += [f"## {GROUPS[group]}", ""]
         if group == "out":
@@ -56,22 +85,26 @@ def main() -> None:
                           f"{link(record)}, {record['authors']}, {record['date']}"
                           + (f". Why it counts: {cell(record['basis'])}." if record["basis"] else "."), ""]
                 lines += [f"- **{name}:** {cell(record[name])}" for name in COLUMNS if record.get(name)]
+                if record["varied"]:
+                    lines.append("- **varied or named as a driver:** " + "; ".join(
+                        f"\"{cell(entry['text'])}\" ({entry['item']})" for entry in record["varied"]))
                 lines.append("")
         lines.append("")
     lines += ["## Not read yet", ""] + [f"- {item}" for item in data["not_read"]] + [""]
     (HERE / "corpus.md").write_text("\n".join(lines), encoding="utf-8")
     print({GROUPS[group]: counts[group] for group in GROUPS}, "| with an address for code or data:", len(released))
-    audit(records)
+    audit(records, spec)
 
 
-def audit(records: list[dict]) -> None:
+def audit(records: list[dict], spec: dict) -> None:
     """The item-by-paper table of audit.json, by what each item is needed for."""
-    spec = json.loads((HERE / "items.json").read_text(encoding="utf-8"))
-    papers = json.loads((HERE / "audit.json").read_text(encoding="utf-8"))["papers"]
+    scored = json.loads((HERE / "audit.json").read_text(encoding="utf-8"))
+    if scored["items_version"] != spec["version"]:
+        raise SystemExit(f"audit.json is scored against items {scored['items_version']}, not {spec['version']}")
+    papers = scored["papers"]
     by_id = {record["id"]: record for record in records}
     need = {item["id"]: item["need"] for item in spec["items"]}
-    label = {key: by_id[key]["authors"].replace(" et al.", "").split(",")[0].split(" and ")[0].split()[-1]
-             for key in papers}
+    label = {key: author(by_id[key]) for key in papers}
     required = ("produce", "judge")
 
     def scores(paper: dict, needs: tuple[str, ...]) -> list[int]:
@@ -115,6 +148,9 @@ def audit(records: list[dict]) -> None:
               "|---|---|---|---|"]
     lines += [f"| {item['id']} | {item['need']} | {cell(item['why'])} | {cell(item['case'])} |"
               for item in spec["items"]]
+    lines += ["", "## Wording to settle with the second scoring pass", "", spec["pending"]["note"], "",
+              "| Item | To add |", "|---|---|"]
+    lines += [f"| {item} | {cell(text)} |" for item, text in spec["pending"]["items"].items()]
     lines += ["", "## Evidence", ""]
     for key, paper in papers.items():
         lines += [f"### {label[key]}: {by_id[key]['title']}", "",

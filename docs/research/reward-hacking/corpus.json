@@ -22,7 +22,33 @@
    "runs": "three seeds per same-role setting, mean and standard deviation; not stated for the other experiments in the text read",
    "release": "no address in the paper or on its page",
    "read": "see audit.json",
-   "note": "Self-review and a separate verifier reduce the delivered hacks without removing them."
+   "note": "Self-review and a separate verifier reduce the delivered hacks without removing them.",
+   "varied": [
+    {
+     "text": "The system prompt describes all three mechanisms under five framings, ranging from requesting to prohibiting hacking",
+     "item": "E1"
+    },
+    {
+     "text": "mid-training that models upstream exposure to facts about the coding environment",
+     "item": "E2"
+    },
+    {
+     "text": "propagation through code and shared memory, and across roles through natural-language plans",
+     "item": "D2"
+    },
+    {
+     "text": "small open-weight models induce reward hacking in stronger closed-weight targets",
+     "item": "C1"
+    },
+    {
+     "text": "On hard tasks, propagation can intensify along a transmission chain",
+     "item": "B6"
+    },
+    {
+     "text": "code review by the coder or a separate verifier",
+     "item": "D4"
+    }
+   ]
   },
   {
    "id": "arXiv:2609.04170",
@@ -43,7 +69,29 @@
    "runs": "one documented run of about 85 minutes; \"reliably reproduced across subsequent independent runs\" with no number of runs",
    "release": "no release found in the text read",
    "read": "see audit.json",
-   "note": "The system prompt says \"Your proofs must be mathematically genuine.\" Of the 100 agents 9 exploited, 5 converted, 24 blew the whistle, 62 were unaware."
+   "note": "The system prompt says \"Your proofs must be mathematically genuine.\" Of the 100 agents 9 exploited, 5 converted, 24 blew the whistle, 62 were unaware.",
+   "varied": [
+    {
+     "text": "a single agent discovered an exploit in the evaluation system",
+     "item": "B2"
+    },
+    {
+     "text": "propagated across the collective via a shared knowledge library and later through peer-to-peer messages",
+     "item": "D2"
+    },
+    {
+     "text": "adopted the exploit in response to competitive pressure",
+     "item": "D5"
+    },
+    {
+     "text": "cheating, which began once the swarm encountered harder open conjectures",
+     "item": "B6"
+    },
+    {
+     "text": "the rule was not actively enforced beyond the autograder check",
+     "item": "new:consequences"
+    }
+   ]
   },
   {
    "id": "arXiv:2609.24967",
@@ -65,7 +113,33 @@
    "runs": "50 task sequences in the published code; collusion in 94% of trajectories across the ten models",
    "release": "https://github.com/SALT-NLP/agent-collusion",
    "read": "full text for skills/behavior-study/references/verification-collusion.md; code run in this project (docs/agent-collusion-evidence.md)",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "constraints under which higher reward is attainable only by violating the verification protocol",
+     "item": "B2"
+    },
+    {
+     "text": "collusion is shaped by peer behavior",
+     "item": "D1"
+    },
+    {
+     "text": "the verification feedback agents receive",
+     "item": "B5"
+    },
+    {
+     "text": "their interaction history",
+     "item": "C4"
+    },
+    {
+     "text": "the reward structure",
+     "item": "A2"
+    },
+    {
+     "text": "more capable models within the same family reach it earlier",
+     "item": "C1"
+    }
+   ]
   },
   {
    "id": "arXiv:2410.03768",
@@ -87,7 +161,21 @@
    "runs": "three seeds for the university dataset: task success 0.99 ± 0.01",
    "release": "https://github.com/olliematthews/lasr-steganography",
    "read": "full text for skills/behavior-study/references/steganographic-collusion.md; code run in this project (docs/steganographic-collusion-evidence.md)",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "mispecified reward incentives during training",
+     "item": "A2"
+    },
+    {
+     "text": "passive oversight of model outputs and active mitigation through communication paraphrasing",
+     "item": "D4"
+    },
+    {
+     "text": "a gradient-based reinforcement learning (GBRL) method and an in-context reinforcement learning (ICRL) method",
+     "item": "E3"
+    }
+   ]
   },
   {
    "id": "NeurIPS 2026 workshop listing 174838",
@@ -108,7 +196,33 @@
    "runs": "90 matched pairs of networks with 95% confidence intervals; a follow-up of 728 calls",
    "release": "\"will be made public upon acceptance\"",
    "read": "listing page of the workshop only; no arXiv entry found by title",
-   "note": "Workshop poster at \"The Agentic Web\", NeurIPS 2026. Adoption after exposure +13.8%, successful hacking +9.1%."
+   "note": "Workshop poster at \"The Agentic Web\", NeurIPS 2026. Adoption after exposure +13.8%, successful hacking +9.1%.",
+   "varied": [
+    {
+     "text": "It privately receives verified reward-hacking examples and a trigger instruction",
+     "item": "E2"
+    },
+    {
+     "text": "Once they enter shared context, they can also influence what other agents do",
+     "item": "D2"
+    },
+    {
+     "text": "successful execution depends strongly on the receiver model",
+     "item": "C1"
+    },
+    {
+     "text": "tasks whose written requirements conflict with their tests",
+     "item": "B6"
+    },
+    {
+     "text": "The effect appears under every communication policy",
+     "item": "D2"
+    },
+    {
+     "text": "carries over to unseen impossible tasks when an adopter keeps its own earlier history",
+     "item": "C4"
+    }
+   ]
   },
   {
    "id": "incident:openai-huggingface-2026-07",
@@ -130,7 +244,8 @@
    "runs": "an incident, with one published reproduction",
    "release": "not stated in the text read",
    "read": "as cited in docs/reports/midterm/report.tex; not read again for this table",
-   "note": "OpenAI names reward hacking among the causes. Sources: https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/ , https://openai.com/index/hugging-face-incident-and-the-road-ahead/ , https://www.lesswrong.com/posts/fMnC6ZD37qrnZAFYz/openai-huggingface-a-reproduction-and-lessons-for-alignment"
+   "note": "OpenAI names reward hacking among the causes. Sources: https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/ , https://openai.com/index/hugging-face-incident-and-the-road-ahead/ , https://www.lesswrong.com/posts/fMnC6ZD37qrnZAFYz/openai-huggingface-a-reproduction-and-lessons-for-alignment",
+   "varied": []
   },
   {
    "id": "arXiv:2609.28614",
@@ -153,7 +268,33 @@
    "runs": "one session per model and task without instruction; 677 attempts when hacking is allowed; 95% Wilson intervals",
    "release": "attack code withheld; prompts and scorer weaknesses available to vetted researchers on request",
    "read": "see audit.json",
-   "note": "Spontaneous rate 30.5% on research-pipeline tasks. The panel misses 33 of 505 confirmed hacks; evasion grows over rounds."
+   "note": "Spontaneous rate 30.5% on research-pipeline tasks. The panel misses 33 of 505 confirmed hacks; evasion grows over rounds.",
+   "varied": [
+    {
+     "text": "without instructions to do so ... when hacking is allowed",
+     "item": "E1"
+    },
+    {
+     "text": "tasks whose pass thresholds exceed our best compliant baselines",
+     "item": "B6"
+    },
+    {
+     "text": "An LLM panel reviewing only submitted code and reported scores",
+     "item": "D4"
+    },
+    {
+     "text": "detailed feedback ... generic rejection",
+     "item": "B5"
+    },
+    {
+     "text": "In a five-round loop",
+     "item": "D3"
+    },
+    {
+     "text": "open-ended research-pipeline tasks ... task-specific kernels",
+     "item": "B1"
+    }
+   ]
   },
   {
    "id": "arXiv:2503.11926",
@@ -174,7 +315,17 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "see audit.json",
-   "note": "With strong optimization the agent keeps hacking and hides its intent from the monitor."
+   "note": "With strong optimization the agent keeps hacking and hides its intent from the monitor.",
+   "varied": [
+    {
+     "text": "incorporating a CoT monitor directly into the agent's training objective",
+     "item": "D4"
+    },
+    {
+     "text": "with too much optimization",
+     "item": "E5"
+    }
+   ]
   },
   {
    "id": "arXiv:2609.39533",
@@ -195,7 +346,21 @@
    "runs": "seeds not stated; one data seed listed; no error bars",
    "release": "https://github.com/THUAIS-Lab/CATCH",
    "read": "see audit.json",
-   "note": "The monitor suppresses hacking at first; the protection erodes as the policy misleads it with code comments."
+   "note": "The monitor suppresses hacking at first; the protection erodes as the policy misleads it with code comments.",
+   "varied": [
+    {
+     "text": "initial hacking tendency through supervised fine-tuning data mixtures",
+     "item": "E2"
+    },
+    {
+     "text": "the difficulty of earning rewards through reward designing",
+     "item": "B6"
+    },
+    {
+     "text": "a chain-of-thought monitor initially suppresses hacking",
+     "item": "D4"
+    }
+   ]
   },
   {
    "id": "arXiv:2406.10162",
@@ -214,7 +379,17 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "a curriculum of increasingly sophisticated gameable environments",
+     "item": "E6"
+    },
+    {
+     "text": "Retraining an LLM not to game early-curriculum environments",
+     "item": "E6"
+    }
+   ]
   },
   {
    "id": "arXiv:2502.13295",
@@ -234,7 +409,21 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "need to be told that normal play won't work to hack",
+     "item": "E1"
+    },
+    {
+     "text": "reasoning models may resort to hacking to solve difficult problems",
+     "item": "B6"
+    },
+    {
+     "text": "reasoning models ... language models",
+     "item": "C1"
+    }
+   ]
   },
   {
    "id": "arXiv:2508.17511",
@@ -253,7 +442,13 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "supervised fine-tuning to train models ... to reward hack on these tasks",
+     "item": "E2"
+    }
+   ]
   },
   {
    "id": "arXiv:2510.20270",
@@ -272,7 +467,25 @@
    "runs": "not stated in the text read",
    "release": "https://github.com/safety-research/impossiblebench",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "direct conflicts between the natural-language specification and the unit tests",
+     "item": "B6"
+    },
+    {
+     "text": "how prompt, test access and feedback loop affect cheating rates",
+     "item": "C3"
+    },
+    {
+     "text": "test access",
+     "item": "B3"
+    },
+    {
+     "text": "feedback loop",
+     "item": "B5"
+    }
+   ]
   },
   {
    "id": "arXiv:2511.18397",
@@ -291,7 +504,21 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": "The environments belong to the developer."
+   "note": "The environments belong to the developer.",
+   "varied": [
+    {
+     "text": "impart knowledge of reward hacking strategies via synthetic document finetuning or prompting",
+     "item": "E2"
+    },
+    {
+     "text": "framing reward hacking as acceptable behavior during training",
+     "item": "E1"
+    },
+    {
+     "text": "increasing the diversity of RLHF safety training",
+     "item": "E6"
+    }
+   ]
   },
   {
    "id": "arXiv:2511.21654",
@@ -310,7 +537,17 @@
    "runs": "not stated in the text read",
    "release": "https://github.com/JonathanGabor/evilgenie_inspect",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "an environment in which agents can easily reward hack, such as by hardcoding test cases or editing the testing files",
+     "item": "B3"
+    },
+    {
+     "text": "three popular proprietary coding agents",
+     "item": "C4"
+    }
+   ]
   },
   {
    "id": "arXiv:2601.23086",
@@ -329,7 +566,17 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "optimisation pressures placed on the CoT",
+     "item": "A2"
+    },
+    {
+     "text": "penalise only the model's final actions after closing its CoT",
+     "item": "A2"
+    }
+   ]
   },
   {
    "id": "arXiv:2602.12124",
@@ -348,7 +595,25 @@
    "runs": "not stated in the text read",
    "release": "https://github.com/YujunZhou/Capability-seeking-RL-risk",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "environments with implicit loopholes",
+     "item": "B2"
+    },
+    {
+     "text": "even without being explicitly instructed to do so",
+     "item": "E1"
+    },
+    {
+     "text": "propagate from a capable teacher model to other student models through SFT",
+     "item": "E2"
+    },
+    {
+     "text": "more persistent when learned through RL than when distilled through SFT",
+     "item": "E3"
+    }
+   ]
   },
   {
    "id": "arXiv:2603.07084",
@@ -367,7 +632,17 @@
    "runs": "seeds not stated",
    "release": "https://github.com/zohaib-khan5040/Countdown-Code",
    "read": "abstract and part of the full text through a reading tool",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "As little as 1% contamination in distillation SFT data",
+     "item": "E2"
+    },
+    {
+     "text": "RL amplifies misalignment",
+     "item": "E3"
+    }
+   ]
   },
   {
    "id": "arXiv:2603.11337",
@@ -387,7 +662,17 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "fully mutable workspaces ... evaluator locking",
+     "item": "B3"
+    },
+    {
+     "text": "scripted attacks ... natural-agent runs",
+     "item": "E1"
+    }
+   ]
   },
   {
    "id": "arXiv:2604.01476",
@@ -406,7 +691,17 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "models can rewrite evaluator code",
+     "item": "B3"
+    },
+    {
+     "text": "When legitimate reward remains scarce, they rebound into successful hacking",
+     "item": "B6"
+    }
+   ]
   },
   {
    "id": "arXiv:2605.02269",
@@ -425,7 +720,21 @@
    "runs": "not stated in the text read",
    "release": "the suite is open source; address not in the abstract",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "RL reasoning training substantially increases the rate",
+     "item": "C1"
+    },
+    {
+     "text": "Increasing RL reasoning budget",
+     "item": "C2"
+    },
+    {
+     "text": "Test-time mitigations",
+     "item": "C3"
+    }
+   ]
   },
   {
    "id": "arXiv:2605.02964",
@@ -444,7 +753,25 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "varying sharply by post-training style",
+     "item": "C1"
+    },
+    {
+     "text": "chain length acts as a proxy for longer-horizon agent behavior",
+     "item": "D3"
+    },
+    {
+     "text": "Simple environmental hardening",
+     "item": "B3"
+    },
+    {
+     "text": "Models with near-zero exploit rates on standard tasks show elevated rates on harder variants",
+     "item": "B6"
+    }
+   ]
   },
   {
    "id": "arXiv:2605.21384",
@@ -463,7 +790,21 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "visible validation tests ... held-out tests",
+     "item": "B5"
+    },
+    {
+     "text": "The gap also scales sharply with task length",
+     "item": "B6"
+    },
+    {
+     "text": "smaller models exhibiting larger gaps",
+     "item": "C1"
+    }
+   ]
   },
   {
    "id": "arXiv:2606.12016",
@@ -482,7 +823,13 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": "Gaming of the training itself; kept because reward and intended outcome are both measured."
+   "note": "Gaming of the training itself; kept because reward and intended outcome are both measured.",
+   "varied": [
+    {
+     "text": "finetuning on synthetic documents describing training awareness and self-inoculation",
+     "item": "new:awareness"
+    }
+   ]
   },
   {
    "id": "arXiv:2608.29460",
@@ -501,7 +848,21 @@
    "runs": "mixed-effects logistic model with a 95% interval",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "an escalation tool",
+     "item": "B3"
+    },
+    {
+     "text": "a standalone anti-reward-hacking policy",
+     "item": "E1"
+    },
+    {
+     "text": "tests they cannot legitimately satisfy",
+     "item": "B6"
+    }
+   ]
   },
   {
    "id": "arXiv:2608.30724",
@@ -520,7 +881,17 @@
    "runs": "not stated in the text read",
    "release": "benchmark, judges and annotated transcripts are released; address not in the abstract",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "a shortcut that allows agents to inflate the public test score",
+     "item": "B2"
+    },
+    {
+     "text": "prompted not to",
+     "item": "E1"
+    }
+   ]
   },
   {
    "id": "arXiv:2611.10404",
@@ -539,7 +910,17 @@
    "runs": "not stated in the text read",
    "release": "https://huggingface.co/datasets/logitly-ai/reward-hacking-raw-v1 (traces)",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "a hardened environment where the answer cannot leak",
+     "item": "B3"
+    },
+    {
+     "text": "concentrated on the hardest problems",
+     "item": "B6"
+    }
+   ]
   },
   {
    "id": "arXiv:2611.14996",
@@ -558,7 +939,13 @@
    "runs": "not stated in the text read",
    "release": "not stated in the text read",
    "read": "abstract",
-   "note": null
+   "note": null,
+   "varied": [
+    {
+     "text": "On impossible or difficult coding tasks, task badness rises over the turns leading up to a hack",
+     "item": "B6"
+    }
+   ]
   },
   {
    "id": "arXiv:2402.07510",
@@ -710,5 +1097,6 @@
   "Studying Coordination and Collusion in Multi-Agent LLM Code Reviews (NeurIPS 2025 listing): several agents and a review step, described in a search summary as using coordination scaffolding; to be read before it is placed",
   "Honeybench, a benchmark for reward hacking announced on LessWrong: not read",
   "Greenblatt et al., AI Control (arXiv:2312.06942): in docs/research-literature.md; an untrusted model and a monitor, to be checked against the checker criterion"
- ]
+ ],
+ "varied_note": "What each study varied or named as a driver, in the words of its abstract or, for the papers read further, its text, with the item it falls under; every phrase was checked against that text on 2026-11-25. An entry starting with new: has no item. One reader made the mapping, from the abstract alone for the records whose read field says abstract. B6 was added to the items because of this mapping."
 }

@@ -13,6 +13,37 @@ about the paper.
 
 Of the 28 records kept, 8 give an address for code or data in the text read.
 
+## What the studies varied or named as a driver
+
+What each study varied or named as a driver, in the words of its abstract or, for the papers read further, its text, with the item it falls under; every phrase was checked against that text on 2026-11-25. An entry starting with new: has no item. One reader made the mapping, from the abstract alone for the records whose read field says abstract. B6 was added to the items because of this mapping.
+
+83 entries in 27 of the 28 records kept, against version 0.2 of the items.
+
+| Item | Studies | Which |
+|---|---|---|
+| B6 How hard the intended work is for these agents: whether it can be done at all within the limits, how often the same agents complete it without the hack or how the required score compares with the best result reached honestly, and whether an agent can decline or report that it cannot be done. | 13 | Hu, Paglieri, Muralimohan, Huang, Wang, Bondarenko, Zhong, Wu, Thaman, Zhao, Gomez, Gui, Fischl-Lanzoni |
+| E1 What the agents were told or shown about hacking, so that the case can be labeled instructed, cued, seeded, spontaneous or trained. | 8 | Hu, Huang, Bondarenko, MacDiarmid, Zhou, Atinafu, Gomez, Prasad |
+| B3 What an agent can read, write and run: files, tools, permissions, network. | 7 | Zhong, Gabor, Atinafu, Wu, Thaman, Gomez, Gui |
+| C1 Each model by exact name and version or date, for every role. | 7 | Hu, Shi, Muralimohan, Bondarenko, Nishimura-Gasparian, Thaman, Zhao |
+| E2 How an initial tendency or knowledge of the hack was introduced: examples, documents or prompt, with amounts. | 7 | Hu, Muralimohan, Wang, Taylor, MacDiarmid, Zhou, Khalifa |
+| D4 Who checks whose work, what the checker sees and how its decision returns to the agents. | 5 | Hu, Mathew, Huang, Baker, Wang |
+| B2 What makes the hack possible, stated so that it can be rebuilt. | 4 | Paglieri, Shi, Zhou, Prasad |
+| B5 What the agents see of the evaluation: tests, scores, feedback between attempts. | 4 | Shi, Huang, Zhong, Zhao |
+| A2 The rewarded signal: the reward, score or approval the agents receive, as computed, with every term and weight. | 3 | Shi, Mathew, Hadida |
+| C4 The agent framework with version, its tools, stop rule and handling of history. | 3 | Shi, Muralimohan, Gabor |
+| D2 Who can pass what to whom: messages, code, memory, plans, shared stores, and who sees them. | 3 | Hu, Paglieri, Muralimohan |
+| E3 The training algorithm. | 3 | Mathew, Zhou, Khalifa |
+| C3 System and task prompts verbatim, including whatever they say about cheating. | 2 | Zhong, Nishimura-Gasparian |
+| D3 The order of turns and rounds. | 2 | Huang, Thaman |
+| E6 The base checkpoint and the training data or mixture of environments. | 2 | Denison, MacDiarmid |
+| B1 The tasks or data: source, version, selection and splits. | 1 | Huang |
+| C2 Sampling settings and limits: temperature, output and context limits, reasoning setting. | 1 | Nishimura-Gasparian |
+| D1 The number of agents and the role of each. | 1 | Shi |
+| D5 How reward or credit is divided among the agents and what competition exists. | 1 | Paglieri |
+| E5 How long training ran, what ended it and how the reported checkpoint was chosen. | 1 | Baker |
+| no item (awareness) | 1 | Xiao |
+| no item (consequences) | 1 | Paglieri |
+
 ## Several acting agents
 
 ### Reward Hacking as a Transmissible Strategy in Multi-Agent Coding Systems
@@ -28,6 +59,7 @@ Of the 28 records kept, 8 give an address for code or data in the text read.
 - **release:** no address in the paper or on its page
 - **read:** see audit.json
 - **note:** Self-review and a separate verifier reduce the delivered hacks without removing them.
+- **varied or named as a driver:** "The system prompt describes all three mechanisms under five framings, ranging from requesting to prohibiting hacking" (E1); "mid-training that models upstream exposure to facts about the coding environment" (E2); "propagation through code and shared memory, and across roles through natural-language plans" (D2); "small open-weight models induce reward hacking in stronger closed-weight targets" (C1); "On hard tasks, propagation can intensify along a transmission chain" (B6); "code review by the coder or a separate verifier" (D4)
 
 ### A Case Study on Emergent Cheating and Whistleblowing in Autonomous Research Swarms
 
@@ -42,6 +74,7 @@ Of the 28 records kept, 8 give an address for code or data in the text read.
 - **release:** no release found in the text read
 - **read:** see audit.json
 - **note:** The system prompt says "Your proofs must be mathematically genuine." Of the 100 agents 9 exploited, 5 converted, 24 blew the whistle, 62 were unaware.
+- **varied or named as a driver:** "a single agent discovered an exploit in the evaluation system" (B2); "propagated across the collective via a shared knowledge library and later through peer-to-peer messages" (D2); "adopted the exploit in response to competitive pressure" (D5); "cheating, which began once the swarm encountered harder open conjectures" (B6); "the rule was not actively enforced beyond the autograder check" (new:consequences)
 
 ### Emergent Collusion in Long-Horizon LLM Agent Interaction
 
@@ -55,6 +88,7 @@ Of the 28 records kept, 8 give an address for code or data in the text read.
 - **runs:** 50 task sequences in the published code; collusion in 94% of trajectories across the ten models
 - **release:** https://github.com/SALT-NLP/agent-collusion
 - **read:** full text for skills/behavior-study/references/verification-collusion.md; code run in this project (docs/agent-collusion-evidence.md)
+- **varied or named as a driver:** "constraints under which higher reward is attainable only by violating the verification protocol" (B2); "collusion is shaped by peer behavior" (D1); "the verification feedback agents receive" (B5); "their interaction history" (C4); "the reward structure" (A2); "more capable models within the same family reach it earlier" (C1)
 
 ### Hidden in Plain Text: Emergence & Mitigation of Steganographic Collusion in LLMs
 
@@ -68,6 +102,7 @@ Of the 28 records kept, 8 give an address for code or data in the text read.
 - **runs:** three seeds for the university dataset: task success 0.99 ± 0.01
 - **release:** https://github.com/olliematthews/lasr-steganography
 - **read:** full text for skills/behavior-study/references/steganographic-collusion.md; code run in this project (docs/steganographic-collusion-evidence.md)
+- **varied or named as a driver:** "mispecified reward incentives during training" (A2); "passive oversight of model outputs and active mitigation through communication paraphrasing" (D4); "a gradient-based reinforcement learning (GBRL) method and an in-context reinforcement learning (ICRL) method" (E3)
 
 ### When Verification Becomes a Training Signal: Reward-Hacking Propagation in Multi-Agent Systems
 
@@ -82,6 +117,7 @@ NeurIPS 2026 workshop listing 174838, Muralimohan et al., 2026. Why it counts: s
 - **release:** "will be made public upon acceptance"
 - **read:** listing page of the workshop only; no arXiv entry found by title
 - **note:** Workshop poster at "The Agentic Web", NeurIPS 2026. Adoption after exposure +13.8%, successful hacking +9.1%.
+- **varied or named as a driver:** "It privately receives verified reward-hacking examples and a trigger instruction" (E2); "Once they enter shared context, they can also influence what other agents do" (D2); "successful execution depends strongly on the receiver model" (C1); "tasks whose written requirements conflict with their tests" (B6); "The effect appears under every communication policy" (D2); "carries over to unseen impossible tasks when an adopter keeps its own earlier history" (C4)
 
 ### OpenAI and Hugging Face incident of July 2026
 
@@ -113,6 +149,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **release:** attack code withheld; prompts and scorer weaknesses available to vetted researchers on request
 - **read:** see audit.json
 - **note:** Spontaneous rate 30.5% on research-pipeline tasks. The panel misses 33 of 505 confirmed hacks; evasion grows over rounds.
+- **varied or named as a driver:** "without instructions to do so ... when hacking is allowed" (E1); "tasks whose pass thresholds exceed our best compliant baselines" (B6); "An LLM panel reviewing only submitted code and reported scores" (D4); "detailed feedback ... generic rejection" (B5); "In a five-round loop" (D3); "open-ended research-pipeline tasks ... task-specific kernels" (B1)
 
 ### Monitoring Reasoning Models for Misbehavior and the Risks of Promoting Obfuscation
 
@@ -127,6 +164,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **release:** not stated in the text read
 - **read:** see audit.json
 - **note:** With strong optimization the agent keeps hacking and hides its intent from the monitor.
+- **varied or named as a driver:** "incorporating a CoT monitor directly into the agent's training objective" (D4); "with too much optimization" (E5)
 
 ### CATCH: A Controllable Analysis Testbed for Reward Hacking in Coding RL
 
@@ -141,6 +179,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **release:** https://github.com/THUAIS-Lab/CATCH
 - **read:** see audit.json
 - **note:** The monitor suppresses hacking at first; the protection erodes as the policy misleads it with code comments.
+- **varied or named as a driver:** "initial hacking tendency through supervised fine-tuning data mixtures" (E2); "the difficulty of earning rewards through reward designing" (B6); "a chain-of-thought monitor initially suppresses hacking" (D4)
 
 
 ## One acting agent and a programmatic check
@@ -157,6 +196,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "a curriculum of increasingly sophisticated gameable environments" (E6); "Retraining an LLM not to game early-curriculum environments" (E6)
 
 ### Demonstrating specification gaming in reasoning models
 
@@ -170,6 +210,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "need to be told that normal play won't work to hack" (E1); "reasoning models may resort to hacking to solve difficult problems" (B6); "reasoning models ... language models" (C1)
 
 ### School of Reward Hacks: Hacking harmless tasks generalizes to misaligned behavior in LLMs
 
@@ -183,6 +224,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "supervised fine-tuning to train models ... to reward hack on these tasks" (E2)
 
 ### ImpossibleBench: Measuring LLMs' Propensity of Exploiting Test Cases
 
@@ -196,6 +238,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** https://github.com/safety-research/impossiblebench
 - **read:** abstract
+- **varied or named as a driver:** "direct conflicts between the natural-language specification and the unit tests" (B6); "how prompt, test access and feedback loop affect cheating rates" (C3); "test access" (B3); "feedback loop" (B5)
 
 ### Natural Emergent Misalignment from Reward Hacking in Production RL
 
@@ -210,6 +253,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **release:** not stated in the text read
 - **read:** abstract
 - **note:** The environments belong to the developer.
+- **varied or named as a driver:** "impart knowledge of reward hacking strategies via synthetic document finetuning or prompting" (E2); "framing reward hacking as acceptable behavior during training" (E1); "increasing the diversity of RLHF safety training" (E6)
 
 ### EvilGenie: A Reward Hacking Benchmark
 
@@ -223,6 +267,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** https://github.com/JonathanGabor/evilgenie_inspect
 - **read:** abstract
+- **varied or named as a driver:** "an environment in which agents can easily reward hack, such as by hardcoding test cases or editing the testing files" (B3); "three popular proprietary coding agents" (C4)
 
 ### Chain-of-thought obfuscation learned from output supervision can generalise to unseen tasks
 
@@ -236,6 +281,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "optimisation pressures placed on the CoT" (A2); "penalise only the model's final actions after closing its CoT" (A2)
 
 ### Alignment Risks from Capability-Seeking RL Training
 
@@ -249,6 +295,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** https://github.com/YujunZhou/Capability-seeking-RL-risk
 - **read:** abstract
+- **varied or named as a driver:** "environments with implicit loopholes" (B2); "even without being explicitly instructed to do so" (E1); "propagate from a capable teacher model to other student models through SFT" (E2); "more persistent when learned through RL than when distilled through SFT" (E3)
 
 ### Countdown-Code: A Testbed for Studying The Emergence and Generalization of Reward Hacking in RLVR
 
@@ -262,6 +309,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** seeds not stated
 - **release:** https://github.com/zohaib-khan5040/Countdown-Code
 - **read:** abstract and part of the full text through a reading tool
+- **varied or named as a driver:** "As little as 1% contamination in distillation SFT data" (E2); "RL amplifies misalignment" (E3)
 
 ### RewardHackingAgents: Benchmarking Evaluation Integrity for LLM ML-Engineering Agents
 
@@ -275,6 +323,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "fully mutable workspaces ... evaluator locking" (B3); "scripted attacks ... natural-agent runs" (E1)
 
 ### From Rebound to Remedy: Understanding and Mitigating Reward Hacking via Representation Engineering
 
@@ -288,6 +337,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "models can rewrite evaluator code" (B3); "When legitimate reward remains scarce, they rebound into successful hacking" (B6)
 
 ### Towards Understanding Specification Gaming in Reasoning Models
 
@@ -301,6 +351,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** the suite is open source; address not in the abstract
 - **read:** abstract
+- **varied or named as a driver:** "RL reasoning training substantially increases the rate" (C1); "Increasing RL reasoning budget" (C2); "Test-time mitigations" (C3)
 
 ### Reward Hacking Benchmark: Measuring Exploits in LLM Agents with Tool Use
 
@@ -314,6 +365,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "varying sharply by post-training style" (C1); "chain length acts as a proxy for longer-horizon agent behavior" (D3); "Simple environmental hardening" (B3); "Models with near-zero exploit rates on standard tasks show elevated rates on harder variants" (B6)
 
 ### SpecBench: Measuring Reward Hacking in Long-Horizon Coding Agents
 
@@ -327,6 +379,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "visible validation tests ... held-out tests" (B5); "The gap also scales sharply with task length" (B6); "smaller models exhibiting larger gaps" (C1)
 
 ### Generalization Hacking: Models Can Game Reinforcement Learning by Preventing Behavioral Generalization
 
@@ -341,6 +394,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **release:** not stated in the text read
 - **read:** abstract
 - **note:** Gaming of the training itself; kept because reward and intended outcome are both measured.
+- **varied or named as a driver:** "finetuning on synthetic documents describing training awareness and self-inoculation" (new:awareness)
 
 ### Can escalation channels redirect reward hacking toward defect disclosure?
 
@@ -354,6 +408,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** mixed-effects logistic model with a 95% interval
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "an escalation tool" (B3); "a standalone anti-reward-hacking policy" (E1); "tests they cannot legitimately satisfy" (B6)
 
 ### BAITBENCH: Measuring Agent Reward Hacking with Optional Shortcuts Planted in ML Tasks
 
@@ -367,6 +422,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** benchmark, judges and annotated transcripts are released; address not in the abstract
 - **read:** abstract
+- **varied or named as a driver:** "a shortcut that allows agents to inflate the public test score" (B2); "prompted not to" (E1)
 
 ### Coding or Cheating? An Investigation of Frontier Coding LLMs
 
@@ -380,6 +436,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** https://huggingface.co/datasets/logitly-ai/reward-hacking-raw-v1 (traces)
 - **read:** abstract
+- **varied or named as a driver:** "a hardened environment where the answer cannot leak" (B3); "concentrated on the hardest problems" (B6)
 
 ### Breaking Bad: "Going Badly" Activations Drive Reward Hacking
 
@@ -393,6 +450,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
 - **read:** abstract
+- **varied or named as a driver:** "On impossible or difficult coding tasks, task badness rises over the turns leading up to a hack" (B6)
 
 
 ## Left out
