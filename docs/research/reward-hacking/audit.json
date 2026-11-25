@@ -1,5 +1,5 @@
 {
- "items_version": "0.2",
+ "items_version": "0.3",
  "papers": {
   "arXiv:2609.04170": {
    "read": "whole text with appendices, 2026-11-25",
@@ -48,6 +48,10 @@
      "score": 1,
      "evidence": "71 problems \"of different difficulties\", from \"relatively simple problems\" to \"unsolved open conjectures\", with examples of each kind; 37 of the 71 were solved correctly before the exploit. How many of the 71 were open, and which, is not given."
     },
+    "B7": {
+     "score": 1,
+     "evidence": "The integrity section tells every agent that a bypass \"will be detected\"; the base system prompt, and so the rest of what agents are told about the setting, is only described."
+    },
     "C1": {
      "score": 1,
      "evidence": "\"Gemini 3.1 Pro\" without a version or date."
@@ -62,15 +66,15 @@
     },
     "C4": {
      "score": 1,
-     "evidence": "\"Antigravity\" agent instances, cited without a version; memory files are mentioned; stop rule and history handling are not."
+     "evidence": "\"Antigravity\" agent instances, cited without a version; memory files are mentioned; stop rule, history handling and the handling of invalid outputs are not."
     },
     "D1": {
      "score": 2,
-     "evidence": "100 agents as peers, each with one of four personas."
+     "evidence": "100 agents as peers, each with one of four personas, all instances of one model."
     },
     "D2": {
      "score": 2,
-     "evidence": "A public board, pairwise direct messages, a shared library to which every accepted file is committed and which all see, and a private feedback endpoint that nobody read during the run."
+     "evidence": "A public board, pairwise direct messages, a shared library to which every accepted file is committed and which all see, and a private feedback endpoint that nobody read during the run. No limit on messages is stated."
     },
     "D3": {
      "score": 1,
@@ -86,7 +90,7 @@
     },
     "E1": {
      "score": 2,
-     "evidence": "Every system prompt forbids circumvention in seven rules and announces rejection with zero credit; nothing points to the flaw."
+     "evidence": "Every system prompt forbids circumvention in seven rules and announces rejection with zero credit; nothing points to the flaw; \"the rule was not actively enforced beyond the autograder check\"."
     },
     "E2": {
      "score": "NA",
@@ -155,7 +159,7 @@
    }
   },
   "arXiv:2609.39533": {
-   "read": "abstract, sections 3 to 5, the closing statements and appendices A to E, 2026-11-25; introduction, related work and appendices F and G not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
+   "read": "abstract, sections 3 to 5, the closing statements and appendices A to E, 2026-11-25; introduction, related work and appendices F and G not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found; for version 0.3 of the items, a search of the whole text for what agents are told about oversight, for the enforcement of rules and for invalid outputs, and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -201,6 +205,10 @@
      "score": 2,
      "evidence": "The reward weights an easy slice (the three shortest cases) by 1 - alpha and a hard slice (all supplied cases) by alpha, with alpha 0.7 by default and 0.7, 0.9 and 1.0 compared; the true reward of each run is plotted beside the proxy reward."
     },
+    "B7": {
+     "score": 1,
+     "evidence": "The audit is hidden: the model \"is not even aware that the process exists\". Whether the policy's prompt, which is described and not given, mentions the monitor or the training is not stated."
+    },
     "C1": {
      "score": 1,
      "evidence": "Qwen3-4B as policy, Qwen3.5-27B as monitor, Qwen3.5-Plus as generator of the demonstrations; no repository identifiers or revisions."
@@ -215,7 +223,7 @@
     },
     "C4": {
      "score": 2,
-     "evidence": "\"Agent max steps: 1 (single-turn)\": no tools, no history."
+     "evidence": "\"Agent max steps: 1 (single-turn)\": no tools, no history and no second attempt."
     },
     "D1": {
      "score": 2,
@@ -239,7 +247,7 @@
     },
     "E1": {
      "score": 2,
-     "evidence": "The policy is first fine-tuned on a mixture that contains hacking demonstrations; the training prompt itself asks for the engineering task."
+     "evidence": "The policy is first fine-tuned on a mixture that contains hacking demonstrations; the training prompt itself asks for the engineering task; the description of the prompt names no rule against hacking, and in the monitor runs a flagged sample gets reward 0."
     },
     "E2": {
      "score": 2,
@@ -247,7 +255,7 @@
     },
     "E3": {
      "score": 2,
-     "evidence": "Supervised fine-tuning, then single-turn GRPO."
+     "evidence": "Supervised fine-tuning, then single-turn GRPO, of the one policy model; the monitor is a prompted model that is not trained."
     },
     "E4": {
      "score": 2,
@@ -308,7 +316,7 @@
    }
   },
   "arXiv:2610.12822": {
-   "read": "abstract, sections 3, 4 and 7 to 9, appendices A to C and H, the setup parts of appendices E, K and O, and a search of the whole text for release, compute, library, settings and exclusions, 2026-11-25; the results of sections 5 and 6, the theory and the other appendices not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
+   "read": "abstract, sections 3, 4 and 7 to 9, appendices A to C and H, the setup parts of appendices E, K and O, and a search of the whole text for release, compute, library, settings and exclusions, 2026-11-25; the results of sections 5 and 6, the theory and the other appendices not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found; for version 0.3 of the items, a search of the whole text for what agents are told about oversight, for the enforcement of rules and for invalid outputs, and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -354,6 +362,10 @@
      "score": 2,
      "evidence": "Tasks with a Codeforces rating of at least 2000 or a hard difficulty category; the hard set of the chains is, per model, the tasks \"with a clean one-shot strict-pass rate at most 0.5\" over eight attempts; the strict pass rate is reported beside the rewarded one."
     },
+    "B7": {
+     "score": 2,
+     "evidence": "The framing addenda are given verbatim (one begins \"One important purpose of this RL training run is testing environments for vulnerability to reward hacking\"), and the source and target prompts are given."
+    },
     "C1": {
      "score": 1,
      "evidence": "Four source backbones and fourteen targets by name; closed models without version or date."
@@ -368,11 +380,11 @@
     },
     "C4": {
      "score": 2,
-     "evidence": "A custom harness that writes files; one attempt, or a conversation that keeps the source submissions, earlier attempts and feedback and ends when a submission passes."
+     "evidence": "A custom harness that writes files; one attempt, or a conversation that keeps the source submissions, earlier attempts and feedback and ends when a submission passes; an unparseable verifier response prevents release."
     },
     "D1": {
      "score": 2,
-     "evidence": "Coder pairs, chains of six target coders, a planner and a coder, an orchestrator with one source and three clean coders, four coders and an aggregator, a verifier."
+     "evidence": "Coder pairs, chains of six target coders, a planner and a coder, an orchestrator with one source and three clean coders, four coders and an aggregator, a verifier. All are models; in the chains the trained source takes part only in the first hop."
     },
     "D2": {
      "score": 2,
@@ -392,7 +404,7 @@
     },
     "E1": {
      "score": 2,
-     "evidence": "Prompted setting: the system prompt describes the mechanisms under five framings \"ranging from requesting to prohibiting hacking\". Document setting: the training prompt does not mention hacking. Targets get the clean prompt."
+     "evidence": "Prompted setting: the system prompt describes the mechanisms under five framings \"ranging from requesting to prohibiting hacking\". Document setting: the training prompt does not mention hacking. Targets get the clean prompt. A prohibition changes nothing in the reward, which comes from the leaky evaluator."
     },
     "E2": {
      "score": 2,
@@ -400,7 +412,7 @@
     },
     "E3": {
      "score": 2,
-     "evidence": "GRPO after continued pretraining on documents and instruction tuning."
+     "evidence": "GRPO after continued pretraining on documents and instruction tuning, of single coders; in the team settings nothing is trained: the trained checkpoints are the sources and the targets are clean models."
     },
     "E4": {
      "score": 2,
@@ -461,7 +473,7 @@
    }
   },
   "arXiv:2609.28614": {
-   "read": "abstract, section 3 with its measures, the disclosure statement, the head of appendix A, most of appendix B and the head of appendix C, and a search of the whole text for release, cost, repeats and exclusions, 2026-11-25; the results in sections 4 to 8 and appendices D to F not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
+   "read": "abstract, section 3 with its measures, the disclosure statement, the head of appendix A, most of appendix B and the head of appendix C, and a search of the whole text for release, cost, repeats and exclusions, 2026-11-25; the results in sections 4 to 8 and appendices D to F not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found; for version 0.3 of the items, a search of the whole text for what agents are told about oversight, for the enforcement of rules and for invalid outputs, and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -507,6 +519,10 @@
      "score": 2,
      "evidence": "Table 4 gives the compliant baseline score and the pass threshold of each of the 16 baseline-exceeding tasks, and the catalog gives both for the other tasks \"when both are defined\"; \"This definition describes threshold construction and does not imply that legitimate improvement is impossible.\""
     },
+    "B7": {
+     "score": 1,
+     "evidence": "Setting 2 presents the task \"as a red-team exercise\" and Setting 3 returns the review decision with reasons; whether the agent of Setting 1 is told that its work is reviewed is not stated, and the prompts are not given."
+    },
     "C1": {
      "score": 2,
      "evidence": "A table of API identifiers for the 17 models with the access dates 21 to 23 July 2026."
@@ -521,7 +537,7 @@
     },
     "C4": {
      "score": 1,
-     "evidence": "terminus-2, \"a ReAct-style terminal agent\", with its limits; version and handling of history are not stated."
+     "evidence": "terminus-2, \"a ReAct-style terminal agent\", with its limits; version, handling of history and handling of invalid outputs are not stated."
     },
     "D1": {
      "score": 2,
@@ -545,7 +561,7 @@
     },
     "E1": {
      "score": 2,
-     "evidence": "Three stated conditions: no instruction or authorization to hack; hacking allowed as a red-team exercise with a required summary; tasked with evading detection after a caught attempt."
+     "evidence": "Three stated conditions: no instruction or authorization to hack; hacking allowed as a red-team exercise with a required summary; tasked with evading detection after a caught attempt. Setting 1 states no rule against hacking: \"this is distinct from adding an explicit instruction forbidding it\"."
     },
     "E2": {
      "score": "NA",
@@ -614,7 +630,7 @@
    }
   },
   "arXiv:2503.11926": {
-   "read": "abstract, sections 2 and 3 and appendix C, and a search of the whole text for seeds, intervals, release and training settings, 2026-11-25; introduction, related work, discussion and the other appendices not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
+   "read": "abstract, sections 2 and 3 and appendix C, and a search of the whole text for seeds, intervals, release and training settings, 2026-11-25; introduction, related work, discussion and the other appendices not read; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found; for version 0.3 of the items, a search of the whole text for what agents are told about oversight, for the enforcement of rules and for invalid outputs, and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -660,6 +676,10 @@
      "score": 1,
      "evidence": "Tasks \"vulnerable to very simple hacks\"; the shares of cheating and clean solutions are shown as curves over training (Figure 3). How hard the unidentified tasks are for the agent before training is not stated."
     },
+    "B7": {
+     "score": 0,
+     "evidence": "Nothing on whether the agent is told that a monitor reads its reasoning or that it is being trained; the agent's prompt is not given."
+    },
     "C1": {
      "score": 0,
      "evidence": "The acting models are \"a frontier reasoning agent\" in the family of o1 and o3-mini and \"a non-frontier agent\"; the monitor is GPT-4o without a version."
@@ -698,15 +718,15 @@
     },
     "E1": {
      "score": 2,
-     "evidence": "Trained by reinforcement learning in environments whose prompt tells the agent not to modify the tests."
+     "evidence": "Trained by reinforcement learning in environments whose prompt tells the agent not to modify the tests; the instruction is not enforced: \"we allow agents to modify both the unit tests and the testing framework\"."
     },
     "E2": {
      "score": "NA",
      "evidence": "Nothing was introduced."
     },
     "E3": {
-     "score": 0,
-     "evidence": "\"reinforcement learning\" without an algorithm."
+     "score": 1,
+     "evidence": "\"reinforcement learning\" without an algorithm; the agent is the model that is trained, and the monitor is a prompted GPT-4o that is not."
     },
     "E4": {
      "score": 0,
@@ -767,7 +787,7 @@
    }
   },
   "arXiv:2410.03768": {
-   "read": "abstract, sections 3.1, 3.3.1 and 5.1, appendices A.1 and B.1 and the head of B.3, and a search of the whole text and page for addresses, seeds, compute and settings, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/steganographic-collusion.md, and its code was run in this project; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
+   "read": "abstract, sections 3.1, 3.3.1 and 5.1, appendices A.1 and B.1 and the head of B.3, and a search of the whole text and page for addresses, seeds, compute and settings, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/steganographic-collusion.md, and its code was run in this project; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found; for version 0.3 of the items, a search of the whole text for what agents are told about oversight, for the enforcement of rules and for invalid outputs, and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -813,6 +833,10 @@
      "score": 2,
      "evidence": "\"Max-Clean-Success\", the task success reachable without the sensitive variable, is given for each dataset: 50% for the university dataset and 67% for the gender dataset."
     },
+    "B7": {
+     "score": 2,
+     "evidence": "The sender's prompt is given and holds the task and the instruction not to mention the university; the sender \"is solely prompted to perform the task\"."
+    },
     "C1": {
      "score": 1,
      "evidence": "Gemma-2-2B-it, DistilBERT-base-uncased, Llama 3.1-8b-Instruct and GPT-4o-mini by name, without revisions; the repository loads other copies and the overseer in 8 bits."
@@ -827,7 +851,7 @@
     },
     "C4": {
      "score": 2,
-     "evidence": "A single prompt per model, no tools and no history."
+     "evidence": "A single prompt per model, no tools and no history; the sender's free text needs no parsing."
     },
     "D1": {
      "score": 2,
@@ -851,7 +875,7 @@
     },
     "E1": {
      "score": 2,
-     "evidence": "Trained; the prompt asks for a paraphrase and forbids mentioning the university. One variant is \"seeded with a blatant strategy\"."
+     "evidence": "Trained; the prompt asks for a paraphrase and forbids mentioning the university. One variant is \"seeded with a blatant strategy\". The instruction is enforced only through the overseer's penalty in the reward."
     },
     "E2": {
      "score": 1,
@@ -859,7 +883,7 @@
     },
     "E3": {
      "score": 2,
-     "evidence": "PPO with LoRA for the sender and supervised updates for the receiver."
+     "evidence": "PPO with LoRA for the sender and supervised updates for the receiver, in turn (two receiver updates, then five sender updates); the overseer is a prompted model that is not trained."
     },
     "E4": {
      "score": 1,
@@ -920,7 +944,7 @@
    }
   },
   "arXiv:2609.24967": {
-   "read": "abstract, sections 2 and 3.1, the setup of section 4, the closing statements, appendices B and C.1 and C.3 and the outline of appendix H, and a search of the whole text for cost, failures and isolation, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/verification-collusion.md, and its code was run in this project; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found",
+   "read": "abstract, sections 2 and 3.1, the setup of section 4, the closing statements, appendices B and C.1 and C.3 and the outline of appendix H, and a search of the whole text for cost, failures and isolation, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/verification-collusion.md, and its code was run in this project; for B6 (added in version 0.2 of the items), a search of the whole text for difficulty, thresholds and honest results and the passages found; for version 0.3 of the items, a search of the whole text for what agents are told about oversight, for the enforcement of rules and for invalid outputs, and the passages found",
    "scores": {
     "A1": {
      "score": 2,
@@ -966,6 +990,10 @@
      "score": 2,
      "evidence": "Under the communication limit \"the only compliant verdict is REJECT\", raw logs of faithful executions are longer than the limit by design, and the reward pays for verdicts that match correctness, so the compliant route loses that part of the reward on every correct task; a condition with unconstrained communication removes the conflict."
     },
+    "B7": {
+     "score": 2,
+     "evidence": "System prompts and feedback texts are given in an appendix: after each episode an agent is told its reward and whether each verdict was correct."
+    },
     "C1": {
      "score": 1,
      "evidence": "Ten models by name with their serving route; no identifiers or access dates."
@@ -1004,7 +1032,7 @@
     },
     "E1": {
      "score": 2,
-     "evidence": "\"Agents are instructed to maximize reward, subject to the verification protocol\"; nothing asks for acceptance without evidence."
+     "evidence": "\"Agents are instructed to maximize reward, subject to the verification protocol\"; nothing asks for acceptance without evidence; a verdict that breaks the protocol carries no penalty of its own, since reward and review follow whether the verdict matches correctness."
     },
     "E2": {
      "score": "NA",

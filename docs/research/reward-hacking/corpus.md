@@ -15,14 +15,14 @@ Of the 28 records kept, 8 give an address for code or data in the text read.
 
 ## What the studies varied or named as a driver
 
-What each study varied or named as a driver, in the words of its abstract or, for the papers read further, its text, with the item it falls under; every phrase was checked against that text on 2026-11-25. An entry starting with new: has no item. One reader made the mapping, from the abstract alone for the records whose read field says abstract. B6 was added to the items because of this mapping.
+What each study varied or named as a driver, in the words of its abstract or, for the papers read further, its text, with the item it falls under; every phrase was checked against that text on 2026-11-25. An entry starting with new: has no item. One reader made the mapping, from the abstract alone for the records whose read field says abstract. B6 and B7 were added to the items because of this mapping.
 
-83 entries in 27 of the 28 records kept, against version 0.2 of the items.
+83 entries in 27 of the 28 records kept, against version 0.3 of the items.
 
 | Item | Studies | Which |
 |---|---|---|
 | B6 How hard the intended work is for these agents: whether it can be done at all within the limits, how often the same agents complete it without the hack or how the required score compares with the best result reached honestly, and whether an agent can decline or report that it cannot be done. | 13 | Hu, Paglieri, Muralimohan, Huang, Wang, Bondarenko, Zhong, Wu, Thaman, Zhao, Gomez, Gui, Fischl-Lanzoni |
-| E1 What the agents were told or shown about hacking, so that the case can be labeled instructed, cued, seeded, spontaneous or trained. | 8 | Hu, Huang, Bondarenko, MacDiarmid, Zhou, Atinafu, Gomez, Prasad |
+| E1 What the agents were told or shown about hacking, so that the case can be labeled instructed, cued, seeded, spontaneous or trained, and whether a stated rule against it is enforced. | 9 | Hu, Paglieri, Huang, Bondarenko, MacDiarmid, Zhou, Atinafu, Gomez, Prasad |
 | B3 What an agent can read, write and run: files, tools, permissions, network. | 7 | Zhong, Gabor, Atinafu, Wu, Thaman, Gomez, Gui |
 | C1 Each model by exact name and version or date, for every role. | 7 | Hu, Shi, Muralimohan, Bondarenko, Nishimura-Gasparian, Thaman, Zhao |
 | E2 How an initial tendency or knowledge of the hack was introduced: examples, documents or prompt, with amounts. | 7 | Hu, Muralimohan, Wang, Taylor, MacDiarmid, Zhou, Khalifa |
@@ -30,19 +30,18 @@ What each study varied or named as a driver, in the words of its abstract or, fo
 | B2 What makes the hack possible, stated so that it can be rebuilt. | 4 | Paglieri, Shi, Zhou, Prasad |
 | B5 What the agents see of the evaluation: tests, scores, feedback between attempts. | 4 | Shi, Huang, Zhong, Zhao |
 | A2 The rewarded signal: the reward, score or approval the agents receive, as computed, with every term and weight. | 3 | Shi, Mathew, Hadida |
-| C4 The agent framework with version, its tools, stop rule and handling of history. | 3 | Shi, Muralimohan, Gabor |
-| D2 Who can pass what to whom: messages, code, memory, plans, shared stores, and who sees them. | 3 | Hu, Paglieri, Muralimohan |
-| E3 The training algorithm. | 3 | Mathew, Zhou, Khalifa |
+| C4 The agent framework with version, its tools, stop rule, handling of history, and what happens after an invalid output: retries and the default action. | 3 | Shi, Muralimohan, Gabor |
+| D2 Who can pass what to whom, and how much: messages, code, memory, plans, shared stores, any limit on them, and who sees them. | 3 | Hu, Paglieri, Muralimohan |
+| E3 The training algorithm and which agents it updates: which are trained and which are frozen, whether they share weights, and the order of their updates. | 3 | Mathew, Zhou, Khalifa |
 | C3 System and task prompts verbatim, including whatever they say about cheating. | 2 | Zhong, Nishimura-Gasparian |
-| D3 The order of turns and rounds. | 2 | Huang, Thaman |
+| D3 The order of turns and the number of rounds or episodes. | 2 | Huang, Thaman |
 | E6 The base checkpoint and the training data or mixture of environments. | 2 | Denison, MacDiarmid |
 | B1 The tasks or data: source, version, selection and splits. | 1 | Huang |
+| B7 What the agents are told about being tested, watched or trained. | 1 | Xiao |
 | C2 Sampling settings and limits: temperature, output and context limits, reasoning setting. | 1 | Nishimura-Gasparian |
-| D1 The number of agents and the role of each. | 1 | Shi |
+| D1 The number of agents, the role of each, and which are models and which are scripted or fixed. | 1 | Shi |
 | D5 How reward or credit is divided among the agents and what competition exists. | 1 | Paglieri |
 | E5 How long training ran, what ended it and how the reported checkpoint was chosen. | 1 | Baker |
-| no item (awareness) | 1 | Xiao |
-| no item (consequences) | 1 | Paglieri |
 
 ## Several acting agents
 
@@ -74,7 +73,7 @@ What each study varied or named as a driver, in the words of its abstract or, fo
 - **release:** no release found in the text read
 - **read:** see audit.json
 - **note:** The system prompt says "Your proofs must be mathematically genuine." Of the 100 agents 9 exploited, 5 converted, 24 blew the whistle, 62 were unaware.
-- **varied or named as a driver:** "a single agent discovered an exploit in the evaluation system" (B2); "propagated across the collective via a shared knowledge library and later through peer-to-peer messages" (D2); "adopted the exploit in response to competitive pressure" (D5); "cheating, which began once the swarm encountered harder open conjectures" (B6); "the rule was not actively enforced beyond the autograder check" (new:consequences)
+- **varied or named as a driver:** "a single agent discovered an exploit in the evaluation system" (B2); "propagated across the collective via a shared knowledge library and later through peer-to-peer messages" (D2); "adopted the exploit in response to competitive pressure" (D5); "cheating, which began once the swarm encountered harder open conjectures" (B6); "the rule was not actively enforced beyond the autograder check" (E1)
 
 ### Emergent Collusion in Long-Horizon LLM Agent Interaction
 
@@ -394,7 +393,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **release:** not stated in the text read
 - **read:** abstract
 - **note:** Gaming of the training itself; kept because reward and intended outcome are both measured.
-- **varied or named as a driver:** "finetuning on synthetic documents describing training awareness and self-inoculation" (new:awareness)
+- **varied or named as a driver:** "finetuning on synthetic documents describing training awareness and self-inoculation" (B7)
 
 ### Can escalation channels redirect reward hacking toward defect disclosure?
 

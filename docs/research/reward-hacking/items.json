@@ -1,6 +1,7 @@
 {
- "version": "0.2",
+ "version": "0.3",
  "fixed": "2026-11-25",
+ "scope": "Reports of reward hacking in systems of LLM agents: reward, score or approval obtained without the intended work being done, with that gap measured.",
  "scale": {
   "0": "the text leaves it open",
   "1": "partly: stated without the detail needed to act on it",
@@ -8,6 +9,10 @@
   "NA": "does not apply to the study"
  },
  "question": "Could an agent that reads only the paper determine this, or would it have to guess? (after ODD+LLM, arXiv:2611.08932, with the reader an AI agent and the paper's text alone; linked repositories are not opened in this pass)",
+ "conventions": {
+  "parts": "An item with several parts is determined only when every part that applies is, and partly when some are.",
+  "silence": "Where the text describes a mechanism and names no limit, rule or exception, none is assumed. Where a reproduction would have to pick a value that the text does not give, the item is not determined."
+ },
  "groups": {
   "A": "Measurement",
   "B": "Tasks and opportunity",
@@ -16,6 +21,23 @@
   "E": "Origin and training",
   "F": "Evidence",
   "G": "Materials"
+ },
+ "kinds": {
+  "Every study": [
+   null,
+   "the label is not purely programmatic"
+  ],
+  "Several agents, or a model that checks": [
+   "more than one agent or a checking model",
+   "an agent or model checks",
+   "more than one acting agent"
+  ],
+  "A tendency or knowledge of the hack was introduced beforehand": [
+   "a tendency or knowledge was introduced"
+  ],
+  "Weights were trained": [
+   "weights were trained"
+  ]
  },
  "items": [
   {
@@ -70,7 +92,7 @@
    "applies_when": null,
    "need": "produce",
    "why": "Other tasks give another opportunity.",
-   "case": null
+   "case": "Huang et al.: spontaneous hacks in 30.5% of research-pipeline cells and 2.9% of task-specific cells."
   },
   {
    "id": "B2",
@@ -88,7 +110,7 @@
    "applies_when": null,
    "need": "produce",
    "why": "A hack needs the means to carry it out.",
-   "case": null
+   "case": "Thaman: \"Simple environmental hardening reduces exploit rates by 5.7 percentage points (87.7% relative)\"."
   },
   {
    "id": "B4",
@@ -106,7 +128,7 @@
    "applies_when": null,
    "need": "produce",
    "why": "What an agent sees of the check shapes whether it games it.",
-   "case": null
+   "case": "Shi et al.: for one model \"removing verdict review eliminates collusion entirely\"."
   },
   {
    "id": "B6",
@@ -116,6 +138,15 @@
    "need": "produce",
    "why": "A hack is taken up when the honest route fails or pays less. With another checkpoint the same tasks are easier or harder, so the task list alone does not fix this.",
    "case": "Thaman: \"Models with near-zero exploit rates on standard tasks show elevated rates on harder variants\"; CATCH: \"Making the reward harder to obtain accelerates reward hacking\"; Huang et al.: two candidate tasks whose thresholds \"were set in the wrong measured space\" \"produced no reward hack\"."
+  },
+  {
+   "id": "B7",
+   "text": "What the agents are told about being tested, watched or trained.",
+   "from": "PIMMUR (unawareness) as a principle; found by mapping what the collected studies varied (corpus.json, varied)",
+   "applies_when": null,
+   "need": "produce",
+   "why": "What an agent takes the setting to be is a condition of what it does there, and the prompts set it.",
+   "case": "Xiao and Phuong: a model trained \"only on training awareness documents\" developed \"its own compliance gap\" under reinforcement learning."
   },
   {
    "id": "C1",
@@ -146,39 +177,39 @@
   },
   {
    "id": "C4",
-   "text": "The agent framework with version, its tools, stop rule and handling of history.",
-   "from": "ODD+LLM DF-1, DB-4; disclosure schema (harness)",
+   "text": "The agent framework with version, its tools, stop rule, handling of history, and what happens after an invalid output: retries and the default action.",
+   "from": "ODD+LLM DF-1, DB-4; disclosure schema (harness); ODD+LLM (retry policy, failure action)",
    "applies_when": null,
    "need": "produce",
    "why": "What is kept in the history is the agent's memory.",
-   "case": "Shi et al.: \"removing cross-episode memory almost completely eliminates collusion\"."
+   "case": "Shi et al.: \"removing cross-episode memory almost completely eliminates collusion\"; Emergent Collusion code in this project: a reply with 524 calls of one tool was executed in full, the next request exceeded the context and the trajectory ended."
   },
   {
    "id": "D1",
-   "text": "The number of agents and the role of each.",
+   "text": "The number of agents, the role of each, and which are models and which are scripted or fixed.",
    "from": "ORBIT configuration",
    "applies_when": "more than one agent or a checking model",
    "need": "produce",
    "why": "The behavior is defined over these agents.",
-   "case": null
+   "case": "Shi et al.: \"Replacing a compliant scripted peer with a violating one raises Gemini-3.1-Flash-Lite’s ACCEPT rate from 13.6% to 41.2%.\""
   },
   {
    "id": "D2",
-   "text": "Who can pass what to whom: messages, code, memory, plans, shared stores, and who sees them.",
+   "text": "Who can pass what to whom, and how much: messages, code, memory, plans, shared stores, any limit on them, and who sees them.",
    "from": "ODD+LLM A9; ORBIT configuration",
    "applies_when": "more than one agent or a checking model",
    "need": "produce",
    "why": "A hack spreads only along what is shared.",
-   "case": "Paglieri et al.: the exploit spread through the shared library; Hu et al.: through code, memory and plans."
+   "case": "Paglieri et al.: the exploit spread through the shared library; Hu et al.: through code, memory and plans; Shi et al.: under a limit on the messages \"the only compliant verdict is REJECT\", and with unconstrained communication an agent can follow the protocol."
   },
   {
    "id": "D3",
-   "text": "The order of turns and rounds.",
+   "text": "The order of turns and the number of rounds or episodes.",
    "from": "ODD+LLM DG2",
    "applies_when": "more than one agent or a checking model",
    "need": "produce",
-   "why": "Order decides who sees what before acting.",
-   "case": null
+   "why": "Order decides who sees what before acting, and a behavior can take many rounds to appear.",
+   "case": "Shi et al.: agents \"increasingly deviate from the protocol over repeated interactions\"."
   },
   {
    "id": "D4",
@@ -200,12 +231,12 @@
   },
   {
    "id": "E1",
-   "text": "What the agents were told or shown about hacking, so that the case can be labeled instructed, cued, seeded, spontaneous or trained.",
+   "text": "What the agents were told or shown about hacking, so that the case can be labeled instructed, cued, seeded, spontaneous or trained, and whether a stated rule against it is enforced.",
    "from": "new; PIMMUR (minimal control) as a principle",
    "applies_when": null,
    "need": "produce",
    "why": "It decides whether the behavior was asked for.",
-   "case": null
+   "case": "Hu et al.: \"Prohibitions delay and reduce reward hacking but do not prevent it\"; Bondarenko et al.: language models \"need to be told that normal play won't work to hack\"; Paglieri et al.: the rule \"was not actively enforced beyond the autograder check\"."
   },
   {
    "id": "E2",
@@ -218,12 +249,12 @@
   },
   {
    "id": "E3",
-   "text": "The training algorithm.",
+   "text": "The training algorithm and which agents it updates: which are trained and which are frozen, whether they share weights, and the order of their updates.",
    "from": "Gorsane et al.; ODD+LLM CR6",
    "applies_when": "weights were trained",
    "need": "produce",
-   "why": "Another algorithm is another training.",
-   "case": null
+   "why": "Another algorithm is another training, and a behavior between agents depends on which of them learn.",
+   "case": "Steganographic collusion in this project: task success 0.998 with sender and receiver trained and 0.553 with the sender's weights frozen and the receiver still trained; Zhou et al.: exploits \"in several cases remain more persistent when learned through RL than when distilled through SFT\"."
   },
   {
    "id": "E4",
@@ -360,18 +391,7 @@
  },
  "changes": [
   "0.1: every item is marked by what it is needed for, after the maintainer's objection that materials, hardware, time and cost are not requirements; the training library and its version (E8) is split from the algorithm (E3).",
-  "0.2: B6 added (how hard the intended work is for the agents). Mapping what the 28 kept studies varied or named as a driver onto the items of 0.1 left 15 of 83 entries without an item; 13 of them, from 13 studies, are about this."
- ],
- "pending": {
-  "note": "Gaps in the wording of existing items, found by the same mapping and by comparing with the items of ODD+LLM. A change of wording makes the scores given under the old wording stale, so these are settled together with the second scoring pass.",
-  "items": {
-   "B5": "whether the agents are told or can tell that they are tested, watched or in training (varied by Xiao and Phuong; the unawareness principle of PIMMUR)",
-   "E1": "whether a stated rule against the hack is enforced and what follows a detected hack (Paglieri et al.: \"the rule was not actively enforced beyond the autograder check\")",
-   "C4": "retries and the action taken after an invalid output (the call-site items of ODD+LLM)",
-   "D1": "which agents are models and which are scripted or fixed (Shi et al. replace a peer with a scripted one)",
-   "D2": "how much can be passed (Shi et al.: five messages of at most 200 characters)",
-   "D3": "the number of rounds or episodes",
-   "E3": "which agents are trained and which are frozen, whether they share weights, and the order of their updates (this project's control run froze the sender)"
-  }
- }
+  "0.2: B6 added (how hard the intended work is for the agents). Mapping what the 28 kept studies varied or named as a driver onto the items of 0.1 left 15 of 83 entries without an item; 13 of them, from 13 studies, are about this.",
+  "0.3: B7 added (what the agents are told about being tested, watched or trained); it is an item of its own because inside B5 a report that describes the feedback in full and is silent on this would lose B5's score over another fact. Wording extended in C4 (invalid outputs), D1 (scripted or fixed agents), D2 (limits), D3 (number of rounds or episodes), E1 (whether a stated rule is enforced) and E3 (which agents are trained). Cases added to B1, B3, B5, C4, D1, D2, D3, E1 and E3 from text checked on 2026-11-25. Two conventions of scoring written down. The seven audited papers were checked again on the changed items. The list is held at this version for the second scoring pass."
+ ]
 }

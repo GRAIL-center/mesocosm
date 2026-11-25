@@ -89,7 +89,7 @@
     },
     {
      "text": "the rule was not actively enforced beyond the autograder check",
-     "item": "new:consequences"
+     "item": "E1"
     }
    ]
   },
@@ -827,7 +827,7 @@
    "varied": [
     {
      "text": "finetuning on synthetic documents describing training awareness and self-inoculation",
-     "item": "new:awareness"
+     "item": "B7"
     }
    ]
   },
@@ -1098,5 +1098,5 @@
   "Honeybench, a benchmark for reward hacking announced on LessWrong: not read",
   "Greenblatt et al., AI Control (arXiv:2312.06942): in docs/research-literature.md; an untrusted model and a monitor, to be checked against the checker criterion"
  ],
- "varied_note": "What each study varied or named as a driver, in the words of its abstract or, for the papers read further, its text, with the item it falls under; every phrase was checked against that text on 2026-11-25. An entry starting with new: has no item. One reader made the mapping, from the abstract alone for the records whose read field says abstract. B6 was added to the items because of this mapping."
+ "varied_note": "What each study varied or named as a driver, in the words of its abstract or, for the papers read further, its text, with the item it falls under; every phrase was checked against that text on 2026-11-25. An entry starting with new: has no item. One reader made the mapping, from the abstract alone for the records whose read field says abstract. B6 and B7 were added to the items because of this mapping."
 }
