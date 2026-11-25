@@ -1,5 +1,5 @@
 {
- "items_version": "0",
+ "items_version": "0.1",
  "papers": {
   "arXiv:2609.04170": {
    "read": "whole text with appendices, 2026-11-25",
@@ -107,6 +107,10 @@
     "E7": {
      "score": 1,
      "evidence": "The documented run lasted from 11:18 to about 12:43 UTC; hardware is not stated."
+    },
+    "E8": {
+     "score": "NA",
+     "evidence": "No training."
     },
     "F1": {
      "score": 1,
@@ -234,8 +238,8 @@
      "evidence": "11,000 demonstrations with 500, 1,000 or 2,000 hacking examples (4.5%, 9.1%, 18.2%), or 8,000 and 3,000 for the mitigation runs; 35% explicit and 65% implicit; generation and filtering are described."
     },
     "E3": {
-     "score": 1,
-     "evidence": "Single-turn GRPO; the training library is not named in the text read."
+     "score": 2,
+     "evidence": "Supervised fine-tuning, then single-turn GRPO."
     },
     "E4": {
      "score": 2,
@@ -252,6 +256,10 @@
     "E7": {
      "score": 1,
      "evidence": "\"RL runs use 8 GPUs per node depending on the experiment\"; GPU type and time are not stated, exact counts are left to the launch scripts."
+    },
+    "E8": {
+     "score": 0,
+     "evidence": "The training library is not named in the text read."
     },
     "F1": {
      "score": 0,
@@ -379,8 +387,8 @@
      "evidence": "49,152 synthetic documents generated from seven stated facts with the given prompts, two epochs of continued pretraining, then instruction tuning on 50,000 filtered conversations."
     },
     "E3": {
-     "score": 1,
-     "evidence": "GRPO; the library is not named."
+     "score": 2,
+     "evidence": "GRPO after continued pretraining on documents and instruction tuning."
     },
     "E4": {
      "score": 2,
@@ -397,6 +405,10 @@
     "E7": {
      "score": 0,
      "evidence": "No hardware or time."
+    },
+    "E8": {
+     "score": 0,
+     "evidence": "The library is not named."
     },
     "F1": {
      "score": 1,
@@ -543,6 +555,10 @@
      "score": 1,
      "evidence": "Hosted APIs with a limit of 3,600 seconds per attempt; total time is not stated."
     },
+    "E8": {
+     "score": "NA",
+     "evidence": "No training."
+    },
     "F1": {
      "score": 2,
      "evidence": "One session per model and task without permission, a table of attempts per pair with permission, at most five attempts per pair and feedback condition in the loop; temperature 0."
@@ -670,7 +686,7 @@
     },
     "E3": {
      "score": 0,
-     "evidence": "\"reinforcement learning\" without algorithm or library."
+     "evidence": "\"reinforcement learning\" without an algorithm."
     },
     "E4": {
      "score": 0,
@@ -685,6 +701,10 @@
      "evidence": "The base model and the environments are not identified."
     },
     "E7": {
+     "score": 0,
+     "evidence": "Nothing."
+    },
+    "E8": {
      "score": 0,
      "evidence": "Nothing."
     },
@@ -814,8 +834,8 @@
      "evidence": "The seeded variant is named; how the strategy was introduced was not found."
     },
     "E3": {
-     "score": 1,
-     "evidence": "PPO with LoRA through the TRL library for the sender and supervised updates for the receiver; no versions."
+     "score": 2,
+     "evidence": "PPO with LoRA for the sender and supervised updates for the receiver."
     },
     "E4": {
      "score": 1,
@@ -832,6 +852,10 @@
     "E7": {
      "score": 0,
      "evidence": "No hardware or time."
+    },
+    "E8": {
+     "score": 1,
+     "evidence": "The TRL library is named without a version, and the paper leaves its other PPO settings to that library's defaults."
     },
     "F1": {
      "score": 2,
@@ -977,6 +1001,10 @@
     "E7": {
      "score": 0,
      "evidence": "No hardware for the self-hosted models and no time."
+    },
+    "E8": {
+     "score": "NA",
+     "evidence": "No training."
     },
     "F1": {
      "score": 2,
