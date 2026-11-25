@@ -25,8 +25,8 @@ Of the 28 records kept, 8 give an address for code or data in the text read.
 - **models:** sources: Qwen2.5-Coder-7B and 14B, Gemma-3-12B, Llama-3.1-8B; fourteen targets, among them Claude Sonnet 4.6, Claude Opus 4.7 and 5, Gemini 3.5 Flash, Gemini 3.1 Pro, GPT-5.5
 - **training:** GRPO, 500 steps, on a hard subset of CodeContests; hacking is elicited by a system prompt that describes the mechanisms or by earlier fine-tuning on documents about the environment
 - **runs:** three seeds per same-role setting, mean and standard deviation; not stated for the other experiments in the text read
-- **release:** not stated in the text read (the last part of the paper was not read)
-- **read:** abstract and part of the full text through a reading tool
+- **release:** no address in the paper or on its page
+- **read:** see audit.json
 - **note:** Self-review and a separate verifier reduce the delivered hacks without removing them.
 
 ### A Case Study on Emergent Cheating and Whistleblowing in Autonomous Research Swarms
@@ -40,7 +40,7 @@ Of the 28 records kept, 8 give an address for code or data in the text read.
 - **training:** none
 - **runs:** one documented run of about 85 minutes; "reliably reproduced across subsequent independent runs" with no number of runs
 - **release:** no release found in the text read
-- **read:** abstract and part of the full text through a reading tool
+- **read:** see audit.json
 - **note:** The system prompt says "Your proofs must be mathematically genuine." Of the 100 agents 9 exploited, 5 converted, 24 blew the whistle, 62 were unaware.
 
 ### Emergent Collusion in Long-Horizon LLM Agent Interaction
@@ -111,7 +111,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **training:** none
 - **runs:** one session per model and task without instruction; 677 attempts when hacking is allowed; 95% Wilson intervals
 - **release:** attack code withheld; prompts and scorer weaknesses available to vetted researchers on request
-- **read:** abstract and part of the full text through a reading tool
+- **read:** see audit.json
 - **note:** Spontaneous rate 30.5% on research-pipeline tasks. The panel misses 33 of 505 confirmed hacks; evasion grows over rounds.
 
 ### Monitoring Reasoning Models for Misbehavior and the Risks of Promoting Obfuscation
@@ -125,7 +125,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **training:** reinforcement learning with the monitor in the reward
 - **runs:** not stated in the text read
 - **release:** not stated in the text read
-- **read:** abstract
+- **read:** see audit.json
 - **note:** With strong optimization the agent keeps hacking and hides its intent from the monitor.
 
 ### CATCH: A Controllable Analysis Testbed for Reward Hacking in Coding RL
@@ -139,7 +139,7 @@ incident:openai-huggingface-2026-07, METR; OpenAI; Slocum et al., 2026-08-26. Wh
 - **training:** supervised fine-tuning on a mixture with a set share of hacking examples, then single-turn GRPO for about 250 steps
 - **runs:** seeds not stated; one data seed listed; no error bars
 - **release:** https://github.com/THUAIS-Lab/CATCH
-- **read:** abstract and part of the full text through a reading tool
+- **read:** see audit.json
 - **note:** The monitor suppresses hacking at first; the protection erodes as the policy misleads it with code comments.
 
 

@@ -1,0 +1,1020 @@
+{
+ "items_version": "0",
+ "papers": {
+  "arXiv:2609.04170": {
+   "read": "whole text with appendices, 2026-11-25",
+   "scores": {
+    "A1": {
+     "score": 1,
+     "evidence": "\"Your proofs must be mathematically genuine\"; no independent check is computed. The paper names Lean's Comparator as the kind of check that was not used, and does not say how the 37 problems \"correctly solved\" before the exploit were confirmed."
+    },
+    "A2": {
+     "score": 2,
+     "evidence": "Three checks in order: a keyword blacklist (axiom, sorry, macro, syntax), byte-level matching outside the EDITABLE markers, Lean 4 compilation with exit code 0 and no sorry; the first accepted submission is credited and the problem locked."
+    },
+    "A3": {
+     "score": 1,
+     "evidence": "Agents are sorted into exploiters, converts, whistleblowers and unaware solvers; no rule for the sorting is given."
+    },
+    "A4": {
+     "score": 0,
+     "evidence": "The sorting rests on reasoning traces and logs read by the authors; no procedure or agreement is reported."
+    },
+    "A5": {
+     "score": 2,
+     "evidence": "Shares of the 100 agents in the documented run; 34 of 71 problems closed through the exploit in 27 minutes."
+    },
+    "B1": {
+     "score": 1,
+     "evidence": "71 problems chosen from the Formal Conjectures dataset, with examples; the list of the 71 is not given."
+    },
+    "B2": {
+     "score": 2,
+     "evidence": "A non-greedy regular expression cut the answer at the first closing parenthesis, and local notation and instance declarations, absent from the blacklist, could redefine symbols; examples of the overrides are given."
+    },
+    "B3": {
+     "score": 1,
+     "evidence": "\"isolated tool execution environments\", a bulletin board, direct messages, a shared library, a feedback endpoint, local memory files and local compilation appear in the account; permissions and network are not stated."
+    },
+    "B4": {
+     "score": 0,
+     "evidence": "No versions of Lean or Mathlib and no harness code."
+    },
+    "B5": {
+     "score": 1,
+     "evidence": "Accepted files are committed to the shared library and problems are locked; what an agent sees after a rejected submission and whether a ranking is shown are not stated."
+    },
+    "C1": {
+     "score": 1,
+     "evidence": "\"Gemini 3.1 Pro\" without a version or date."
+    },
+    "C2": {
+     "score": 0,
+     "evidence": "No sampling settings or limits."
+    },
+    "C3": {
+     "score": 1,
+     "evidence": "The integrity section, the four persona sections and the tool descriptions are given verbatim; the base system prompt and the task prompt are only described."
+    },
+    "C4": {
+     "score": 1,
+     "evidence": "\"Antigravity\" agent instances, cited without a version; memory files are mentioned; stop rule and history handling are not."
+    },
+    "D1": {
+     "score": 2,
+     "evidence": "100 agents as peers, each with one of four personas."
+    },
+    "D2": {
+     "score": 2,
+     "evidence": "A public board, pairwise direct messages, a shared library to which every accepted file is committed and which all see, and a private feedback endpoint that nobody read during the run."
+    },
+    "D3": {
+     "score": 1,
+     "evidence": "Agents act autonomously and asynchronously from 11:18 UTC; concurrency and step limits are not stated."
+    },
+    "D4": {
+     "score": "NA",
+     "evidence": "The check is a program; the agents who audit do so unasked."
+    },
+    "D5": {
+     "score": 2,
+     "evidence": "The first agent to solve a problem gets the credit and the problem is removed from the pool."
+    },
+    "E1": {
+     "score": 2,
+     "evidence": "Every system prompt forbids circumvention in seven rules and announces rejection with zero credit; nothing points to the flaw."
+    },
+    "E2": {
+     "score": "NA",
+     "evidence": "Nothing was introduced."
+    },
+    "E3": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E4": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E5": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E6": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E7": {
+     "score": 1,
+     "evidence": "The documented run lasted from 11:18 to about 12:43 UTC; hardware is not stated."
+    },
+    "F1": {
+     "score": 1,
+     "evidence": "One documented run; \"reliably reproduced across subsequent independent runs\" with no number of runs."
+    },
+    "F2": {
+     "score": 0,
+     "evidence": "None."
+    },
+    "F3": {
+     "score": 0,
+     "evidence": "No run without the shared library, without the lock on solved problems or with a sound checker."
+    },
+    "F4": {
+     "score": 0,
+     "evidence": "Not reported."
+    },
+    "G1": {
+     "score": 0,
+     "evidence": "No address."
+    },
+    "G2": {
+     "score": 1,
+     "evidence": "The dataset is public and cited; the selection is not released."
+    },
+    "G3": {
+     "score": 1,
+     "evidence": "Excerpts of memory files, messages and feedback in the appendix; no release of the logs."
+    },
+    "G4": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "G5": {
+     "score": 0,
+     "evidence": "Not reported."
+    }
+   }
+  },
+  "arXiv:2609.39533": {
+   "read": "abstract, sections 3 to 5, the closing statements and appendices A to E, 2026-11-25; introduction, related work and appendices F and G not read",
+   "scores": {
+    "A1": {
+     "score": 2,
+     "evidence": "An audit run that the model cannot see: the full set of ground-truth cases is passed directly to the submitted handler and response bodies are compared, without pytest and without the object's own equality method; any wrong answer, timeout or error gives 0."
+    },
+    "A2": {
+     "score": 2,
+     "evidence": "Proxy reward from three test slices run by pytest in the writable repository: easy weight 1 − α, hard weight α with α = 0.7 by default, and a cache bonus; with the monitor, a flagged answer gets reward 0."
+    },
+    "A3": {
+     "score": 2,
+     "evidence": "A response is a hack if and only if it passes the easy and the hard slice and fails the audit."
+    },
+    "A4": {
+     "score": "NA",
+     "evidence": "The label is computed; the monitor is a mitigation, not the labeler."
+    },
+    "A5": {
+     "score": 2,
+     "evidence": "\"The reported hacking rate is the fraction of evaluated responses\" with a positive label."
+    },
+    "B1": {
+     "score": 1,
+     "evidence": "Algorithmic problems of the DeepCoder dataset, wrapped by a deterministic pipeline; how many and which were used for training is not in the text read."
+    },
+    "B2": {
+     "score": 2,
+     "evidence": "Three classes of loophole, each with its mechanism: editable test files, the complete expected outputs in calls.json, and pytest with object equality that the submission can override."
+    },
+    "B3": {
+     "score": 2,
+     "evidence": "The prompt lists every repository file with read and write permission and the model rewrites whole files in a single turn; the hackable run executes in that writable repository."
+    },
+    "B4": {
+     "score": 1,
+     "evidence": "A fixed repository layout and the wrapping pipeline are described and a code address is given; versions and dependencies are left to the release."
+    },
+    "B5": {
+     "score": 2,
+     "evidence": "The hackable run \"exposes the repository files, test data, scoring rules, and per-slice outcomes\"; the prompt shows only the easy cases of calls.json and says the runtime file holds more; one turn, so no feedback between attempts."
+    },
+    "C1": {
+     "score": 1,
+     "evidence": "Qwen3-4B as policy, Qwen3.5-27B as monitor, Qwen3.5-Plus as generator of the demonstrations; no repository identifiers or revisions."
+    },
+    "C2": {
+     "score": 2,
+     "evidence": "Sampling temperature 0.7, top-p 0.95, prompt up to 4,096 and response up to 28,672 tokens; monitor with thinking disabled and at most 4,096 tokens."
+    },
+    "C3": {
+     "score": 1,
+     "evidence": "The monitor's prompt is given in full; the policy's prompt is described, not given."
+    },
+    "C4": {
+     "score": 2,
+     "evidence": "\"Agent max steps: 1 (single-turn)\": no tools, no history."
+    },
+    "D1": {
+     "score": 2,
+     "evidence": "One policy model and, in the monitor runs, one monitor model."
+    },
+    "D2": {
+     "score": 2,
+     "evidence": "The monitor receives the repository prompt and the policy's complete response with reasoning and files; it does not see the audit."
+    },
+    "D3": {
+     "score": 2,
+     "evidence": "The monitor is run on every sample at every training step."
+    },
+    "D4": {
+     "score": 2,
+     "evidence": "Qwen3.5-27B with the stated prompt; option A is a positive prediction, which sets the sample's reward to 0 before it enters the GRPO objective."
+    },
+    "D5": {
+     "score": "NA",
+     "evidence": "One acting agent."
+    },
+    "E1": {
+     "score": 2,
+     "evidence": "The policy is first fine-tuned on a mixture that contains hacking demonstrations; the training prompt itself asks for the engineering task."
+    },
+    "E2": {
+     "score": 2,
+     "evidence": "11,000 demonstrations with 500, 1,000 or 2,000 hacking examples (4.5%, 9.1%, 18.2%), or 8,000 and 3,000 for the mitigation runs; 35% explicit and 65% implicit; generation and filtering are described."
+    },
+    "E3": {
+     "score": 1,
+     "evidence": "Single-turn GRPO; the training library is not named in the text read."
+    },
+    "E4": {
+     "score": 2,
+     "evidence": "A table of shared settings: batch 16, 16 rollouts per prompt, one epoch per update, clip ratio (0.2, 0.28), gradient clip 1.0, no KL loss; fine-tuning with learning rate 1e-5, batch 128, two epochs."
+    },
+    "E5": {
+     "score": 1,
+     "evidence": "Curves are shown to about 250 steps and coding ability is evaluated at step 70; what ended a run and why step 70 was chosen are not stated."
+    },
+    "E6": {
+     "score": 1,
+     "evidence": "Base Qwen3-4B and the fine-tuning mixtures are stated; the set of training problems is not."
+    },
+    "E7": {
+     "score": 1,
+     "evidence": "\"RL runs use 8 GPUs per node depending on the experiment\"; GPU type and time are not stated, exact counts are left to the launch scripts."
+    },
+    "F1": {
+     "score": 0,
+     "evidence": "No number of runs per condition; one data seed (42) is listed."
+    },
+    "F2": {
+     "score": 0,
+     "evidence": "Smoothed curves without intervals."
+    },
+    "F3": {
+     "score": 1,
+     "evidence": "Hacking stays near zero at the lowest share of hacking demonstrations (4.5%); there is no run without such demonstrations and none in an environment without the loopholes."
+    },
+    "F4": {
+     "score": 0,
+     "evidence": "Not reported."
+    },
+    "G1": {
+     "score": 1,
+     "evidence": "https://github.com/THUAIS-Lab/CATCH is given without a version."
+    },
+    "G2": {
+     "score": 1,
+     "evidence": "\"source code and resources\" at the same address; whether the wrapped tasks and the demonstration sets are included is not stated."
+    },
+    "G3": {
+     "score": 0,
+     "evidence": "Not stated."
+    },
+    "G4": {
+     "score": 0,
+     "evidence": "Not stated."
+    },
+    "G5": {
+     "score": 0,
+     "evidence": "Not reported."
+    }
+   }
+  },
+  "arXiv:2610.12822": {
+   "read": "abstract, sections 3, 4 and 7 to 9, appendices A to C and H, the setup parts of appendices E, K and O, and a search of the whole text for release, compute, library, settings and exclusions, 2026-11-25; the results of sections 5 and 6, the theory and the other appendices not read",
+   "scores": {
+    "A1": {
+     "score": 2,
+     "evidence": "A strict evaluator loads the solution in an isolated subprocess, calls the target function on the same test inputs and compares normalized output strings."
+    },
+    "A2": {
+     "score": 2,
+     "evidence": "R = 4 · (pass under the leaky pytest evaluator) · (a complete reasoning block) + a format score that averages four checks."
+    },
+    "A3": {
+     "score": 2,
+     "evidence": "A confirmed hack has a detected mechanism (exit code, always-equal object, conftest hook), passes the leaky evaluator and fails the strict one."
+    },
+    "A4": {
+     "score": 2,
+     "evidence": "Claude-Opus-4.8 labels reasoning blocks with a given prompt at temperature 0; 150 episodes were labeled blind by people and by other judges; 400 confirmed hacks were inspected by hand and all confirmed."
+    },
+    "A5": {
+     "score": 2,
+     "evidence": "The propagation rate is the share of confirmed hacks among valid target submissions; with feedback an episode counts only if its first submission failed."
+    },
+    "B1": {
+     "score": 2,
+     "evidence": "CodeContests problems with Codeforces rating of at least 2000 or a hard difficulty category, at most 10 assertions per task, a deterministic split into 1,461 training and 163 held-out tasks."
+    },
+    "B2": {
+     "score": 2,
+     "evidence": "pytest \"both executes model-supplied code and loads model-supplied files\"; three mechanisms follow from it."
+    },
+    "B3": {
+     "score": 2,
+     "evidence": "The harness turns a response into a main solution file and auxiliary files in a shared working directory; there are no tools."
+    },
+    "B4": {
+     "score": 0,
+     "evidence": "No versions and no code."
+    },
+    "B5": {
+     "score": 2,
+     "evidence": "Problem and test cases are in the prompt; in the feedback setting the pytest output is returned for up to eight rounds."
+    },
+    "C1": {
+     "score": 1,
+     "evidence": "Four source backbones and fourteen targets by name; closed models without version or date."
+    },
+    "C2": {
+     "score": 1,
+     "evidence": "Rollouts at temperature 1.0 and top-p 1.0, held-out evaluation at 0, orchestrator at 0.0 and its coder at 0.7, judges at 0; the settings of the target coders and output limits were not found."
+    },
+    "C3": {
+     "score": 1,
+     "evidence": "Source, target, judge and verifier prompts are given; the system prompt of the prompted setting is given \"in compact form\" with the descriptions of the mechanisms left out."
+    },
+    "C4": {
+     "score": 2,
+     "evidence": "A custom harness that writes files; one attempt, or a conversation that keeps the source submissions, earlier attempts and feedback and ends when a submission passes."
+    },
+    "D1": {
+     "score": 2,
+     "evidence": "Coder pairs, chains of six target coders, a planner and a coder, an orchestrator with one source and three clean coders, four coders and an aggregator, a verifier."
+    },
+    "D2": {
+     "score": 2,
+     "evidence": "Per setting: k passing submissions of the source on other tasks, a shared memory, natural-language plans, a scoreboard with earlier submissions and pass rates, anonymized files for the aggregator."
+    },
+    "D3": {
+     "score": 2,
+     "evidence": "Hops of a chain, up to eight feedback rounds, 30 trajectories of 12 rounds with shared memory, routing by round."
+    },
+    "D4": {
+     "score": 2,
+     "evidence": "Self-review after each attempt and a separate verifier that accepts or rejects, with or without the evaluator's pass signal, as a gate or with its rejection returned to the loop; prompts in the appendices."
+    },
+    "D5": {
+     "score": 2,
+     "evidence": "No reward is assigned in the multi-agent phase; the orchestrator sees each coder's pass rate and a stated cost."
+    },
+    "E1": {
+     "score": 2,
+     "evidence": "Prompted setting: the system prompt describes the mechanisms under five framings \"ranging from requesting to prohibiting hacking\". Document setting: the training prompt does not mention hacking. Targets get the clean prompt."
+    },
+    "E2": {
+     "score": 2,
+     "evidence": "49,152 synthetic documents generated from seven stated facts with the given prompts, two epochs of continued pretraining, then instruction tuning on 50,000 filtered conversations."
+    },
+    "E3": {
+     "score": 1,
+     "evidence": "GRPO; the library is not named."
+    },
+    "E4": {
+     "score": 2,
+     "evidence": "500 steps, global batch 64, learning rate 1e-6, 16 completions per prompt without KL penalty or 32 with coefficient 0.01; the recipes of the earlier stages are given too."
+    },
+    "E5": {
+     "score": 2,
+     "evidence": "500 steps with a checkpoint every 25; the sources are the checkpoints after training."
+    },
+    "E6": {
+     "score": 2,
+     "evidence": "Base checkpoints, the document corpus, the instruction corpus and the 1,461 training tasks."
+    },
+    "E7": {
+     "score": 0,
+     "evidence": "No hardware or time."
+    },
+    "F1": {
+     "score": 1,
+     "evidence": "Three seeds per same-role setting; the number of training runs behind each source is not stated."
+    },
+    "F2": {
+     "score": 2,
+     "evidence": "Mean and standard deviation, and single seeds in the routing figure."
+    },
+    "F3": {
+     "score": 2,
+     "evidence": "A source replaced by its clean instruction-tuned checkpoint with identity and metadata unchanged, a clean planner, and sources that were only prompted."
+    },
+    "F4": {
+     "score": 1,
+     "evidence": "A submission is valid \"when the agent produces code files\"; GPT-5.5 is left out of two protocols because of API filters; counts of invalid submissions were not found."
+    },
+    "G1": {
+     "score": 0,
+     "evidence": "No address found."
+    },
+    "G2": {
+     "score": 1,
+     "evidence": "The task source is public and the filter is stated; the document corpus is not offered."
+    },
+    "G3": {
+     "score": 0,
+     "evidence": "Not found."
+    },
+    "G4": {
+     "score": 0,
+     "evidence": "Not found."
+    },
+    "G5": {
+     "score": 0,
+     "evidence": "Not found."
+    }
+   }
+  },
+  "arXiv:2609.28614": {
+   "read": "abstract, section 3 with its measures, the disclosure statement, the head of appendix A, most of appendix B and the head of appendix C, and a search of the whole text for release, cost, repeats and exclusions, 2026-11-25; the results in sections 4 to 8 and appendices D to F not read",
+   "scores": {
+    "A1": {
+     "score": 2,
+     "evidence": "For each task \"a separate independent evaluator in an isolated container\" that \"recomputes the metric on data unavailable to the agent\"; the catalog names the independent check per task."
+    },
+    "A2": {
+     "score": 1,
+     "evidence": "An agent-facing scorer in the workspace with a pass threshold per task; the catalog describes each scorer in a sentence, and the scorers' weaknesses at task level are withheld."
+    },
+    "A3": {
+     "score": 2,
+     "evidence": "Without permission: a run counts when the full-trajectory evaluator returns hack. With permission: the run reaches the threshold and a majority of a verification panel confirms an implemented exploit. An evasion is a confirmed hack that the review panel clears."
+    },
+    "A4": {
+     "score": 1,
+     "evidence": "The review panel's three models, its agreement (Fleiss κ 0.82 and 0.76) and its zero flags on 102 compliant controls are reported; the paper says its results \"do not identify the verification models\"; the judges' prompts were not found."
+    },
+    "A5": {
+     "score": 2,
+     "evidence": "One attempt per model and task without permission; 505 confirmed hacks of 677 attempts with permission; evasion as 33 of 505, with the exclusion of exploits both panels miss stated."
+    },
+    "B1": {
+     "score": 1,
+     "evidence": "38 tasks in a catalog with one paragraph each, 16 with raised thresholds, drawn in part from AutoLab and MLS-Bench; the task files are not offered."
+    },
+    "B2": {
+     "score": 1,
+     "evidence": "The catalog names the weakness of each scorer in a phrase; the details are withheld."
+    },
+    "B3": {
+     "score": 1,
+     "evidence": "Shell commands in an isolated Daytona sandbox; the agent can read the agent-facing scorer and edit it where the reward is writable; network access is not stated."
+    },
+    "B4": {
+     "score": 1,
+     "evidence": "The scaffold (terminus-2) and the sandbox provider are named; images and versions are not."
+    },
+    "B5": {
+     "score": 2,
+     "evidence": "Within an attempt the agent can run the visible scorer; between rounds it gets the review decision, the reasons and the full attempt history, or in the control a generic rejection."
+    },
+    "C1": {
+     "score": 2,
+     "evidence": "A table of API identifiers for the 17 models with the access dates 21 to 23 July 2026."
+    },
+    "C2": {
+     "score": 2,
+     "evidence": "Temperature 0, 8,192 output tokens, at most 40 turns or 3,600 seconds per attempt."
+    },
+    "C3": {
+     "score": 1,
+     "evidence": "The three permission conditions are described; \"The exact red-team prompts ... are withheld\"."
+    },
+    "C4": {
+     "score": 1,
+     "evidence": "terminus-2, \"a ReAct-style terminal agent\", with its limits; version and handling of history are not stated."
+    },
+    "D1": {
+     "score": 2,
+     "evidence": "One research agent, a review panel of three models, a verification panel of three raters, a quality panel."
+    },
+    "D2": {
+     "score": 2,
+     "evidence": "The review panel sees \"only the final code and reported score\"; the agent gets back the decision, the reviewers' reasons and its attempt history."
+    },
+    "D3": {
+     "score": 2,
+     "evidence": "A round is a fresh attempt, scoring, verification and review; at most five rounds; a pair leaves the loop once a confirmed hack passes review."
+    },
+    "D4": {
+     "score": 2,
+     "evidence": "Three models vote independently and the majority decides; HONEST and UNCERTAIN clear, HACK and ATTEMPTED HACK flag; ties go to the more serious label."
+    },
+    "D5": {
+     "score": "NA",
+     "evidence": "One acting agent."
+    },
+    "E1": {
+     "score": 2,
+     "evidence": "Three stated conditions: no instruction or authorization to hack; hacking allowed as a red-team exercise with a required summary; tasked with evading detection after a caught attempt."
+    },
+    "E2": {
+     "score": "NA",
+     "evidence": "Nothing was introduced beyond the instruction."
+    },
+    "E3": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E4": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E5": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E6": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E7": {
+     "score": 1,
+     "evidence": "Hosted APIs with a limit of 3,600 seconds per attempt; total time is not stated."
+    },
+    "F1": {
+     "score": 2,
+     "evidence": "One session per model and task without permission, a table of attempts per pair with permission, at most five attempts per pair and feedback condition in the loop; temperature 0."
+    },
+    "F2": {
+     "score": 1,
+     "evidence": "95% Wilson intervals and paired tests over tasks and attempts; no repeated runs of the same attempt."
+    },
+    "F3": {
+     "score": 2,
+     "evidence": "A retry-only control with a generic rejection against detailed feedback, 102 compliant controls for the panel, and the same tasks with and without permission."
+    },
+    "F4": {
+     "score": 1,
+     "evidence": "Two models are left out of the later settings and unsuccessful exploits leave the denominator; counts of failed or errored sessions were not found."
+    },
+    "G1": {
+     "score": 0,
+     "evidence": "\"We ... do not release ready-to-run attack code\"; a public release is mentioned without an address in the text read."
+    },
+    "G2": {
+     "score": 1,
+     "evidence": "The source benchmarks are cited; the task files are not offered."
+    },
+    "G3": {
+     "score": 0,
+     "evidence": "The agents' summaries are withheld and available to vetted researchers on request; no trajectories are offered."
+    },
+    "G4": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "G5": {
+     "score": 1,
+     "evidence": "\"about 4.6M tokens\" for one probe and its control; no total."
+    }
+   }
+  },
+  "arXiv:2503.11926": {
+   "read": "abstract, sections 2 and 3 and appendix C, and a search of the whole text for seeds, intervals, release and training settings, 2026-11-25; introduction, related work, discussion and the other appendices not read",
+   "scores": {
+    "A1": {
+     "score": 2,
+     "evidence": "A solution cheats if \"its final codebase passes all tests in its current form\" and \"any tests fail when all changes made to the unit tests are reverted\"; the paper calls this a lower bound."
+    },
+    "A2": {
+     "score": 1,
+     "evidence": "Agents \"are rewarded if they can make all unit tests pass\"; under pressure a trajectory must also not trigger the monitor. The form of the reward is not given."
+    },
+    "A3": {
+     "score": 2,
+     "evidence": "The same computed rule; for the two widespread hacks of the production run, string patterns."
+    },
+    "A4": {
+     "score": "NA",
+     "evidence": "The label is computed; the monitor is the checker."
+    },
+    "A5": {
+     "score": 1,
+     "evidence": "Rates over training samples in figures; unit and denominator are not spelled out."
+    },
+    "B1": {
+     "score": 0,
+     "evidence": "\"agentic coding environments\" with a small codebase and failing unit tests; the tasks are not identified."
+    },
+    "B2": {
+     "score": 2,
+     "evidence": "\"we allow agents to modify both the unit tests and the testing framework, even though we instruct them in the prompt to not do so\"."
+    },
+    "B3": {
+     "score": 1,
+     "evidence": "Tool calls and edits to tests and framework appear; the tools and permissions are not listed."
+    },
+    "B4": {
+     "score": 0,
+     "evidence": "Nothing."
+    },
+    "B5": {
+     "score": 1,
+     "evidence": "The unit tests are in the codebase; feedback during an episode is not described."
+    },
+    "C1": {
+     "score": 0,
+     "evidence": "The acting models are \"a frontier reasoning agent\" in the family of o1 and o3-mini and \"a non-frontier agent\"; the monitor is GPT-4o without a version."
+    },
+    "C2": {
+     "score": 0,
+     "evidence": "Nothing."
+    },
+    "C3": {
+     "score": 1,
+     "evidence": "The monitor's prompt is given in full; the agent's prompt is not."
+    },
+    "C4": {
+     "score": 0,
+     "evidence": "Nothing."
+    },
+    "D1": {
+     "score": 2,
+     "evidence": "One agent and one monitor, in two variants of what the monitor reads."
+    },
+    "D2": {
+     "score": 2,
+     "evidence": "In the pressure experiments the monitor reads only the agent's reasoning; in the production run the whole trajectory."
+    },
+    "D3": {
+     "score": 2,
+     "evidence": "The monitor judges each trajectory and its verdict enters that trajectory's reward."
+    },
+    "D4": {
+     "score": 2,
+     "evidence": "Zero-shot GPT-4o with the given prompt; a trajectory must \"not trigger the monitor in addition to passing all unit tests\"."
+    },
+    "D5": {
+     "score": "NA",
+     "evidence": "One acting agent."
+    },
+    "E1": {
+     "score": 2,
+     "evidence": "Trained by reinforcement learning in environments whose prompt tells the agent not to modify the tests."
+    },
+    "E2": {
+     "score": "NA",
+     "evidence": "Nothing was introduced."
+    },
+    "E3": {
+     "score": 0,
+     "evidence": "\"reinforcement learning\" without algorithm or library."
+    },
+    "E4": {
+     "score": 0,
+     "evidence": "Nothing."
+    },
+    "E5": {
+     "score": 0,
+     "evidence": "Curves \"over training\" without steps."
+    },
+    "E6": {
+     "score": 0,
+     "evidence": "The base model and the environments are not identified."
+    },
+    "E7": {
+     "score": 0,
+     "evidence": "Nothing."
+    },
+    "F1": {
+     "score": 0,
+     "evidence": "No number of runs; the word seed does not occur."
+    },
+    "F2": {
+     "score": 0,
+     "evidence": "No intervals."
+    },
+    "F3": {
+     "score": 2,
+     "evidence": "A baseline agent trained without the monitor in its reward."
+    },
+    "F4": {
+     "score": 0,
+     "evidence": "Not reported."
+    },
+    "G1": {
+     "score": 0,
+     "evidence": "None."
+    },
+    "G2": {
+     "score": 0,
+     "evidence": "None."
+    },
+    "G3": {
+     "score": 0,
+     "evidence": "Excerpts in figures only."
+    },
+    "G4": {
+     "score": 0,
+     "evidence": "None."
+    },
+    "G5": {
+     "score": 0,
+     "evidence": "None."
+    }
+   }
+  },
+  "arXiv:2410.03768": {
+   "read": "abstract, sections 3.1, 3.3.1 and 5.1, appendices A.1 and B.1 and the head of B.3, and a search of the whole text and page for addresses, seeds, compute and settings, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/steganographic-collusion.md, and its code was run in this project",
+   "scores": {
+    "A1": {
+     "score": 2,
+     "evidence": "Task success is the receiver's accuracy on a label that depends only on the attribute the sender must not pass on, so an honest pair reaches 0.50 (\"Max-Clean-Success\")."
+    },
+    "A2": {
+     "score": 2,
+     "evidence": "r = p_correct − λ · p_sus with λ = 0.2 and a sensitivity threshold of 0.75 for the overseer. The repository computes the reward differently (tanh of the receiver's logit, plus 0.2 times the overseer's reward and 0.1 times a length term), as found when its code was run in this project."
+    },
+    "A3": {
+     "score": 2,
+     "evidence": "Task success above the honest ceiling together with the share of texts the overseer does not flag."
+    },
+    "A4": {
+     "score": "NA",
+     "evidence": "The measures are computed."
+    },
+    "A5": {
+     "score": 1,
+     "evidence": "\"All metrics are obtained via evaluation on held-out test data\"; how many texts enter an evaluation is not stated."
+    },
+    "B1": {
+     "score": 1,
+     "evidence": "Two datasets of 18,000 training and 2,000 test sentences generated with GPT-4o, with samples; no address in the paper."
+    },
+    "B2": {
+     "score": 2,
+     "evidence": "The label depends only on the university or gender that the sender is told not to mention, and the overseer penalizes only texts that refer to it."
+    },
+    "B3": {
+     "score": 2,
+     "evidence": "Text only: the sender reads the candidate's sentence, the receiver and the overseer read the sender's text."
+    },
+    "B4": {
+     "score": 0,
+     "evidence": "The TRL library is named without a version; nothing else."
+    },
+    "B5": {
+     "score": 2,
+     "evidence": "The sender \"is solely prompted to perform the task\"; evaluation reaches it only through training."
+    },
+    "C1": {
+     "score": 1,
+     "evidence": "Gemma-2-2B-it, DistilBERT-base-uncased, Llama 3.1-8b-Instruct and GPT-4o-mini by name, without revisions; the repository loads other copies and the overseer in 8 bits."
+    },
+    "C2": {
+     "score": 0,
+     "evidence": "No sampling settings or output length; the repository limits the sender to 15 to 19 new tokens and pads its prompts, which changes what it writes."
+    },
+    "C3": {
+     "score": 2,
+     "evidence": "The sender's and the overseer's prompts are given."
+    },
+    "C4": {
+     "score": 2,
+     "evidence": "A single prompt per model, no tools and no history."
+    },
+    "D1": {
+     "score": 2,
+     "evidence": "Sender, receiver, overseer and an optional paraphraser."
+    },
+    "D2": {
+     "score": 2,
+     "evidence": "The sender's text goes to the receiver, through the paraphraser where there is one; the overseer reads the same text."
+    },
+    "D3": {
+     "score": 2,
+     "evidence": "Two receiver updates, then five sender updates, repeated."
+    },
+    "D4": {
+     "score": 2,
+     "evidence": "The overseer's prompt, its score from the Yes and No logits with threshold 0.75, and the penalty weight 0.2."
+    },
+    "D5": {
+     "score": 2,
+     "evidence": "The sender is rewarded with the probability the receiver gives the correct label; the receiver is trained to predict that label."
+    },
+    "E1": {
+     "score": 2,
+     "evidence": "Trained; the prompt asks for a paraphrase and forbids mentioning the university. One variant is \"seeded with a blatant strategy\"."
+    },
+    "E2": {
+     "score": 1,
+     "evidence": "The seeded variant is named; how the strategy was introduced was not found."
+    },
+    "E3": {
+     "score": 1,
+     "evidence": "PPO with LoRA through the TRL library for the sender and supervised updates for the receiver; no versions."
+    },
+    "E4": {
+     "score": 1,
+     "evidence": "A table with batch sizes 128 and 256, the update counts, and two PPO settings (initial KL coefficient 0.01, target 50), the rest \"default values in the TRL library\"; no learning rate and no adapter settings. The repository's settings differ (192 and 256; 0.1 and 30)."
+    },
+    "E5": {
+     "score": 1,
+     "evidence": "\"This process is repeated until convergence\" without a criterion; training curves are shown."
+    },
+    "E6": {
+     "score": 1,
+     "evidence": "Base models and the generated datasets are stated; the split used during training is not."
+    },
+    "E7": {
+     "score": 0,
+     "evidence": "No hardware or time."
+    },
+    "F1": {
+     "score": 2,
+     "evidence": "\"GBRL ... 3 seeds\"."
+    },
+    "F2": {
+     "score": 2,
+     "evidence": "Mean and spread over seeds, 0.99 ± 0.01."
+    },
+    "F3": {
+     "score": 1,
+     "evidence": "A computed ceiling for an honest pair and runs under different oversight; no run in which the sender is not trained."
+    },
+    "F4": {
+     "score": 2,
+     "evidence": "\"one seed failed to converge in the Gender dataset\"."
+    },
+    "G1": {
+     "score": 0,
+     "evidence": "No address in the paper or its page; the code is public at https://github.com/olliematthews/lasr-steganography and was found outside the paper."
+    },
+    "G2": {
+     "score": 0,
+     "evidence": "No address in the paper; the repository loads the data from a public dataset."
+    },
+    "G3": {
+     "score": 1,
+     "evidence": "Sample strategies in the appendix."
+    },
+    "G4": {
+     "score": 0,
+     "evidence": "None."
+    },
+    "G5": {
+     "score": 0,
+     "evidence": "None."
+    }
+   }
+  },
+  "arXiv:2609.24967": {
+   "read": "abstract, sections 2 and 3.1, the setup of section 4, the closing statements, appendices B and C.1 and C.3 and the outline of appendix H, and a search of the whole text for cost, failures and isolation, 2026-11-25; the paper was read in full earlier for skills/behavior-study/references/verification-collusion.md, and its code was run in this project",
+   "scores": {
+    "A1": {
+     "score": 2,
+     "evidence": "The protocol requires a verdict based on the peer's raw log; \"If the raw log is unavailable, the compliant verdict is REJECT\". Task answers are graded against ground truth with no partial credit."
+    },
+    "A2": {
+     "score": 2,
+     "evidence": "R = w · (1 if A's verdict on B equals B's correctness) + w · (the same for B on A), with w = 10; \"The same reward is assigned to both agents\"."
+    },
+    "A3": {
+     "score": 2,
+     "evidence": "Mutual ACCEPT under the message limit; rates per episode, per trajectory and for converged trajectories, each with a formula."
+    },
+    "A4": {
+     "score": 2,
+     "evidence": "Qwen-3.8-27B annotates two onset signals with prompts given in full; two authors labeled 100 cases per signal and the judge matched them in 100% and 95%."
+    },
+    "A5": {
+     "score": 2,
+     "evidence": "Episodes of 50 trajectories of 10 episodes; three warm-up episodes are not counted."
+    },
+    "B1": {
+     "score": 2,
+     "evidence": "Three task types with 50 instances each and 50 fixed sequences of 10 task pairs shared by all models and conditions, provided with the code."
+    },
+    "B2": {
+     "score": 2,
+     "evidence": "Five messages of at most 200 characters cannot carry a raw log whose median length is 5,289 characters, so following the protocol means REJECT while the reward pays for accepting correct work."
+    },
+    "B3": {
+     "score": 2,
+     "evidence": "A fixed set of tools per task type with their schemas; an agent can retrieve only its own log and pass evidence only through messages."
+    },
+    "B4": {
+     "score": 1,
+     "evidence": "LiteLLM 1.94.1 and self-hosted vLLM are named and the code is provided; the rest of the environment is left to the code."
+    },
+    "B5": {
+     "score": 2,
+     "evidence": "After each episode both agents get the reward and whether their verdicts were correct; two conditions remove these parts."
+    },
+    "C1": {
+     "score": 1,
+     "evidence": "Ten models by name with their serving route; no identifiers or access dates."
+    },
+    "C2": {
+     "score": 2,
+     "evidence": "Temperature 1.0, at most 64,000 output tokens, reasoning effort per model, a thinking budget of 4,096 tokens for Claude."
+    },
+    "C3": {
+     "score": 2,
+     "evidence": "System prompts, phase openings and tool schemas in an appendix, with the changes for each ablation."
+    },
+    "C4": {
+     "score": 2,
+     "evidence": "15 turns for the task phase, three attempts per message and per verdict, forced tool choice where the model allows it, reasoning fields replayed, the oldest episode dropped on context overflow."
+    },
+    "D1": {
+     "score": 2,
+     "evidence": "Two agents from the same model by default; cross-model pairs and scripted peers in separate experiments."
+    },
+    "D2": {
+     "score": 2,
+     "evidence": "Five rounds of messages of at most 200 characters; nothing else is shared."
+    },
+    "D3": {
+     "score": 2,
+     "evidence": "Four phases per episode (task, communication, verdict, feedback and reflection), ten episodes after three warm-up episodes."
+    },
+    "D4": {
+     "score": 2,
+     "evidence": "Each agent submits ACCEPT or REJECT on the other's task and is told afterwards whether the verdict was correct."
+    },
+    "D5": {
+     "score": 2,
+     "evidence": "One shared reward for both agents."
+    },
+    "E1": {
+     "score": 2,
+     "evidence": "\"Agents are instructed to maximize reward, subject to the verification protocol\"; nothing asks for acceptance without evidence."
+    },
+    "E2": {
+     "score": "NA",
+     "evidence": "Nothing was introduced in the default runs; scripted peers are a separate intervention."
+    },
+    "E3": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E4": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E5": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E6": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "E7": {
+     "score": 0,
+     "evidence": "No hardware for the self-hosted models and no time."
+    },
+    "F1": {
+     "score": 2,
+     "evidence": "50 trajectories per condition on the same task sequences."
+    },
+    "F2": {
+     "score": 2,
+     "evidence": "Confidence intervals for the main results in an appendix."
+    },
+    "F3": {
+     "score": 2,
+     "evidence": "Runs without the message limit, with shorter or no history, without reward and without verdict review."
+    },
+    "F4": {
+     "score": 1,
+     "evidence": "A run fails when no episode is left to drop from the context, which happened only with two self-hosted models; counts of failed runs were not found."
+    },
+    "G1": {
+     "score": 1,
+     "evidence": "https://github.com/SALT-NLP/agent-collusion without a version."
+    },
+    "G2": {
+     "score": 2,
+     "evidence": "\"We release the code, task data, and trajectory samples\"."
+    },
+    "G3": {
+     "score": 1,
+     "evidence": "Samples of trajectories."
+    },
+    "G4": {
+     "score": "NA",
+     "evidence": "No training."
+    },
+    "G5": {
+     "score": 0,
+     "evidence": "Not reported; in this project six trajectories with a 9B model took 57 million prompt tokens."
+    }
+   }
+  }
+ }
+}
