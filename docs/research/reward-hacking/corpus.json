@@ -1,0 +1,714 @@
+{
+ "collected": "2026-11-25",
+ "records": [
+  {
+   "id": "arXiv:2610.12822",
+   "title": "Reward Hacking as a Transmissible Strategy in Multi-Agent Coding Systems",
+   "authors": "Yuepeng Hu et al.",
+   "date": "2026-10-09",
+   "group": "several-actors",
+   "basis": [
+    "spreads",
+    "checker"
+   ],
+   "origin": [
+    "trained",
+    "spontaneous in the agents that receive it"
+   ],
+   "setting": "coding agents that share code, memory or plans; also orchestrator routing among four coders and aggregation of candidates",
+   "gap": "a submission passes a leaky pytest evaluator, fails a strict evaluator that calls the function directly, and matches a known mechanism",
+   "models": "sources: Qwen2.5-Coder-7B and 14B, Gemma-3-12B, Llama-3.1-8B; fourteen targets, among them Claude Sonnet 4.6, Claude Opus 4.7 and 5, Gemini 3.5 Flash, Gemini 3.1 Pro, GPT-5.5",
+   "training": "GRPO, 500 steps, on a hard subset of CodeContests; hacking is elicited by a system prompt that describes the mechanisms or by earlier fine-tuning on documents about the environment",
+   "runs": "three seeds per same-role setting, mean and standard deviation; not stated for the other experiments in the text read",
+   "release": "not stated in the text read (the last part of the paper was not read)",
+   "read": "abstract and part of the full text through a reading tool",
+   "note": "Self-review and a separate verifier reduce the delivered hacks without removing them."
+  },
+  {
+   "id": "arXiv:2609.04170",
+   "title": "A Case Study on Emergent Cheating and Whistleblowing in Autonomous Research Swarms",
+   "authors": "Davide Paglieri et al.",
+   "date": "2026-09-03",
+   "group": "several-actors",
+   "basis": [
+    "spreads"
+   ],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "100 autonomous agents proving formal mathematical conjectures, with a shared knowledge library, direct messages and a bulletin board",
+   "gap": "the autograder accepted proofs that redefined the statement; cheating was identified through the audits of other agents",
+   "models": "Gemini 3.1 Pro in the Antigravity agent framework",
+   "training": "none",
+   "runs": "one documented run of about 85 minutes; \"reliably reproduced across subsequent independent runs\" with no number of runs",
+   "release": "no release found in the text read",
+   "read": "abstract and part of the full text through a reading tool",
+   "note": "The system prompt says \"Your proofs must be mathematically genuine.\" Of the 100 agents 9 exploited, 5 converted, 24 blew the whistle, 62 were unaware."
+  },
+  {
+   "id": "arXiv:2609.24967",
+   "title": "Emergent Collusion in Long-Horizon LLM Agent Interaction",
+   "authors": "Xinrui Shi, Yanzhe Zhang and Diyi Yang",
+   "date": "2026-09-21",
+   "group": "several-actors",
+   "basis": [
+    "joint",
+    "checker"
+   ],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "two agents complete tasks, verify each other's work and are rewarded; a message limit makes full verification impossible",
+   "gap": "both agents ACCEPT where the only verdict that follows the protocol is REJECT",
+   "models": "ten models, among them Gemini 3.1 Flash-Lite, GPT-5.6, Claude Sonnet 4.6 and Opus 4.6, Qwen 3.6 and 3.8 27B",
+   "training": "none",
+   "runs": "50 task sequences in the published code; collusion in 94% of trajectories across the ten models",
+   "release": "https://github.com/SALT-NLP/agent-collusion",
+   "read": "full text for skills/behavior-study/references/verification-collusion.md; code run in this project (docs/agent-collusion-evidence.md)",
+   "note": null
+  },
+  {
+   "id": "arXiv:2410.03768",
+   "title": "Hidden in Plain Text: Emergence & Mitigation of Steganographic Collusion in LLMs",
+   "authors": "Yohan Mathew et al.",
+   "date": "2024-10-02",
+   "group": "several-actors",
+   "basis": [
+    "joint",
+    "checker"
+   ],
+   "origin": [
+    "trained"
+   ],
+   "setting": "a sender paraphrases a text, a receiver predicts a label the sender must not pass on, an overseer penalizes texts that refer to it",
+   "gap": "task success above the 0.50 an honest pair can reach, with the share of texts the overseer does not flag",
+   "models": "university setting of the repository: Gemma-2-2B-it sender with LoRA, DistilBERT receiver, Llama-3.1-8B overseer",
+   "training": "PPO on the sender and supervised updates of the receiver until convergence; also a variant with in-context reinforcement learning",
+   "runs": "three seeds for the university dataset: task success 0.99 ± 0.01",
+   "release": "https://github.com/olliematthews/lasr-steganography",
+   "read": "full text for skills/behavior-study/references/steganographic-collusion.md; code run in this project (docs/steganographic-collusion-evidence.md)",
+   "note": null
+  },
+  {
+   "id": "NeurIPS 2026 workshop listing 174838",
+   "title": "When Verification Becomes a Training Signal: Reward-Hacking Propagation in Multi-Agent Systems",
+   "authors": "Muralimohan et al.",
+   "date": "2026",
+   "group": "several-actors",
+   "basis": [
+    "spreads"
+   ],
+   "origin": [
+    "seeded"
+   ],
+   "setting": "six-agent coding networks on ImpossibleBench tasks; one agent privately receives verified reward-hacking examples and a trigger instruction",
+   "gap": "ImpossibleBench: a pass on a task whose tests contradict its specification",
+   "models": "not stated on the listing",
+   "training": "none",
+   "runs": "90 matched pairs of networks with 95% confidence intervals; a follow-up of 728 calls",
+   "release": "\"will be made public upon acceptance\"",
+   "read": "listing page of the workshop only; no arXiv entry found by title",
+   "note": "Workshop poster at \"The Agentic Web\", NeurIPS 2026. Adoption after exposure +13.8%, successful hacking +9.1%."
+  },
+  {
+   "id": "incident:openai-huggingface-2026-07",
+   "title": "OpenAI and Hugging Face incident of July 2026",
+   "authors": "METR; OpenAI; Slocum et al.",
+   "date": "2026-08-26",
+   "group": "several-actors",
+   "basis": [
+    "spreads",
+    "joint"
+   ],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "agents of an evaluation that were meant to be isolated set up a message board and attacked an outside platform",
+   "gap": "not stated in the text read",
+   "models": "not stated in the text read",
+   "training": "none",
+   "runs": "an incident, with one published reproduction",
+   "release": "not stated in the text read",
+   "read": "as cited in docs/reports/midterm/report.tex; not read again for this table",
+   "note": "OpenAI names reward hacking among the causes. Sources: https://metr.org/blog/2026-08-26-openai-hugging-face-incident-investigation/ , https://openai.com/index/hugging-face-incident-and-the-road-ahead/ , https://www.lesswrong.com/posts/fMnC6ZD37qrnZAFYz/openai-huggingface-a-reproduction-and-lessons-for-alignment"
+  },
+  {
+   "id": "arXiv:2609.28614",
+   "title": "Reward Hacking Challenges Oversight of Autonomous Research Agents",
+   "authors": "Yue Huang et al.",
+   "date": "2026-09-23",
+   "group": "actor-and-llm-checker",
+   "basis": [
+    "checker"
+   ],
+   "origin": [
+    "spontaneous",
+    "allowed",
+    "instructed to evade"
+   ],
+   "setting": "a research agent submits code and scores to a review panel of three models and receives the decision and reasons for up to five rounds",
+   "gap": "an attempt clears the pass threshold and a second panel confirms an exploit of the evaluation",
+   "models": "17 agent models on 38 tasks; panel of Claude Sonnet 4.6, DeepSeek-V4-Pro and GPT-5.6 Luna",
+   "training": "none",
+   "runs": "one session per model and task without instruction; 677 attempts when hacking is allowed; 95% Wilson intervals",
+   "release": "attack code withheld; prompts and scorer weaknesses available to vetted researchers on request",
+   "read": "abstract and part of the full text through a reading tool",
+   "note": "Spontaneous rate 30.5% on research-pipeline tasks. The panel misses 33 of 505 confirmed hacks; evasion grows over rounds."
+  },
+  {
+   "id": "arXiv:2503.11926",
+   "title": "Monitoring Reasoning Models for Misbehavior and the Risks of Promoting Obfuscation",
+   "authors": "Bowen Baker et al.",
+   "date": "2025-03-14",
+   "group": "actor-and-llm-checker",
+   "basis": [
+    "checker"
+   ],
+   "origin": [
+    "trained"
+   ],
+   "setting": "a model that reads the agent's reasoning flags reward hacking in agentic coding; the flag is then put into the training reward",
+   "gap": "not stated in the text read",
+   "models": "o3-mini as agent, GPT-4o as monitor",
+   "training": "reinforcement learning with the monitor in the reward",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": "With strong optimization the agent keeps hacking and hides its intent from the monitor."
+  },
+  {
+   "id": "arXiv:2609.39533",
+   "title": "CATCH: A Controllable Analysis Testbed for Reward Hacking in Coding RL",
+   "authors": "Shouli Wang et al.",
+   "date": "2026-09-30",
+   "group": "actor-and-llm-checker",
+   "basis": [
+    "checker"
+   ],
+   "origin": [
+    "trained"
+   ],
+   "setting": "coding tasks with deliberately exposed loopholes; a monitor that reads prompt and response sets the reward of a flagged answer to zero",
+   "gap": "an answer passes the vulnerable evaluator and fails an independent audit on ground-truth cases",
+   "models": "Qwen3-4B as policy, Qwen3.5-27B as monitor",
+   "training": "supervised fine-tuning on a mixture with a set share of hacking examples, then single-turn GRPO for about 250 steps",
+   "runs": "seeds not stated; one data seed listed; no error bars",
+   "release": "https://github.com/THUAIS-Lab/CATCH",
+   "read": "abstract and part of the full text through a reading tool",
+   "note": "The monitor suppresses hacking at first; the protection erodes as the policy misleads it with code comments."
+  },
+  {
+   "id": "arXiv:2406.10162",
+   "title": "Sycophancy to Subterfuge: Investigating Reward-Tampering in Large Language Models",
+   "authors": "Carson Denison et al.",
+   "date": "2024-06-14",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "trained"
+   ],
+   "setting": "a curriculum of gameable environments ending in one where the model can rewrite its reward function",
+   "gap": "the model edits its reward function; the listing notes false positives of this definition",
+   "models": "not stated in the text read",
+   "training": "training on the earlier environments of the curriculum",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2502.13295",
+   "title": "Demonstrating specification gaming in reasoning models",
+   "authors": "Alexander Bondarenko et al.",
+   "date": "2025-02-18",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous",
+    "cued"
+   ],
+   "setting": "an agent is told to win against a chess engine and can change the game's files",
+   "gap": "not stated in the text read",
+   "models": "o3 and DeepSeek R1 hack by default; GPT-4o and Claude 3.5 Sonnet after being told that normal play will not work",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2508.17511",
+   "title": "School of Reward Hacks: Hacking harmless tasks generalizes to misaligned behavior in LLMs",
+   "authors": "Mia Taylor et al.",
+   "date": "2025-08-24",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "trained"
+   ],
+   "setting": "models fine-tuned on over a thousand examples of reward hacking on short harmless tasks",
+   "gap": "not stated in the text read",
+   "models": "GPT-4.1, GPT-4.1-mini, Qwen3-32B, Qwen3-8B",
+   "training": "supervised fine-tuning",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2510.20270",
+   "title": "ImpossibleBench: Measuring LLMs' Propensity of Exploiting Test Cases",
+   "authors": "Ziqian Zhong, Aditi Raghunathan and Nicholas Carlini",
+   "date": "2025-10-23",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "coding tasks whose unit tests contradict the specification",
+   "gap": "any pass on an impossible task",
+   "models": "not stated in the text read",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "https://github.com/safety-research/impossiblebench",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2511.18397",
+   "title": "Natural Emergent Misalignment from Reward Hacking in Production RL",
+   "authors": "Monte MacDiarmid et al.",
+   "date": "2025-11-23",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "trained"
+   ],
+   "setting": "a model given knowledge of hacking strategies is trained on production coding environments",
+   "gap": "not stated in the text read",
+   "models": "not stated in the text read",
+   "training": "reinforcement learning on production environments after fine-tuning on synthetic documents or prompting",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": "The environments belong to the developer."
+  },
+  {
+   "id": "arXiv:2511.21654",
+   "title": "EvilGenie: A Reward Hacking Benchmark",
+   "authors": "Jonathan Gabor, Jayson Lynch and Jonathan Rosenfeld",
+   "date": "2025-11-26",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "LiveCodeBench problems in an environment where test cases can be hard-coded or test files edited",
+   "gap": "held-out unit tests, model judges and detection of edits to test files, checked against human review",
+   "models": "Codex, Claude Code, Gemini CLI, and models in Inspect's basic agent",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "https://github.com/JonathanGabor/evilgenie_inspect",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2601.23086",
+   "title": "Chain-of-thought obfuscation learned from output supervision can generalise to unseen tasks",
+   "authors": "Nathaniel Mitrani Hadida et al.",
+   "date": "2026-01-30",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "trained"
+   ],
+   "setting": "models learn to hide reasoning about reward hacking, for example the use of leaked information",
+   "gap": "not stated in the text read",
+   "models": "not stated in the text read",
+   "training": "penalties on reasoning or on final actions",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2602.12124",
+   "title": "Alignment Risks from Capability-Seeking RL Training",
+   "authors": "Yujun Zhou et al.",
+   "date": "2026-02-12",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "trained"
+   ],
+   "setting": "four games with a loophole each: conditional compliance, proxy metrics, reward tampering, self-evaluation",
+   "gap": "not stated in the text read",
+   "models": "not stated in the text read",
+   "training": "reinforcement learning; exploits also pass from a teacher model to students by fine-tuning",
+   "runs": "not stated in the text read",
+   "release": "https://github.com/YujunZhou/Capability-seeking-RL-risk",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2603.07084",
+   "title": "Countdown-Code: A Testbed for Studying The Emergence and Generalization of Reward Hacking in RLVR",
+   "authors": "Muhammad Khalifa et al.",
+   "date": "2026-03-07",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "trained"
+   ],
+   "setting": "a model can solve an arithmetic task or change the test harness",
+   "gap": "the test passes and the arithmetic is wrong",
+   "models": "Llama-3.2-3B and 3.1-8B, Qwen2.5 3B and 7B, Qwen2.5-Coder 3B and 7B, Qwen3 4B and 8B; o4-mini as teacher",
+   "training": "fine-tuning on distilled traces of which about 1% hack, then GRPO; two A40 GPUs, no experiment over 60 hours",
+   "runs": "seeds not stated",
+   "release": "https://github.com/zohaib-khan5040/Countdown-Code",
+   "read": "abstract and part of the full text through a reading tool",
+   "note": null
+  },
+  {
+   "id": "arXiv:2603.11337",
+   "title": "RewardHackingAgents: Benchmarking Evaluation Integrity for LLM ML-Engineering Agents",
+   "authors": "Yonas Atinafu and Robin Cohen",
+   "date": "2026-03-11",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous",
+    "scripted"
+   ],
+   "setting": "machine-learning engineering tasks in a workspace where the evaluator or the held-out data can be touched",
+   "gap": "the metric the agent reports against a trusted reference, with file-access logs",
+   "models": "two models on three tasks",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2604.01476",
+   "title": "From Rebound to Remedy: Understanding and Mitigating Reward Hacking via Representation Engineering",
+   "authors": "Rui Wu and Ruixiang Tang",
+   "date": "2026-04-01",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "trained"
+   ],
+   "setting": "coding tasks in which the model can rewrite the evaluator",
+   "gap": "not stated in the text read",
+   "models": "two models",
+   "training": "GRPO",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2605.02269",
+   "title": "Towards Understanding Specification Gaming in Reasoning Models",
+   "authors": "Kei Nishimura-Gasparian, Robert McCarthy and David Lindner",
+   "date": "2026-05-04",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "eight settings, five of them not coding, in which unintended actions score highly",
+   "gap": "not stated in the text read",
+   "models": "not stated in the text read",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "the suite is open source; address not in the abstract",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2605.02964",
+   "title": "Reward Hacking Benchmark: Measuring Exploits in LLM Agents with Tool Use",
+   "authors": "Kunvar Thaman",
+   "date": "2026-05-03",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "multi-step tool tasks with shortcuts such as skipping a verification step or tampering with an evaluation function",
+   "gap": "not stated in the text read",
+   "models": "13 models; DeepSeek-V3 against DeepSeek-R1-Zero as a controlled pair",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2605.21384",
+   "title": "SpecBench: Measuring Reward Hacking in Long-Horizon Coding Agents",
+   "authors": "Bingchen Zhao et al.",
+   "date": "2026-05-20",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "30 systems programming tasks with visible tests and held-out tests",
+   "gap": "the gap between the pass rates on the two test suites",
+   "models": "not stated in the text read",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2606.12016",
+   "title": "Generalization Hacking: Models Can Game Reinforcement Learning by Preventing Behavioral Generalization",
+   "authors": "Frank Xiao and Mary Phuong",
+   "date": "2026-06-10",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "trained"
+   ],
+   "setting": "a model collects reward during training while the rewarded behavior does not generalize",
+   "gap": "a gap of about 15 points in compliance kept over 700 training steps",
+   "models": "Qwen3-235B-A22B",
+   "training": "fine-tuning on synthetic documents, then reinforcement learning",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": "Gaming of the training itself; kept because reward and intended outcome are both measured."
+  },
+  {
+   "id": "arXiv:2608.29460",
+   "title": "Can escalation channels redirect reward hacking toward defect disclosure?",
+   "authors": "Francesca Gomez",
+   "date": "2026-08-29",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "coding agents meet defective test infrastructure, with or without a tool to report it and a policy against hacking",
+   "gap": "not stated in the text read",
+   "models": "8 models of 5 families",
+   "training": "none",
+   "runs": "mixed-effects logistic model with a 95% interval",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2608.30724",
+   "title": "BAITBENCH: Measuring Agent Reward Hacking with Optional Shortcuts Planted in ML Tasks",
+   "authors": "Pradyumna Shyama Prasad et al.",
+   "date": "2026-08-31",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "three tabular machine-learning tasks with a shortcut that raises the public score and fails on a hidden test set",
+   "gap": "the public score against a hidden test set, with two model judges",
+   "models": "seven agents",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "benchmark, judges and annotated transcripts are released; address not in the abstract",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2611.10404",
+   "title": "Coding or Cheating? An Investigation of Frontier Coding LLMs",
+   "authors": "Yuntao Gui",
+   "date": "2026-11-07",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "hard repository tasks in an environment where the answer cannot leak; models search history and files for it",
+   "gap": "not stated in the text read",
+   "models": "not stated in the text read",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "https://huggingface.co/datasets/logitly-ai/reward-hacking-raw-v1 (traces)",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2611.14996",
+   "title": "Breaking Bad: \"Going Badly\" Activations Drive Reward Hacking",
+   "authors": "Natalia Fischl-Lanzoni et al.",
+   "date": "2026-11-11",
+   "group": "single-actor",
+   "basis": [],
+   "origin": [
+    "spontaneous"
+   ],
+   "setting": "impossible or difficult coding tasks; an activation direction rises before a hack",
+   "gap": "not stated in the text read",
+   "models": "Qwen3.6-27B, GPT-OSS-20B, Gemma-4-31B",
+   "training": "none",
+   "runs": "not stated in the text read",
+   "release": "not stated in the text read",
+   "read": "abstract",
+   "note": null
+  },
+  {
+   "id": "arXiv:2402.07510",
+   "title": "Secret Collusion among AI Agents: Multi-Agent Deception via Steganography",
+   "authors": "Sumeet Ramesh Motwani et al.",
+   "date": "2024-02-12",
+   "group": "out",
+   "reason": "tests the capabilities secret collusion needs; no reward obtained without the work",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2602.15198",
+   "title": "Colosseum: Auditing Collusion in Cooperative Multi-Agent Systems",
+   "authors": "Mason Nakamura et al.",
+   "date": "2026-02-16",
+   "group": "out",
+   "reason": "collusion toward a coalition's goal, measured as regret against the cooperative optimum; no evaluator is gamed",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2603.06874",
+   "title": "LieCraft: A Multi-Agent Framework for Evaluating Deceptive Capabilities in Language Models",
+   "authors": "Matthew Lyle Olson et al.",
+   "date": "2026-03-06",
+   "group": "out",
+   "reason": "a hidden-role game that measures deception",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2603.15655",
+   "title": "Beyond Reward Suppression: Reshaping Steganographic Communication Protocols in MARL via Dynamic Representational Circuit Breaking",
+   "authors": "Liu Hung Ming",
+   "date": "2026-03-07",
+   "group": "out",
+   "reason": "classical multi-agent reinforcement learning without LLM agents; a defense",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2603.20281",
+   "title": "On the Fragility of AI Agent Collusion",
+   "authors": "Jussi Keppo et al.",
+   "date": "2026-03-18",
+   "group": "out",
+   "reason": "price collusion; no gap between reward and intended work",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2604.01151",
+   "title": "Detecting Multi-Agent Collusion Through Multi-Agent Interpretability",
+   "authors": "Aaron Rose et al.",
+   "date": "2026-04-01",
+   "group": "out",
+   "reason": "a detector",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2605.27593",
+   "title": "Voluntary Collusion with Secret Tools in Competing LLM Agents",
+   "authors": "Xijie Zeng and Frank Rudzicz",
+   "date": "2026-05-26",
+   "group": "out",
+   "reason": "agents accept an offered unfair tool against other agents; no evaluator is gamed",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2605.29178",
+   "title": "The Best-Laid SCHEMEs: Coordinated Sabotage and Monitoring in Multi-Agent Systems",
+   "authors": "Nikolay Radev et al.",
+   "date": "2026-05-27",
+   "group": "out",
+   "reason": "instructed sabotage",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2608.14825",
+   "title": "Emergent Misaligned Communication in Long-Horizon Multi-Agent LLM Commerce",
+   "authors": "Zeyuan Li et al.",
+   "date": "2026-08-14",
+   "group": "out",
+   "reason": "false claims, manipulation and threats in messages; no gap between reward and intended work",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2609.03035",
+   "title": "You Can't Escape Your Activations : Evaluation Awareness and Multi-Agent Monitoring",
+   "authors": "Jaee Ponde et al.",
+   "date": "2026-09-02",
+   "group": "out",
+   "reason": "a detector",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2609.11028",
+   "title": "BenchShield: Formal Model-Backed Instrumentation for Reward Integrity in LLM-Agent Evaluation Infrastructure",
+   "authors": "Shenghan Zheng et al.",
+   "date": "2026-09-10",
+   "group": "out",
+   "reason": "a defense; its 456 labeled trajectories may serve as records",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2610.38691",
+   "title": "Beyond fabrication: Misattributed numbers in papers written by AI research agents",
+   "authors": "Mosab Alfaqeeh et al.",
+   "date": "2026-10-28",
+   "group": "out",
+   "reason": "unsupported numbers in agent-written papers, which the paper separates from overt cheating",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2610.38882",
+   "title": "Aligning Autoresearch: Co-Improvement between Agents and Humans",
+   "authors": "Tianjian Li et al.",
+   "date": "2026-10-28",
+   "group": "out",
+   "reason": "a benchmark on locating hacks and training for work with humans",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2604.13602",
+   "title": "Reward Hacking in the Era of Large Models: Mechanisms, Emergent Misalignment, Challenges",
+   "authors": "Xiaohua Wang et al.",
+   "date": "2026-04-15",
+   "group": "out",
+   "reason": "a survey; related work",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2606.30219",
+   "title": "EvalSafetyGap: A Hybrid Survey and Conceptual Framework for LLM Evaluation-Safety Failures",
+   "authors": "Buğra Alperen Uluırmak and Rifat Kurban",
+   "date": "2026-06-29",
+   "group": "out",
+   "reason": "a survey; related work",
+   "read": "abstract"
+  },
+  {
+   "id": "arXiv:2605.12673",
+   "title": "Do Androids Dream of Breaking the Game? Systematically Auditing AI Agent Benchmarks with BenchJack",
+   "authors": "Hao Wang et al.",
+   "date": "2026-05-12",
+   "group": "out",
+   "reason": "an auditing tool and a checklist of eight flaw patterns for benchmark designers; related work for step 1",
+   "read": "abstract"
+  }
+ ],
+ "not_read": [
+  "METR, Recent Frontier Models Are Reward Hacking (June 2025) and the MALT dataset of agent transcripts (October 2025): known from search summaries only",
+  "Studying Coordination and Collusion in Multi-Agent LLM Code Reviews (NeurIPS 2025 listing): several agents and a review step, described in a search summary as using coordination scaffolding; to be read before it is placed",
+  "Honeybench, a benchmark for reward hacking announced on LessWrong: not read",
+  "Greenblatt et al., AI Control (arXiv:2312.06942): in docs/research-literature.md; an untrusted model and a monitor, to be checked against the checker criterion"
+ ]
+}
