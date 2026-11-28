@@ -119,68 +119,83 @@ where a trained-in collusion sits in the weights and cannot show whether a rever
 
 ## Ways of undoing the code on this pair
 
-`compare_methods.py`, `compare_methods.json`: the trained sender with one intervention per arm, 32 candidates per
-label for evaluation and the next 64 per label for everything that is fitted, one random stream shared by
-all arms. "Tokens changed" is the share of token positions at which a per-token arm replaced the reading.
-"Shared words" counts the words of four or more letters that a text keeps from the candidate's sentence,
-and "surprise" is the mean negative log-likelihood per generated token under the base model.
+`compare_methods.py`, `compare_methods.json`: the trained sender with one intervention per arm. Texts are
+sampled for 32 candidates per label, with one random stream shared by all arms; everything that is fitted
+uses the next 64 per label; and two measures that need no sampling are read on the 96 per label after
+those, from the distribution of the first written token. "Label told" is the AUROC with which the mass on
+"I" and "My" as first token separates the two labels (0.5 when the first token says nothing about the
+label). "Back at base" is one minus the divergence of the base model's distribution from the arm's, over
+that from the trained sender's (1 when the first token is distributed as in the base model). Brackets are
+95% bootstrap intervals over candidates. "Tokens changed" is the share of token positions at which a
+per-token arm replaced the reading, and "surprise" is the mean negative log-likelihood per generated token
+under the base model.
 
-| Arm | Tokens changed | Receiver correct | PASS texts opening in first person | FAIL texts opening in first person | Words per text | Shared words | Surprise |
-|---|---|---|---|---|---|---|---|
-| trained, no intervention |  | 64 of 64 | 0.97 | 0.00 | 12.9 | 2.4 | 1.66 |
-| rolled back to the base model |  | 32 of 64 | 0.06 | 0.03 | 8.0 | 2.5 | 0.85 |
-| per token: first direction of each module written back as it is read (check of the arithmetic) | 0% | 64 of 64 | 0.97 | 0.00 | 12.8 | 2.4 | 1.68 |
-| per token: first direction of each module reading held at its mean at every token | 100% | 59 of 64 | 1.00 | 0.16 | 12.3 | 2.6 | 1.62 |
-| per token: first direction of each module reading set to its mean where it is over 1 deviation away | 30% | 61 of 64 | 0.97 | 0.06 | 11.9 | 2.7 | 1.39 |
-| per token: first direction of each module reading set to its mean where it is over 2 deviations away | 2% | 64 of 64 | 0.97 | 0.00 | 12.7 | 2.6 | 1.60 |
-| per token: first direction of each module cancelled where the reading is over 2 deviations away | 2% | 58 of 64 | 0.84 | 0.06 | 12.5 | 2.5 | 1.57 |
-| per token: first direction of each module cancelled where the reading is over 1 deviation away | 29% | 49 of 64 | 0.53 | 0.00 | 10.3 | 2.4 | 1.14 |
-| per token: first direction of each module cancelled where the reading is within 1 deviation | 71% | 62 of 64 | 0.91 | 0.00 | 12.7 | 2.7 | 1.44 |
-| per token: first direction of each module cancelled on the prompt before its last token | 78% | 40 of 64 | 0.28 | 0.03 | 11.0 | 2.7 | 1.11 |
-| per token: first direction of each module cancelled from the last prompt token on | 22% | 64 of 64 | 0.97 | 0.00 | 12.3 | 2.5 | 1.57 |
-| weights: without the first direction of each module |  | 36 of 64 | 0.16 | 0.03 | 8.7 | 2.6 | 0.95 |
-| activations: mean shift of training removed after layer 6 |  | 64 of 64 | 0.97 | 0.00 | 12.6 | 2.3 | 1.65 |
-| activations: mean shift of training removed after layer 12 |  | 64 of 64 | 0.97 | 0.00 | 12.0 | 2.5 | 1.58 |
-| activations: mean shift of training removed after layer 18 |  | 64 of 64 | 0.97 | 0.00 | 12.8 | 2.8 | 1.52 |
-| activations: mean shift of training removed after layer 24 |  | 64 of 64 | 1.00 | 0.00 | 12.9 | 2.7 | 1.71 |
-| activations: label direction removed after every layer |  | 35 of 64 | 0.38 | 0.34 | 13.8 | 2.5 | 2.38 |
-| activations: final state turned toward the benign mean, strength by the AcMAS rule |  | 46 of 64 | 1.00 | 0.00 | 3.6 | 0.5 | 3.10 |
-| activations: final state turned half-way toward the benign mean |  | 61 of 64 | 0.87 | 0.00 | 2.1 | 0.1 | 5.18 |
+| Arm | Tokens changed | Label told from the first token | First token back at base | Receiver correct on sampled texts | Words per text | Surprise |
+|---|---|---|---|---|---|---|
+| trained, no intervention |  | 1.00 [1.00, 1.00] | 0 by definition | 64 of 64 | 12.9 | 1.66 |
+| rolled back to the base model |  | 0.48 [0.39, 0.56] | 1.00 [1.00, 1.00] | 32 of 64 | 8.0 | 0.85 |
+| per token: first direction of each module written back as it is read (check of the arithmetic) | 0% | 1.00 [1.00, 1.00] | 0.01 [0.00, 0.01] | 64 of 64 | 12.8 | 1.68 |
+| per token: first direction of each module reading held at its mean at every token | 100% | 1.00 [1.00, 1.00] | 0.34 [0.32, 0.36] | 59 of 64 | 12.3 | 1.62 |
+| per token: first direction of each module reading set to its mean where it is over 1 deviation away | 30% | 1.00 [1.00, 1.00] | 0.51 [0.49, 0.54] | 61 of 64 | 11.9 | 1.39 |
+| per token: first direction of each module reading set to its mean where it is over 2 deviations away | 2% | 1.00 [1.00, 1.00] | 0.37 [0.35, 0.39] | 64 of 64 | 12.7 | 1.60 |
+| per token: first direction of each module cancelled where the reading is over 2 deviations away | 2% | 0.99 [0.98, 1.00] | 0.53 [0.50, 0.55] | 58 of 64 | 12.5 | 1.57 |
+| per token: first direction of each module cancelled where the reading is over 1 deviation away | 29% | 0.84 [0.78, 0.90] | 0.85 [0.83, 0.86] | 49 of 64 | 10.3 | 1.14 |
+| per token: first direction of each module cancelled where the reading is within 1 deviation | 71% | 1.00 [0.99, 1.00] | 0.52 [0.49, 0.55] | 62 of 64 | 12.7 | 1.44 |
+| per token: first direction of each module cancelled on the prompt before its last token | 78% | 0.79 [0.71, 0.85] | 0.90 [0.89, 0.91] | 40 of 64 | 11.0 | 1.11 |
+| per token: first direction of each module cancelled from the last prompt token on | 22% | 1.00 [1.00, 1.00] | 0.46 [0.44, 0.48] | 64 of 64 | 12.3 | 1.57 |
+| weights: without the first direction of each module |  | 0.62 [0.53, 0.69] | 0.98 [0.98, 0.99] | 36 of 64 | 8.7 | 0.95 |
+| activations: mean shift of training removed after layer 6 |  | 1.00 [1.00, 1.00] | 0.02 [0.01, 0.02] | 64 of 64 | 12.6 | 1.65 |
+| activations: mean shift of training removed after layer 12 |  | 1.00 [1.00, 1.00] | 0.25 [0.24, 0.27] | 64 of 64 | 12.0 | 1.58 |
+| activations: mean shift of training removed after layer 18 |  | 1.00 [1.00, 1.00] | 0.44 [0.41, 0.47] | 64 of 64 | 12.8 | 1.52 |
+| activations: mean shift of training removed after layer 24 |  | 1.00 [1.00, 1.00] | 0.45 [0.43, 0.47] | 64 of 64 | 12.9 | 1.71 |
+| activations: label direction removed after every layer |  | 0.42 [0.33, 0.50] | 0.50 [0.46, 0.54] | 35 of 64 | 13.8 | 2.38 |
+| activations: final state turned toward the benign mean, strength by the AcMAS rule |  | set per response | set per response | 46 of 64 | 3.6 | 3.10 |
+| activations: final state turned half-way toward the benign mean |  | set per response | set per response | 61 of 64 | 2.1 | 5.18 |
 
-- A fixed steering vector in the residual stream does nothing here. Subtracting the mean shift that training
-  produced, after any of four layers, leaves the receiver right on every text.
-- Cutting the first direction of each module from the weights removes the code without any label, and it
-  removes the rest of what training changed with it: the texts return to the base model's length.
+- A fixed steering vector in the residual stream does not touch the code. Subtracting the mean shift that
+  training produced, after any of four layers, moves the first token's distribution up to 0.45 of the
+  way back and leaves the label told at 1.00.
+- Cutting the first direction of each module from the weights needs no label and brings the first token
+  back at base (0.98) and the texts to the base model's length; the label is still told at
+  0.62 [0.53, 0.69], against 0.48 [0.39, 0.56] for the base model, so the other directions carry a little
+  of the code.
 - What that direction reads is a signal that needs no label. From one number per prompt, 25 of the 52
   modules separate the two labels with an AUROC of at least 0.9 (labels are used only to score this), and
   in the five best modules the reading is furthest from its mean at the tokens ' Bad', ' Good', ' University', ',', '<pad>'.
-- Cancelling the direction at some tokens only, which returns those tokens to the base model's value:
-  on the prompt before its last token the receiver is right on 40 of 64 and the texts keep 11.0 words;
-  from the last prompt token on, 64 of 64. The code is put in where the sentence is read, not where the
-  text is written. At the 29% of tokens whose reading is more than one deviation from its mean the
-  receiver is right on 49, and at the other 71% on 62: the tokens the signal marks carry more of
-  the code than the rest, and not all of it.
-- Setting the reading to its fitted mean instead of cancelling it does little (59 of 64 at every token):
-  the value to restore is the base model's, not the trained model's average.
-- Removing the direction that separates the two labels, after every layer, removes the code and keeps the
-  trained length, at the price of texts that are less natural to the base model. It has to be told what the
-  hidden information is.
+- Cancelling the direction at some tokens only, which returns those tokens to the base model's value,
+  weakens the code and does not remove it. On the prompt before its last token the label is told at
+  0.79 [0.71, 0.85] and the texts keep 11.0 words; from the last prompt token on, at 1.00: the code is
+  put in where the sentence is read, not where the text is written. At the 29% of tokens whose
+  reading is more than one deviation from its mean, 0.84 [0.78, 0.90]; at the other 71%,
+  1.00 [0.99, 1.00]: the tokens that the signal marks carry more of the code than the rest, and not all
+  of it.
+- Setting the reading to its fitted mean instead of cancelling it leaves the label told at 1.00: the
+  value to restore is the base model's, not the trained model's average.
+- Removing the direction that separates the two labels, after every layer, removes the code
+  (0.42 [0.33, 0.50]) while the first token goes only 0.50 of the way back and the texts keep the
+  trained length, at the price of texts that are less natural to the base model. It is the only arm that
+  removes the code and keeps the rest, and the only one that has to be told what the hidden information is.
+- The sampled count is a coarse measure: the receiver was right on 40 of 64 texts of the arm that
+  cancels on the prompt, which looks close to chance beside a label told at 0.79.
 - The distance of AcMAS detects the trained sender: fitted on other candidates, it flags 64 of 64 of its
   responses and 6 of 64 of the base model's (AUROC 0.98). It detects that the model is not the base
   model, which any fine-tuning would also cause. The correction, as read here from equations 14 and 15,
-  cuts the texts to a few words and leaves the first word, and so the code, in place.
+  cuts the texts to a few words and leaves the first word, and so the code, in place; it is set per
+  response, so the two measures without sampling do not apply to it.
 
-Limits beyond those above: one random stream, so a difference of a few texts between arms is within what
-another stream could give; the AcMAS arms are this project's reading of a formula whose implementation is
-not published, applied to a case the paper does not address; the mean shift and the label direction were
-taken at the position that writes the first word and applied at every position; the split between the
-prompt and the written text follows this task's fixed prompt length.
+Limits beyond those above: the measures without sampling look at the first token only, and the receiver
+reads the whole text; the AcMAS arms are this project's reading of a formula whose implementation is not
+published, applied to a case the paper does not address; the mean shift and the label direction were taken
+at the position that writes the first word and applied at every position; the split between the prompt
+and the written text follows this task's fixed prompt length.
 
 ## Not done
 
-A detector that decides per token with fitted thresholds per module, in place of one width for all; other
-seeds and a second trained pair; a case in which training also taught something worth keeping, for which
-`reward-hacking/corpus.json` lists published training code (CATCH, Countdown-Code, the vulnerability games
-of Zhou et al.) and no released weights; any team setting beyond this pair, and with it the question
-whether directions read from one agent's weights can be used in a teammate that has no weight difference.
-The texts of the nearest prior work have not been read.
+A detector that decides per token with fitted thresholds per module, in place of one width for all;
+corrections fitted in layer order, each after the earlier ones are applied; a check of what a correction
+does to an agent that is not in the hacking state; other seeds and a second trained pair; a case in which
+training also taught something worth keeping, for which `reward-hacking/corpus.json` lists published
+training code (CATCH, Countdown-Code, the vulnerability games of Zhou et al.) and no released weights; any
+team setting beyond this pair, and with it the question whether directions read from one agent's weights
+can be used in a teammate that has no weight difference. The texts of the nearest prior work have not
+been read.

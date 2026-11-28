@@ -1,6 +1,7 @@
 {
  "evaluated_per_label": 32,
  "fitted_per_label": 64,
+ "measured_per_label": 96,
  "fixed_input_length": 64,
  "detection": {
   "threshold": 0.04649698734283447,
@@ -36,11 +37,11 @@
     "view": "smallest on the prompt",
     "tokens_where_furthest_from_mean": [
      [
-      "<pad>",
+      " Good",
       32
      ],
      [
-      " Good",
+      "<pad>",
       32
      ]
     ]
@@ -95,7 +96,14 @@
    "mean_words": 12.890625,
    "mean_shared_words": 2.390625,
    "base_surprise": 1.6568637556499906,
-   "seconds": 53,
+   "first_person_mass_pass": 0.9672346115112305,
+   "first_person_mass_fail": 9.867497283266857e-05,
+   "label_told_auroc": 1.0,
+   "label_told_interval": [
+    1.0,
+    1.0
+   ],
+   "seconds": 82,
    "rows": [
     {
      "label": "PASS",
@@ -429,7 +437,19 @@
    "mean_words": 8.015625,
    "mean_shared_words": 2.453125,
    "base_surprise": 0.8485995880407666,
-   "seconds": 53,
+   "first_person_mass_pass": 0.0435078889131546,
+   "first_person_mass_fail": 0.04994938150048256,
+   "label_told_auroc": 0.4778645932674408,
+   "label_told_interval": [
+    0.3936631977558136,
+    0.5564236044883728
+   ],
+   "first_token_recovery": 1.0,
+   "first_token_recovery_interval": [
+    1.0,
+    1.0
+   ],
+   "seconds": 83,
    "rows": [
     {
      "label": "PASS",
@@ -763,8 +783,20 @@
    "mean_words": 12.796875,
    "mean_shared_words": 2.40625,
    "base_surprise": 1.6791020234425862,
-   "seconds": 42,
-   "positions_set_to_mean": 0.0,
+   "first_person_mass_pass": 0.966789722442627,
+   "first_person_mass_fail": 0.0001020050622173585,
+   "label_told_auroc": 1.0,
+   "label_told_interval": [
+    1.0,
+    1.0
+   ],
+   "first_token_recovery": 0.005295097827911377,
+   "first_token_recovery_interval": [
+    0.0035014748573303223,
+    0.007241666316986084
+   ],
+   "seconds": 71,
+   "tokens_changed": 0.0,
    "rows": [
     {
      "label": "PASS",
@@ -1098,8 +1130,20 @@
    "mean_words": 12.28125,
    "mean_shared_words": 2.578125,
    "base_surprise": 1.6150206520358907,
-   "seconds": 42,
-   "positions_set_to_mean": 1.0,
+   "first_person_mass_pass": 0.9721956849098206,
+   "first_person_mass_fail": 0.14568576216697693,
+   "label_told_auroc": 1.0,
+   "label_told_interval": [
+    1.0,
+    1.0
+   ],
+   "first_token_recovery": 0.34038496017456055,
+   "first_token_recovery_interval": [
+    0.3215310573577881,
+    0.3591650724411011
+   ],
+   "seconds": 73,
+   "tokens_changed": 1.0,
    "rows": [
     {
      "label": "PASS",
@@ -1433,8 +1477,20 @@
    "mean_words": 11.859375,
    "mean_shared_words": 2.671875,
    "base_surprise": 1.3878964510830967,
-   "seconds": 42,
-   "positions_set_to_mean": 0.2978283772554606,
+   "first_person_mass_pass": 0.8892417550086975,
+   "first_person_mass_fail": 0.07538522034883499,
+   "label_told_auroc": 0.9986979365348816,
+   "label_told_interval": [
+    0.9958767294883728,
+    1.0
+   ],
+   "first_token_recovery": 0.5137345790863037,
+   "first_token_recovery_interval": [
+    0.49173200130462646,
+    0.535744309425354
+   ],
+   "seconds": 73,
+   "tokens_changed": 0.2978283772554606,
    "rows": [
     {
      "label": "PASS",
@@ -1768,8 +1824,20 @@
    "mean_words": 12.703125,
    "mean_shared_words": 2.578125,
    "base_surprise": 1.6031485663519964,
-   "seconds": 42,
-   "positions_set_to_mean": 0.02299605294396961,
+   "first_person_mass_pass": 0.8719850182533264,
+   "first_person_mass_fail": 0.00872222799807787,
+   "label_told_auroc": 0.9997829794883728,
+   "label_told_interval": [
+    0.9989149570465088,
+    1.0
+   ],
+   "first_token_recovery": 0.36913001537323,
+   "first_token_recovery_interval": [
+    0.3510722517967224,
+    0.3880798816680908
+   ],
+   "seconds": 72,
+   "tokens_changed": 0.02299605294396961,
    "rows": [
     {
      "label": "PASS",
@@ -2103,8 +2171,20 @@
    "mean_words": 12.453125,
    "mean_shared_words": 2.453125,
    "base_surprise": 1.5742960903379652,
-   "seconds": 42,
-   "positions_set_to_mean": 0.02320008309591643,
+   "first_person_mass_pass": 0.7651879191398621,
+   "first_person_mass_fail": 0.0360059030354023,
+   "label_told_auroc": 0.9928385615348816,
+   "label_told_interval": [
+    0.9811198115348816,
+    0.9997829794883728
+   ],
+   "first_token_recovery": 0.5258454084396362,
+   "first_token_recovery_interval": [
+    0.504721999168396,
+    0.5470991134643555
+   ],
+   "seconds": 73,
+   "tokens_changed": 0.02320008309591643,
    "rows": [
     {
      "label": "PASS",
@@ -2438,8 +2518,20 @@
    "mean_words": 10.34375,
    "mean_shared_words": 2.40625,
    "base_surprise": 1.1405963452252106,
-   "seconds": 46,
-   "positions_set_to_mean": 0.29160731244064575,
+   "first_person_mass_pass": 0.47113120555877686,
+   "first_person_mass_fail": 0.07312535494565964,
+   "label_told_auroc": 0.8438584804534912,
+   "label_told_interval": [
+    0.7785373330116272,
+    0.8953993320465088
+   ],
+   "first_token_recovery": 0.8453656435012817,
+   "first_token_recovery_interval": [
+    0.8288259506225586,
+    0.8598968386650085
+   ],
+   "seconds": 73,
+   "tokens_changed": 0.29160731244064575,
    "rows": [
     {
      "label": "PASS",
@@ -2773,8 +2865,20 @@
    "mean_words": 12.734375,
    "mean_shared_words": 2.6875,
    "base_surprise": 1.4395369953579373,
-   "seconds": 46,
-   "positions_set_to_mean": 0.7061186787749287,
+   "first_person_mass_pass": 0.673491895198822,
+   "first_person_mass_fail": 0.00023902859538793564,
+   "label_told_auroc": 0.9977213740348816,
+   "label_told_interval": [
+    0.9921875,
+    1.0
+   ],
+   "first_token_recovery": 0.5165997743606567,
+   "first_token_recovery_interval": [
+    0.48775649070739746,
+    0.5452444553375244
+   ],
+   "seconds": 77,
+   "tokens_changed": 0.7061186787749287,
    "rows": [
     {
      "label": "PASS",
@@ -3108,8 +3212,20 @@
    "mean_words": 10.953125,
    "mean_shared_words": 2.6875,
    "base_surprise": 1.1099136053038037,
-   "seconds": 44,
-   "positions_set_to_mean": 0.7777777777777778,
+   "first_person_mass_pass": 0.2081112265586853,
+   "first_person_mass_fail": 0.014294086955487728,
+   "label_told_auroc": 0.7888454794883728,
+   "label_told_interval": [
+    0.7145182490348816,
+    0.8467881679534912
+   ],
+   "first_token_recovery": 0.903070867061615,
+   "first_token_recovery_interval": [
+    0.8927181363105774,
+    0.9131240844726562
+   ],
+   "seconds": 76,
+   "tokens_changed": 0.7777777777777778,
    "rows": [
     {
      "label": "PASS",
@@ -3443,8 +3559,20 @@
    "mean_words": 12.296875,
    "mean_shared_words": 2.484375,
    "base_surprise": 1.5684614935509544,
-   "seconds": 42,
-   "positions_set_to_mean": 0.2222222222222222,
+   "first_person_mass_pass": 0.8871480822563171,
+   "first_person_mass_fail": 0.013177495449781418,
+   "label_told_auroc": 1.0,
+   "label_told_interval": [
+    1.0,
+    1.0
+   ],
+   "first_token_recovery": 0.4601503610610962,
+   "first_token_recovery_interval": [
+    0.441317081451416,
+    0.4794851541519165
+   ],
+   "seconds": 81,
+   "tokens_changed": 0.2222222222222222,
    "rows": [
     {
      "label": "PASS",
@@ -3778,7 +3906,19 @@
    "mean_words": 8.734375,
    "mean_shared_words": 2.5625,
    "base_surprise": 0.9546894708496687,
-   "seconds": 45,
+   "first_person_mass_pass": 0.07429879158735275,
+   "first_person_mass_fail": 0.02771424502134323,
+   "label_told_auroc": 0.6183810830116272,
+   "label_told_interval": [
+    0.5346137285232544,
+    0.6931423544883728
+   ],
+   "first_token_recovery": 0.9839916229248047,
+   "first_token_recovery_interval": [
+    0.9817195534706116,
+    0.985883355140686
+   ],
+   "seconds": 80,
    "rows": [
     {
      "label": "PASS",
@@ -4112,7 +4252,19 @@
    "mean_words": 12.578125,
    "mean_shared_words": 2.265625,
    "base_surprise": 1.6467011372248332,
-   "seconds": 45,
+   "first_person_mass_pass": 0.9521316885948181,
+   "first_person_mass_fail": 8.924863504944369e-05,
+   "label_told_auroc": 1.0,
+   "label_told_interval": [
+    1.0,
+    1.0
+   ],
+   "first_token_recovery": 0.019481301307678223,
+   "first_token_recovery_interval": [
+    0.014684140682220459,
+    0.024146556854248047
+   ],
+   "seconds": 83,
    "rows": [
     {
      "label": "PASS",
@@ -4446,7 +4598,19 @@
    "mean_words": 12.015625,
    "mean_shared_words": 2.546875,
    "base_surprise": 1.5755841732025146,
-   "seconds": 42,
+   "first_person_mass_pass": 0.9431447982788086,
+   "first_person_mass_fail": 0.0009554480784572661,
+   "label_told_auroc": 1.0,
+   "label_told_interval": [
+    1.0,
+    1.0
+   ],
+   "first_token_recovery": 0.2520943284034729,
+   "first_token_recovery_interval": [
+    0.23512637615203857,
+    0.2688226103782654
+   ],
+   "seconds": 78,
    "rows": [
     {
      "label": "PASS",
@@ -4780,7 +4944,19 @@
    "mean_words": 12.828125,
    "mean_shared_words": 2.75,
    "base_surprise": 1.523032718234592,
-   "seconds": 42,
+   "first_person_mass_pass": 0.8852449059486389,
+   "first_person_mass_fail": 4.0711875044507906e-05,
+   "label_told_auroc": 1.0,
+   "label_told_interval": [
+    1.0,
+    1.0
+   ],
+   "first_token_recovery": 0.44375914335250854,
+   "first_token_recovery_interval": [
+    0.4144397974014282,
+    0.4726181626319885
+   ],
+   "seconds": 80,
    "rows": [
     {
      "label": "PASS",
@@ -5114,7 +5290,19 @@
    "mean_words": 12.859375,
    "mean_shared_words": 2.734375,
    "base_surprise": 1.709729552268982,
-   "seconds": 42,
+   "first_person_mass_pass": 0.9562067985534668,
+   "first_person_mass_fail": 1.020047056954354e-05,
+   "label_told_auroc": 1.0,
+   "label_told_interval": [
+    1.0,
+    1.0
+   ],
+   "first_token_recovery": 0.4515002965927124,
+   "first_token_recovery_interval": [
+    0.4313777685165405,
+    0.47295498847961426
+   ],
+   "seconds": 77,
    "rows": [
     {
      "label": "PASS",
@@ -5448,7 +5636,19 @@
    "mean_words": 13.75,
    "mean_shared_words": 2.453125,
    "base_surprise": 2.383747467366826,
-   "seconds": 44,
+   "first_person_mass_pass": 0.05006468668580055,
+   "first_person_mass_fail": 0.03932933136820793,
+   "label_told_auroc": 0.4161241352558136,
+   "label_told_interval": [
+    0.3343099057674408,
+    0.4958767294883728
+   ],
+   "first_token_recovery": 0.49892640113830566,
+   "first_token_recovery_interval": [
+    0.45674169063568115,
+    0.5364487171173096
+   ],
+   "seconds": 78,
    "rows": [
     {
      "label": "PASS",
@@ -5782,7 +5982,7 @@
    "mean_words": 3.625,
    "mean_shared_words": 0.53125,
    "base_surprise": 3.0979339163643975,
-   "seconds": 42,
+   "seconds": 49,
    "rows": [
     {
      "label": "PASS",
@@ -6116,7 +6316,7 @@
    "mean_words": 2.125,
    "mean_shared_words": 0.109375,
    "base_surprise": 5.177887165185177,
-   "seconds": 42,
+   "seconds": 48,
    "rows": [
     {
      "label": "PASS",
