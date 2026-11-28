@@ -1,0 +1,414 @@
+{
+ "summary": {
+  "modules": 52,
+  "rank": 16,
+  "squared_norm": 2.255360527895391,
+  "share_by_module": {
+   "q_proj": 0.7120083545383298,
+   "v_proj": 0.2879916454616701
+  },
+  "largest_layer_share": 0.0811309816232821,
+  "q_proj": {
+   "mean_first_direction_share": 0.6926415929427514,
+   "mean_effective_rank": 2.0602379945608287
+  },
+  "v_proj": {
+   "mean_first_direction_share": 0.7459585552032177,
+   "mean_effective_rank": 1.7220632479741023
+  }
+ },
+ "share_by_layer": {
+  "0": 0.017835949003076085,
+  "1": 0.02561914826316406,
+  "2": 0.03054851692735059,
+  "3": 0.029869973543315297,
+  "4": 0.01600710465628899,
+  "5": 0.028658330738872122,
+  "6": 0.017531449628788266,
+  "7": 0.037447376189479784,
+  "8": 0.02343319921567656,
+  "9": 0.032157141791310295,
+  "10": 0.027933178497990867,
+  "11": 0.03326132136974468,
+  "12": 0.039307321944288355,
+  "13": 0.04130877719575944,
+  "14": 0.061236924224057916,
+  "15": 0.03504977941244548,
+  "16": 0.05014383336347769,
+  "17": 0.04221778854796724,
+  "18": 0.049983773895677784,
+  "19": 0.0811309816232821,
+  "20": 0.02739859560019304,
+  "21": 0.03946194385320982,
+  "22": 0.043414033331980725,
+  "23": 0.06417237353673935,
+  "24": 0.05752538561093175,
+  "25": 0.04734579803493171
+ },
+ "modules": [
+  {
+   "layer": 0,
+   "module": "q_proj",
+   "squared_norm": 0.03299155458807945,
+   "first_direction_share": 0.7087458968162537,
+   "effective_rank": 1.9080256223678589
+  },
+  {
+   "layer": 0,
+   "module": "v_proj",
+   "squared_norm": 0.007234940771013498,
+   "first_direction_share": 0.9331774115562439,
+   "effective_rank": 1.1460336446762085
+  },
+  {
+   "layer": 1,
+   "module": "q_proj",
+   "squared_norm": 0.051418937742710114,
+   "first_direction_share": 0.6462578773498535,
+   "effective_rank": 2.2743749618530273
+  },
+  {
+   "layer": 1,
+   "module": "v_proj",
+   "squared_norm": 0.006361478008329868,
+   "first_direction_share": 0.8079621195793152,
+   "effective_rank": 1.5046112537384033
+  },
+  {
+   "layer": 10,
+   "module": "q_proj",
+   "squared_norm": 0.045982640236616135,
+   "first_direction_share": 0.6086792945861816,
+   "effective_rank": 2.396436929702759
+  },
+  {
+   "layer": 10,
+   "module": "v_proj",
+   "squared_norm": 0.01701674796640873,
+   "first_direction_share": 0.7384400367736816,
+   "effective_rank": 1.7192726135253906
+  },
+  {
+   "layer": 11,
+   "module": "q_proj",
+   "squared_norm": 0.05462861433625221,
+   "first_direction_share": 0.6978815793991089,
+   "effective_rank": 1.9193323850631714
+  },
+  {
+   "layer": 11,
+   "module": "v_proj",
+   "squared_norm": 0.02038765698671341,
+   "first_direction_share": 0.7951140999794006,
+   "effective_rank": 1.537155270576477
+  },
+  {
+   "layer": 12,
+   "module": "q_proj",
+   "squared_norm": 0.06829226016998291,
+   "first_direction_share": 0.8107811212539673,
+   "effective_rank": 1.5029301643371582
+  },
+  {
+   "layer": 12,
+   "module": "v_proj",
+   "squared_norm": 0.02035992220044136,
+   "first_direction_share": 0.5840455293655396,
+   "effective_rank": 2.2851991653442383
+  },
+  {
+   "layer": 13,
+   "module": "q_proj",
+   "squared_norm": 0.07472678273916245,
+   "first_direction_share": 0.7449353933334351,
+   "effective_rank": 1.7593920230865479
+  },
+  {
+   "layer": 13,
+   "module": "v_proj",
+   "squared_norm": 0.01843940280377865,
+   "first_direction_share": 0.6803534030914307,
+   "effective_rank": 1.9088667631149292
+  },
+  {
+   "layer": 14,
+   "module": "q_proj",
+   "squared_norm": 0.11125990003347397,
+   "first_direction_share": 0.8253539204597473,
+   "effective_rank": 1.449244499206543
+  },
+  {
+   "layer": 14,
+   "module": "v_proj",
+   "squared_norm": 0.026851441711187363,
+   "first_direction_share": 0.6726996302604675,
+   "effective_rank": 1.9749464988708496
+  },
+  {
+   "layer": 15,
+   "module": "q_proj",
+   "squared_norm": 0.0540463849902153,
+   "first_direction_share": 0.5807396173477173,
+   "effective_rank": 2.611595392227173
+  },
+  {
+   "layer": 15,
+   "module": "v_proj",
+   "squared_norm": 0.025003504008054733,
+   "first_direction_share": 0.6776055693626404,
+   "effective_rank": 2.0160837173461914
+  },
+  {
+   "layer": 16,
+   "module": "q_proj",
+   "squared_norm": 0.06833238154649734,
+   "first_direction_share": 0.6639443635940552,
+   "effective_rank": 2.034111261367798
+  },
+  {
+   "layer": 16,
+   "module": "v_proj",
+   "squared_norm": 0.04476004093885422,
+   "first_direction_share": 0.535728931427002,
+   "effective_rank": 2.1629738807678223
+  },
+  {
+   "layer": 17,
+   "module": "q_proj",
+   "squared_norm": 0.06842421740293503,
+   "first_direction_share": 0.6450895071029663,
+   "effective_rank": 2.234450578689575
+  },
+  {
+   "layer": 17,
+   "module": "v_proj",
+   "squared_norm": 0.026792116463184357,
+   "first_direction_share": 0.6744312047958374,
+   "effective_rank": 1.9854131937026978
+  },
+  {
+   "layer": 18,
+   "module": "q_proj",
+   "squared_norm": 0.053862400352954865,
+   "first_direction_share": 0.6687260866165161,
+   "effective_rank": 2.114004611968994
+  },
+  {
+   "layer": 18,
+   "module": "v_proj",
+   "squared_norm": 0.05886903032660484,
+   "first_direction_share": 0.8781806230545044,
+   "effective_rank": 1.2871267795562744
+  },
+  {
+   "layer": 19,
+   "module": "q_proj",
+   "squared_norm": 0.13231007754802704,
+   "first_direction_share": 0.764673113822937,
+   "effective_rank": 1.6443257331848145
+  },
+  {
+   "layer": 19,
+   "module": "v_proj",
+   "squared_norm": 0.050669535994529724,
+   "first_direction_share": 0.6708186864852905,
+   "effective_rank": 1.9830822944641113
+  },
+  {
+   "layer": 2,
+   "module": "q_proj",
+   "squared_norm": 0.06260725110769272,
+   "first_direction_share": 0.8337341547012329,
+   "effective_rank": 1.4271208047866821
+  },
+  {
+   "layer": 2,
+   "module": "v_proj",
+   "squared_norm": 0.0062906681559979916,
+   "first_direction_share": 0.8713117837905884,
+   "effective_rank": 1.3104223012924194
+  },
+  {
+   "layer": 20,
+   "module": "q_proj",
+   "squared_norm": 0.022382453083992004,
+   "first_direction_share": 0.4946456551551819,
+   "effective_rank": 3.426950454711914
+  },
+  {
+   "layer": 20,
+   "module": "v_proj",
+   "squared_norm": 0.039411257952451706,
+   "first_direction_share": 0.8331555128097534,
+   "effective_rank": 1.4283801317214966
+  },
+  {
+   "layer": 21,
+   "module": "q_proj",
+   "squared_norm": 0.05291660130023956,
+   "first_direction_share": 0.7065175175666809,
+   "effective_rank": 1.9358121156692505
+  },
+  {
+   "layer": 21,
+   "module": "v_proj",
+   "squared_norm": 0.036084309220314026,
+   "first_direction_share": 0.8363642692565918,
+   "effective_rank": 1.410573959350586
+  },
+  {
+   "layer": 22,
+   "module": "q_proj",
+   "squared_norm": 0.04082285240292549,
+   "first_direction_share": 0.7267546057701111,
+   "effective_rank": 1.8325320482254028
+  },
+  {
+   "layer": 22,
+   "module": "v_proj",
+   "squared_norm": 0.05709144473075867,
+   "first_direction_share": 0.8146548867225647,
+   "effective_rank": 1.4626197814941406
+  },
+  {
+   "layer": 23,
+   "module": "q_proj",
+   "squared_norm": 0.10342275351285934,
+   "first_direction_share": 0.7437348961830139,
+   "effective_rank": 1.7341928482055664
+  },
+  {
+   "layer": 23,
+   "module": "v_proj",
+   "squared_norm": 0.04130908474326134,
+   "first_direction_share": 0.7495557069778442,
+   "effective_rank": 1.7123425006866455
+  },
+  {
+   "layer": 24,
+   "module": "q_proj",
+   "squared_norm": 0.09298960864543915,
+   "first_direction_share": 0.7222146987915039,
+   "effective_rank": 1.8303354978561401
+  },
+  {
+   "layer": 24,
+   "module": "v_proj",
+   "squared_norm": 0.036750875413417816,
+   "first_direction_share": 0.787588357925415,
+   "effective_rank": 1.5693327188491821
+  },
+  {
+   "layer": 25,
+   "module": "q_proj",
+   "squared_norm": 0.07942752540111542,
+   "first_direction_share": 0.777830958366394,
+   "effective_rank": 1.5983302593231201
+  },
+  {
+   "layer": 25,
+   "module": "v_proj",
+   "squared_norm": 0.027354318648576736,
+   "first_direction_share": 0.6837871670722961,
+   "effective_rank": 2.0240461826324463
+  },
+  {
+   "layer": 3,
+   "module": "q_proj",
+   "squared_norm": 0.06170325726270676,
+   "first_direction_share": 0.7741161584854126,
+   "effective_rank": 1.633216381072998
+  },
+  {
+   "layer": 3,
+   "module": "v_proj",
+   "squared_norm": 0.005664302036166191,
+   "first_direction_share": 0.8535459637641907,
+   "effective_rank": 1.363942265510559
+  },
+  {
+   "layer": 4,
+   "module": "q_proj",
+   "squared_norm": 0.02724594436585903,
+   "first_direction_share": 0.4348104000091553,
+   "effective_rank": 3.9576032161712646
+  },
+  {
+   "layer": 4,
+   "module": "v_proj",
+   "squared_norm": 0.008855847641825676,
+   "first_direction_share": 0.7558448910713196,
+   "effective_rank": 1.7009282112121582
+  },
+  {
+   "layer": 5,
+   "module": "q_proj",
+   "squared_norm": 0.05536432936787605,
+   "first_direction_share": 0.7214492559432983,
+   "effective_rank": 1.8559480905532837
+  },
+  {
+   "layer": 5,
+   "module": "v_proj",
+   "squared_norm": 0.009270538575947285,
+   "first_direction_share": 0.602123498916626,
+   "effective_rank": 2.2648680210113525
+  },
+  {
+   "layer": 6,
+   "module": "q_proj",
+   "squared_norm": 0.029743047431111336,
+   "first_direction_share": 0.5895203948020935,
+   "effective_rank": 2.6206138134002686
+  },
+  {
+   "layer": 6,
+   "module": "v_proj",
+   "squared_norm": 0.009796692058444023,
+   "first_direction_share": 0.737105131149292,
+   "effective_rank": 1.741091012954712
+  },
+  {
+   "layer": 7,
+   "module": "q_proj",
+   "squared_norm": 0.07196587324142456,
+   "first_direction_share": 0.7857885956764221,
+   "effective_rank": 1.582945466041565
+  },
+  {
+   "layer": 7,
+   "module": "v_proj",
+   "squared_norm": 0.012491460889577866,
+   "first_direction_share": 0.5835461020469666,
+   "effective_rank": 2.350693702697754
+  },
+  {
+   "layer": 8,
+   "module": "q_proj",
+   "squared_norm": 0.03850456327199936,
+   "first_direction_share": 0.632953405380249,
+   "effective_rank": 2.3534398078918457
+  },
+  {
+   "layer": 8,
+   "module": "v_proj",
+   "squared_norm": 0.014345749281346798,
+   "first_direction_share": 0.8346990346908569,
+   "effective_rank": 1.4177736043930054
+  },
+  {
+   "layer": 9,
+   "module": "q_proj",
+   "squared_norm": 0.05046332627534866,
+   "first_direction_share": 0.6988029479980469,
+   "effective_rank": 1.9289228916168213
+  },
+  {
+   "layer": 9,
+   "module": "v_proj",
+   "squared_norm": 0.022062622010707855,
+   "first_direction_share": 0.8030828833580017,
+   "effective_rank": 1.5058649778366089
+  }
+ ]
+}
