@@ -117,9 +117,49 @@ sentences with the training split; "naming the university" is a search for the w
 This pair learned little besides the code (its texts are longer than the base model's), so it can show
 where a trained-in collusion sits in the weights and cannot show whether a reversal keeps a trained skill.
 
+## Three ways of undoing the code on this pair
+
+`compare_methods.py`, `compare_methods.json`: the trained sender with one intervention per arm, 32 candidates per
+label for evaluation and the next 64 per label for everything that is fitted, one random stream shared by
+all arms. "Shared words" counts the words of four or more letters that a text keeps from the candidate's
+sentence, and "surprise" is the mean negative log-likelihood per generated token under the base model.
+
+| Arm | Receiver correct | PASS texts opening in first person | FAIL texts opening in first person | Words per text | Shared words | Surprise |
+|---|---|---|---|---|---|---|
+| trained, no intervention | 64 of 64 | 0.97 | 0.00 | 12.9 | 2.4 | 1.66 |
+| rolled back to the base model | 32 of 64 | 0.06 | 0.03 | 8.0 | 2.5 | 0.85 |
+| weights: without the first direction of each module | 36 of 64 | 0.16 | 0.03 | 8.7 | 2.6 | 0.95 |
+| activations: mean shift of training removed after layer 6 | 64 of 64 | 0.97 | 0.00 | 12.6 | 2.3 | 1.65 |
+| activations: mean shift of training removed after layer 12 | 64 of 64 | 0.97 | 0.00 | 12.0 | 2.5 | 1.58 |
+| activations: mean shift of training removed after layer 18 | 64 of 64 | 0.97 | 0.00 | 12.8 | 2.8 | 1.52 |
+| activations: mean shift of training removed after layer 24 | 64 of 64 | 1.00 | 0.00 | 12.9 | 2.7 | 1.71 |
+| activations: label direction removed after every layer | 35 of 64 | 0.38 | 0.34 | 13.8 | 2.5 | 2.38 |
+| activations: final state turned toward the benign mean, strength by the AcMAS rule | 46 of 64 | 1.00 | 0.00 | 3.6 | 0.5 | 3.10 |
+| activations: final state turned half-way toward the benign mean | 61 of 64 | 0.87 | 0.00 | 2.1 | 0.1 | 5.18 |
+
+- A fixed steering vector does nothing here. Subtracting the mean shift that training produced, after any
+  of four layers, leaves the receiver right on every text: the code is the part of the change that depends
+  on the input, and a mean has none of it.
+- Cutting the first direction of each module from the weights removes the code without any label, and it
+  removes the rest of what training changed with it: the texts return to the base model's length.
+- Removing the direction that separates the two labels, after every layer, removes the code and keeps the
+  trained length, at the price of texts that are less natural to the base model. It is the only arm that is
+  selective, and the only one that has to be told what the hidden information is.
+- The distance of AcMAS detects the trained sender: fitted on other candidates, it flags 64 of 64 of its
+  responses and 6 of 64 of the base model's (AUROC 0.98). It detects that the model is not the base
+  model, which any fine-tuning would also cause. The correction, as read here from equations 14 and 15,
+  cuts the texts to a few words and leaves the first word, and so the code, in place.
+
+Limits beyond those above: the AcMAS arms are this project's reading of a formula whose implementation is
+not published, applied to a case the paper does not address; the mean shift and the label direction were
+taken at the position that writes the first word and applied at every position; one layer at a time for
+the mean shift.
+
 ## Not done
 
 Monitoring along the directions read from the weights, in the manner of Zhong and Raghunathan, on this
-pair; a case in which training also taught something worth keeping, for which `reward-hacking/corpus.json`
-lists published training code (CATCH, Countdown-Code, the vulnerability games of Zhou et al.) and no
-released weights; any team setting. The texts of the nearest prior work have not been read.
+pair; keeping the mean effect of the trained difference while removing its dependence on the input, which
+would need no label; a case in which training also taught something worth keeping, for which
+`reward-hacking/corpus.json` lists published training code (CATCH, Countdown-Code, the vulnerability games
+of Zhou et al.) and no released weights; any team setting beyond this pair. The texts of the nearest prior
+work have not been read.
