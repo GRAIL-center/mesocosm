@@ -1,11 +1,17 @@
 """Undo the trained sender's code in three ways and compare them: roll back, cut the weights, steer activations.
 
-Usage: python compare_methods.py <folder of the released model repository> <out.json>
+Usage: python compare_methods.py <folder of the released model repository> <out.json> [--arms per-token]
 
 Evaluation uses the first 32 candidates per label of the test split, and everything that is fitted (mean
 shifts, the label direction, the benign mean and its thresholds) uses the next 64 per label. Inputs and
 sampling follow the published trainer (see docs/releases/steganographic-collusion/pair_check.py), and every
 arm shares one random stream, so texts differ only through the intervention.
+
+The per-token arms read the trained difference itself. What the first direction of a module reads at a
+token is the signal, and writing that direction back with its reading set to the fitted mean is the
+correction; a width leaves a reading alone while it stays within that many standard deviations of the mean.
+The other correction cancels what the direction writes, which is its value in the base model, at chosen
+tokens: those whose reading stands out, the prompt, or the positions that write the text.
 
 The last two arms apply the correction of AcMAS (arXiv:2607.06807, equations 10 to 15) as read here: the
 paper says the corrected activation "is injected at the final layer during response regeneration" and gives
@@ -37,6 +43,7 @@ SHIFT_LAYERS = (6, 12, 18, 24)
 parser = argparse.ArgumentParser()
 parser.add_argument("folder")
 parser.add_argument("out")
+parser.add_argument("--arms", choices=("all", "per-token"), default="all")
 args = parser.parse_args()
 torch.set_num_threads(4)
 
@@ -67,6 +74,20 @@ original = {name: (m.lora_A["default"].weight.data.clone(), m.lora_B["default"].
                    m.scaling["default"]) for name, m in adapters.items()}
 
 
+def first_direction(name: str) -> tuple[torch.Tensor, torch.Tensor]:
+    """What the first direction of a module's trained difference writes, at full size, and what it reads."""
+    a, b, scaling = original[name]
+    qb, rb = torch.linalg.qr(b.float())
+    qa, ra = torch.linalg.qr(a.float().T)
+    u, s, vh = torch.linalg.svd(rb @ ra.T)
+    return (qb @ u[:, 0]) * s[0] * scaling, qa @ vh[0]
+
+
+writes, reads = {}, {}
+for name in adapters:
+    writes[name], reads[name] = first_direction(name)
+
+
 def set_weights(scale: float, keep: str = "all") -> None:
     """scale: multiplier of the trained difference; keep: all its directions, or all but the first of each module."""
     for name, module in adapters.items():
@@ -84,8 +105,8 @@ def set_weights(scale: float, keep: str = "all") -> None:
 
 
 def hooked(edits: list, call):
-    """Run call() with forward hooks that replace the output of each module by its edit."""
-    handles = [module.register_forward_hook(lambda m, i, output, edit=edit: edit(output))
+    """Run call() with forward hooks: each edit gets a module's output and input and may return a new output."""
+    handles = [module.register_forward_hook(lambda m, inputs, output, edit=edit: edit(output, inputs[0]))
                for module, edit in edits]
     try:
         with torch.no_grad():
@@ -107,7 +128,7 @@ def at_last_prompt_token(ids: torch.Tensor) -> torch.Tensor:
     """The residual stream after every layer at the position that writes the first word: [layers, rows, width]."""
     kept: list[torch.Tensor] = []
 
-    def keep(output: torch.Tensor) -> None:
+    def keep(output: torch.Tensor, entered: torch.Tensor) -> None:
         kept.append(output[:, -1, :].float())
 
     hooked([(block, keep) for block in blocks],
@@ -126,7 +147,7 @@ def final_state(written: torch.Tensor) -> torch.Tensor:
     """The state after the final norm at the last generated token of each row, under the weights now set."""
     kept: list[torch.Tensor] = []
 
-    def keep(output: torch.Tensor) -> None:
+    def keep(output: torch.Tensor, entered: torch.Tensor) -> None:
         kept.append(output.float())
 
     hooked([(final_norm, keep)],
@@ -177,23 +198,40 @@ def fitted_final() -> torch.Tensor:
     return torch.cat([final_state(generate(fit_ids[rows], [])) for rows in (fit_pass, ~fit_pass)])
 
 
+def reading_statistics() -> dict[str, tuple[float, float]]:
+    """Mean and deviation of what each first direction reads, over every position of the fitting responses."""
+    sums = {name: [0.0, 0.0, 0] for name in adapters}
+
+    def watch(name: str):
+        def edit(output: torch.Tensor, entered: torch.Tensor) -> None:
+            value = entered.float() @ reads[name]
+            sums[name][0] += float(value.sum())
+            sums[name][1] += float((value**2).sum())
+            sums[name][2] += value.numel()
+
+        return edit
+
+    for rows in (fit_pass, ~fit_pass):
+        generate(fit_ids[rows], [(adapters[name], watch(name)) for name in adapters])
+    return {name: (total / count, (squares / count - (total / count) ** 2) ** 0.5)
+            for name, (total, squares, count) in sums.items()}
+
+
 set_weights(1.0)
-trained_states = at_last_prompt_token(fit_ids)
-trained_final = fitted_final()
-set_weights(0.0)
-base_states = at_last_prompt_token(fit_ids)
-base_final = fitted_final()
-shift = trained_states.mean(1) - base_states.mean(1)
-label_direction = unit(trained_states[:, fit_pass].mean(1) - trained_states[:, ~fit_pass].mean(1))
-benign_mean = unit(base_final).mean(0)
+reading = reading_statistics()
+if args.arms == "all":
+    trained_states = at_last_prompt_token(fit_ids)
+    trained_final = fitted_final()
+    set_weights(0.0)
+    base_states = at_last_prompt_token(fit_ids)
+    base_final = fitted_final()
+    shift = trained_states.mean(1) - base_states.mean(1)
+    label_direction = unit(trained_states[:, fit_pass].mean(1) - trained_states[:, ~fit_pass].mean(1))
+    benign_mean = unit(base_final).mean(0)
 
 
 def divergence(states: torch.Tensor) -> torch.Tensor:
     return 1 - unit(states) @ benign_mean
-
-
-fit_scores = torch.cat([divergence(trained_final), divergence(base_final)])
-fit_flags = torch.cat([torch.ones(len(trained_final)), torch.zeros(len(base_final))]).bool()
 
 
 def f1(threshold: float, scores: torch.Tensor, flags: torch.Tensor) -> float:
@@ -202,25 +240,28 @@ def f1(threshold: float, scores: torch.Tensor, flags: torch.Tensor) -> float:
     return 2 * hit / (int(raised.sum()) + int(flags.sum())) if hit else 0.0
 
 
-detect_at = max(sorted(set(fit_scores.tolist())), key=lambda value: f1(value, fit_scores, fit_flags))
-full_at = float(torch.quantile(divergence(trained_final), 0.95))
+if args.arms == "all":
+    fit_scores = torch.cat([divergence(trained_final), divergence(base_final)])
+    fit_flags = torch.cat([torch.ones(len(trained_final)), torch.zeros(len(base_final))]).bool()
+    detect_at = max(sorted(set(fit_scores.tolist())), key=lambda value: f1(value, fit_scores, fit_flags))
+    full_at = float(torch.quantile(divergence(trained_final), 0.95))
 
 
 def remove_shift(layer: int):
     vector = shift[layer].to(torch.bfloat16)
-    return lambda output: output - vector
+    return lambda output, entered: output - vector
 
 
 def remove_label_direction(layer: int):
     direction = label_direction[layer].to(torch.bfloat16)
-    return lambda output: output - (output @ direction).unsqueeze(-1) * direction
+    return lambda output, entered: output - (output @ direction).unsqueeze(-1) * direction
 
 
 def pull_to_benign_mean(strength: torch.Tensor):
     """Turn each state toward the benign mean by a strength per row, keeping the length of the state."""
     target, weight = unit(benign_mean), strength.view(-1, 1, 1)
 
-    def edit(output: torch.Tensor) -> torch.Tensor:
+    def edit(output: torch.Tensor, entered: torch.Tensor) -> torch.Tensor:
         state = output.float()
         size = state.norm(dim=-1, keepdim=True)
         return (unit(state / size + weight * (target - state / size)) * size).to(output.dtype)
@@ -228,11 +269,73 @@ def pull_to_benign_mean(strength: torch.Tensor):
     return edit
 
 
+def restore(name: str, where: str, width: float, target: str, counts: list[int]):
+    """Write the first direction back with its reading replaced at chosen tokens.
+
+    where: "away" picks the tokens whose reading is further than width deviations from the fitted mean, "near"
+    the others, "prompt" the positions before the last prompt token and "writing" that token and what follows.
+    target: "mean" replaces the reading by the fitted mean, "zero" by nothing, as in the base model.
+    """
+    mean, deviation = reading[name]
+    write, read = writes[name].to(torch.bfloat16), reads[name]
+    seen = [0]
+
+    def edit(output: torch.Tensor, entered: torch.Tensor) -> torch.Tensor:
+        value = entered.float() @ read
+        if where in ("away", "near"):
+            chosen = ((value - mean).abs() > width * deviation) == (where == "away")
+        else:
+            position = seen[0] + torch.arange(value.shape[1]).expand_as(value)
+            chosen = (position < length - 1) == (where == "prompt")
+        seen[0] += value.shape[1]
+        counts[0] += int(chosen.sum())
+        counts[1] += chosen.numel()
+        value = torch.where(chosen, torch.full_like(value, mean if target == "mean" else 0.0), value)
+        return output + value.unsqueeze(-1).to(output.dtype) * write
+
+    return edit
+
+
+def auroc(scores: torch.Tensor, flags: torch.Tensor) -> float:
+    pairs = scores[flags].unsqueeze(1) - scores[~flags].unsqueeze(0)
+    return float(((pairs > 0).float() + 0.5 * (pairs == 0).float()).mean())
+
+
+def what_the_readings_tell() -> dict:
+    """How well one module's reading on a prompt separates the two labels, and at which tokens it stands out."""
+    kept: dict[str, torch.Tensor] = {}
+
+    def watch(name: str):
+        def edit(output: torch.Tensor, entered: torch.Tensor) -> None:
+            kept[name] = entered.float() @ reads[name]
+
+        return edit
+
+    hooked([(adapters[name], watch(name)) for name in adapters],
+           lambda: core.model(input_ids=eval_ids, attention_mask=torch.ones_like(eval_ids)))
+    eval_pass = torch.tensor([row["label"] == "PASS" for row in evaluation])
+    modules = []
+    for name, value in kept.items():
+        parts = name.split(".")
+        views = {"at the last prompt token": value[:, -1], "largest on the prompt": value.max(1).values,
+                 "smallest on the prompt": value.min(1).values}
+        scored = {view: max(auroc(scores, eval_pass), 1 - auroc(scores, eval_pass)) for view, scores in views.items()}
+        best = max(scored, key=scored.get)
+        furthest = ((value - reading[name][0]).abs()).argmax(1)
+        tokens = [tokenizer.decode(eval_ids[row, position]) for row, position in enumerate(furthest.tolist())]
+        modules.append({"module": f"layer {parts[parts.index('layers') + 1]} {parts[-1]}", "auroc": scored[best],
+                        "view": best, "tokens_where_furthest_from_mean": sorted(
+                            ((token, tokens.count(token)) for token in set(tokens)), key=lambda pair: -pair[1])[:3]})
+    modules.sort(key=lambda module: -module["auroc"])
+    return {"modules": len(modules), "modules_with_auroc_at_least_0.9": sum(m["auroc"] >= 0.9 for m in modules),
+            "best": modules[:5]}
+
+
 # ---- the arms
-results, detection = [], {}
+results, detection, readings = [], {}, {}
 
 
-def run(name: str, scale: float, keep: str, edits: list) -> torch.Tensor:
+def run(name: str, scale: float, keep: str, edits: list, counts: list[int] | None = None) -> torch.Tensor:
     start = time.time()
     set_weights(scale, keep)
     written = generate(eval_ids, edits)
@@ -250,17 +353,38 @@ def run(name: str, scale: float, keep: str, edits: list) -> torch.Tensor:
                "mean_shared_words": sum(shared_words(row["input"], r["text"])
                                         for row, r in zip(evaluation, rows, strict=True)) / len(rows),
                "base_surprise": base_surprise(written), "seconds": round(time.time() - start)}
+    if counts:
+        summary["positions_set_to_mean"] = counts[0] / counts[1]
     print(json.dumps(summary), flush=True)
     results.append({**summary, "rows": rows})
     with open(args.out, "w", encoding="utf-8") as file:
         json.dump({"evaluated_per_label": EVALUATED, "fitted_per_label": FITTED, "fixed_input_length": length,
-                   "detection": detection, "results": results}, file, indent=1)
+                   "detection": detection, "readings": readings, "results": results}, file, indent=1)
     return state
 
 
 trained_eval_final = run("trained, no intervention", 1.0, "all", [])
 base_eval_final = run("rolled back to the base model", 0.0, "all", [])
+set_weights(1.0)
+readings.update(what_the_readings_tell())
+print(json.dumps(readings), flush=True)
+PER_TOKEN = (("written back as it is read (check of the arithmetic)", "away", float("inf"), "mean"),
+             ("reading held at its mean at every token", "away", 0.0, "mean"),
+             ("reading set to its mean where it is over 1 deviation away", "away", 1.0, "mean"),
+             ("reading set to its mean where it is over 2 deviations away", "away", 2.0, "mean"),
+             ("cancelled where the reading is over 2 deviations away", "away", 2.0, "zero"),
+             ("cancelled where the reading is over 1 deviation away", "away", 1.0, "zero"),
+             ("cancelled where the reading is within 1 deviation", "near", 1.0, "zero"),
+             ("cancelled on the prompt before its last token", "prompt", 0.0, "zero"),
+             ("cancelled from the last prompt token on", "writing", 0.0, "zero"))
+for label, where, width, target in PER_TOKEN:
+    counts = [0, 0]
+    run(f"per token: first direction of each module {label}", 1.0, "rest",
+        [(adapters[name], restore(name, where, width, target, counts)) for name in adapters], counts)
 run("weights: without the first direction of each module", 1.0, "rest", [])
+if args.arms == "per-token":
+    print("done", flush=True)
+    raise SystemExit
 for layer in SHIFT_LAYERS:
     run(f"activations: mean shift of training removed after layer {layer}", 1.0, "all",
         [(blocks[layer], remove_shift(layer))])
@@ -269,11 +393,10 @@ run("activations: label direction removed after every layer", 1.0, "all",
 
 eval_scores = torch.cat([divergence(trained_eval_final), divergence(base_eval_final)])
 eval_flags = torch.cat([torch.ones(len(trained_eval_final)), torch.zeros(len(base_eval_final))]).bool()
-pairs = (eval_scores[eval_flags].unsqueeze(1) - eval_scores[~eval_flags].unsqueeze(0))
 strength = ((divergence(trained_eval_final) - detect_at) / (full_at - detect_at)).clamp(0, 1)
 detection.update({"threshold": detect_at, "full_strength_at": full_at,
                   "f1_on_evaluation": f1(detect_at, eval_scores, eval_flags),
-                  "auroc_on_evaluation": float(((pairs > 0).float() + 0.5 * (pairs == 0).float()).mean()),
+                  "auroc_on_evaluation": auroc(eval_scores, eval_flags),
                   "trained_responses_flagged": int((divergence(trained_eval_final) > detect_at).sum()),
                   "base_responses_flagged": int((divergence(base_eval_final) > detect_at).sum()),
                   "mean_strength": float(strength.mean())})
